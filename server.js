@@ -1,37 +1,63 @@
 const express = require('express');
-const TuyaDevice = require('tuyapi');
+const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 const cors = require('cors');
 const app = express();
 
 app.use(cors());
 
-app.get('/', (req, res) => res.send('<h1>BGM Design: Сървърът е онлайн!</h1>'));
+// Настройки за връзка с облака
+const tuya = new TuyaContext({
+  baseUrl: 'https://openapi.tuyaeu.com', // Сървър за Европа
+  accessKey: process.env.TUYA_ACCESS_ID,
+  secretKey: process.env.TUYA_ACCESS_SECRET,
+});
+
+app.get('/', (req, res) => res.send('<h1>BGM Design: Cloud Engine Online</h1>'));
 
 app.get('/toggle', async (req, res) => {
-    console.log("Старт на командата...");
-    
-    const device = new TuyaDevice({
-        id: process.env.TUYA_DEVICE_ID,
-        key: process.env.TUYA_ACCESS_SECRET,
-        issueRefresh: true
+  const deviceId = process.env.TUYA_DEVICE_ID;
+
+  if (!process.env.TUYA_ACCESS_ID || !process.env.TUYA_ACCESS_SECRET) {
+      return res.send('<h1>Грешка: Липсват ключове в Render!</h1>');
+  }
+
+  try {
+    console.log("Питаме облака за статус...");
+    // 1. Взимаме текущия статус
+    const statusData = await tuya.request({
+      path: `/v1.0/iot-03/devices/${deviceId}/status`,
+      method: 'GET',
     });
 
-    try {
-        // Поставяме кратък таймаут, за да не увисва сървърът
-        await device.find({timeout: 5}); 
-        await device.connect();
-        
-        const status = await device.get();
-        await device.set({set: !status});
-        
-        device.disconnect();
-        res.send('<h1>УСПЕХ! Електромерът превключи.</h1>');
-    } catch (error) {
-        console.log("Грешка при връзка:", error.message);
-        // Вместо да убиваме сървъра, връщаме приятелско съобщение
-        res.send(`<h1>Сървърът работи, но уредът не отговаря.</h1><p>Грешка: ${error.message}</p>`);
+    if (!statusData.success) throw new Error(statusData.msg);
+
+    // Намираме дали ключът е включен (кодът обикновено е 'switch_1')
+    const switchStatus = statusData.result.find(item => item.code === 'switch_1');
+    const currentVal = switchStatus ? switchStatus.value : false;
+    const newVal = !currentVal;
+
+    console.log(`Превключване от ${currentVal} към ${newVal}`);
+
+    // 2. Изпращаме команда за превключване
+    const commandResult = await tuya.request({
+      path: `/v1.0/iot-03/devices/${deviceId}/commands`,
+      method: 'POST',
+      body: {
+        commands: [{ code: 'switch_1', value: newVal }]
+      }
+    });
+
+    if (commandResult.success) {
+        res.send(`<h1>УСПЕХ! Токът е ${newVal ? 'ПУСНАТ' : 'СПРЯН'}.</h1>`);
+    } else {
+        res.send('<h1>Грешка при командата: ' + commandResult.msg + '</h1>');
     }
+
+  } catch (error) {
+    console.error(error);
+    res.send('<h1>Грешка: ' + error.message + '</h1>');
+  }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log('Сървърът е готов на порт ' + PORT));
+app.listen(PORT, () => console.log('Cloud Server Ready'));
