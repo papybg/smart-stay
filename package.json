@@ -1,1 +1,13 @@
-{ "name": "smart-stay", "version": "1.0.0" }
+{
+  "name": "airbnb-engine",
+  "version": "1.0.0",
+  "description": "Smart Stay Engine",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "tuyapi": "^7.5.3"
+  }
+}
