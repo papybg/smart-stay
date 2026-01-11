@@ -11,17 +11,15 @@ const tuya = new TuyaContext({
   secretKey: process.env.TUYA_ACCESS_SECRET,
 });
 
-app.get('/', (req, res) => res.send('<h1>Smart Stay Cloud: Ready</h1>'));
+app.get('/', (req, res) => res.send('<h1>Smart Stay: Ready</h1>'));
 
 app.get('/toggle', async (req, res) => {
   const deviceId = process.env.TUYA_DEVICE_ID;
 
-  if (!process.env.TUYA_ACCESS_ID) {
-      return res.send('<h1>Липсва TUYA_ACCESS_ID в Render!</h1>');
-  }
+  if (!process.env.TUYA_ACCESS_ID) return res.send('<h1>Липсва Access ID!</h1>');
 
   try {
-    // 1. Питаме устройството какво е текущото му състояние
+    // 1. Взимаме статуса
     const statusData = await tuya.request({
       path: `/v1.0/iot-03/devices/${deviceId}/status`,
       method: 'GET',
@@ -29,24 +27,31 @@ app.get('/toggle', async (req, res) => {
 
     if (!statusData.success) throw new Error(statusData.msg);
 
-    console.log("Открити функции:", JSON.stringify(statusData.result));
+    const allFunctions = statusData.result;
+    console.log("Всички функции:", JSON.stringify(allFunctions));
 
-    // 2. Търсим кое е копчето (търсим нещо, което е true/false или съдържа 'switch')
-    const switchControl = statusData.result.find(item => 
-        (item.code.includes('switch') || item.code === 'switch' || typeof item.value === 'boolean')
-    );
-
-    if (!switchControl) {
-        return res.send(`<h1>Грешка: Не мога да намеря копче за включване! Виждам само: ${JSON.stringify(statusData.result)}</h1>`);
+    // 2. Търсим КОНКРЕТНО шалтера за тока (приоритет на switch_1)
+    let mainSwitch = allFunctions.find(item => item.code === 'switch_1');
+    
+    // Ако няма switch_1, търсим просто switch (без 1)
+    if (!mainSwitch) {
+        mainSwitch = allFunctions.find(item => item.code === 'switch');
     }
 
-    const correctCode = switchControl.code; // Ето го истинското име!
-    const currentVal = switchControl.value;
-    const newVal = !currentVal;
+    // Ако пак не го намираме, показваме списъка на екрана, за да го видим
+    if (!mainSwitch) {
+        return res.send(`
+            <h1>Не намирам главен ключ!</h1>
+            <p>Ето какво има в това устройство (копирай ми това):</p>
+            <pre>${JSON.stringify(allFunctions, null, 2)}</pre>
+        `);
+    }
 
-    console.log(`Ще превключим "${correctCode}" от ${currentVal} към ${newVal}`);
+    // 3. Ако сме го намерили - ДЕЙСТВАМЕ!
+    const correctCode = mainSwitch.code;
+    const currentVal = mainSwitch.value;
+    const newVal = !currentVal; // Обръщаме стойността
 
-    // 3. Изпращаме команда с ПРАВИЛНОТО име
     const commandResult = await tuya.request({
       path: `/v1.0/iot-03/devices/${deviceId}/commands`,
       method: 'POST',
@@ -56,9 +61,9 @@ app.get('/toggle', async (req, res) => {
     });
 
     if (commandResult.success) {
-        res.send(`<h1>УСПЕХ! Уредът (${correctCode}) е превключен на ${newVal}.</h1>`);
+        res.send(`<h1>ЦЪК! Успешно превключихме ${correctCode} на ${newVal}.</h1>`);
     } else {
-        res.send(`<h1>Tuya върна грешка: ${commandResult.msg}</h1>`);
+        res.send(`<h1>Грешка при командата: ${commandResult.msg}</h1>`);
     }
 
   } catch (error) {
