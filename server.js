@@ -4,6 +4,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+// ТОВА Е ЧАСТТА, КОЯТО ЛИПСВАШЕ:
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -31,7 +32,7 @@ async function checkBookingInDB(code) {
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
   
-  // 1. Опитваме първо с най-новия модел
+  // 1. Опитваме първо с най-новия модел (Gemini 3 / 2.0 Flash Exp)
   let modelName = "gemini-2.0-flash-exp"; 
   let usedFallback = false;
   
@@ -69,9 +70,7 @@ app.post('/chat', async (req, res) => {
       botResponse = finalResult.response.text();
     }
 
-    // 3. Добавяме таен маркер в края, за да знаеш кой модел е отговорил
-    // (v3 ✨) = Gemini 3
-    // (v1.5 ⚡) = Стария стабилен модел
+    // 3. Маркери за диагностика: (v3 ✨) или (v1.5 ⚡)
     const debugInfo = usedFallback ? " (v1.5 ⚡)" : " (v3 ✨)";
     res.json({ reply: botResponse + debugInfo });
 
