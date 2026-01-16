@@ -3,71 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Stay Check-in</title>
+    <title>Smart Stay Agent</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .chat-container { width: 100%; max-width: 400px; background: white; height: 90vh; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
-        .header { background: #2563eb; color: white; padding: 20px; text-align: center; font-weight: bold; }
-        .messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-        .message { padding: 10px 15px; border-radius: 15px; max-width: 80%; line-height: 1.4; }
-        .bot { background: #f0f0f0; align-self: flex-start; border-bottom-left-radius: 2px; }
-        .user { background: #2563eb; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
-        .input-area { padding: 20px; border-top: 1px solid #eee; display: flex; gap: 10px; }
-        input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 25px; outline: none; }
-        button { background: #2563eb; color: white; border: none; padding: 12px 20px; border-radius: 25px; cursor: pointer; font-weight: bold; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .chat-container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column; height: 80vh; }
+        .header { background: #0084ff; color: white; padding: 15px; text-align: center; font-weight: bold; }
+        .chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message { max-width: 80%; padding: 10px 15px; border-radius: 18px; font-size: 14px; line-height: 1.4; }
+        .bot { background: #e4e6eb; color: black; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .user { background: #0084ff; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .input-area { display: flex; padding: 10px; border-top: 1px solid #ddd; background: #fff; }
+        input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
+        button { background: #0084ff; color: white; border: none; padding: 10px 20px; margin-left: 10px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #006bcf; }
+        .typing { font-style: italic; color: #888; font-size: 12px; margin-left: 10px; display: none; }
     </style>
 </head>
 <body>
 
 <div class="chat-container">
     <div class="header">Smart Stay Agent 🤖</div>
-    <div class="messages" id="messages">
-        <div class="message bot">Здравейте! Аз съм вашият дигитален иконом. Моля, въведете кода си за резервация, за да Ви настаня.</div>
+    <div class="chat-box" id="chat-box">
+        <div class="message bot">Здравейте! Аз съм вашият виртуален домакин. Моля, въведете своя <b>Код за резервация</b>, за да получите достъп.</div>
     </div>
+    <div class="typing" id="typing">Агентът пише...</div>
     <div class="input-area">
-        <input type="text" id="userInput" placeholder="Напиши съобщение...">
-        <button onclick="sendMessage()" id="sendBtn">➤</button>
+        <input type="text" id="user-input" placeholder="Напиши съобщение..." onkeypress="handleKeyPress(event)">
+        <button onclick="sendMessage()">Изпрати</button>
     </div>
 </div>
 
 <script>
-    // ИНТЕЛИГЕНТЕН АДРЕС: Ако сме на компютъра ползва localhost, ако сме в Render ползва самия него.
+    // ---------------------------------------------------------
+    // ТУК Е МАГИЯТА ЗА ВРЪЗКАТА С RENDER
+    // ---------------------------------------------------------
     const API_URL = window.location.hostname === 'localhost' 
         ? 'http://localhost:10000' 
-        : window.location.origin;
+        : 'https://smart-stay.onrender.com'; 
+    // ---------------------------------------------------------
 
-    const input = document.getElementById('userInput');
-    const messages = document.getElementById('messages');
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const typingIndicator = document.getElementById('typing');
+
+    function handleKeyPress(event) {
+        if (event.key === 'Enter') sendMessage();
+    }
 
     async function sendMessage() {
-        const text = input.value.trim();
+        const text = userInput.value.trim();
         if (!text) return;
 
+        // 1. Показваме съобщението на потребителя
         addMessage(text, 'user');
-        input.value = '';
+        userInput.value = '';
+        
+        // 2. Показваме "Агентът пише..."
+        typingIndicator.style.display = 'block';
+        chatBox.scrollTop = chatBox.scrollHeight;
 
         try {
+            // 3. Изпращаме към Render
             const response = await fetch(`${API_URL}/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: text })
             });
+
             const data = await response.json();
+            
+            // 4. Скриваме "Агентът пише..." и показваме отговора
+            typingIndicator.style.display = 'none';
             addMessage(data.reply, 'bot');
-        } catch (err) {
-            addMessage("Грешка при връзката с Агента.", 'bot');
+
+        } catch (error) {
+            typingIndicator.style.display = 'none';
+            console.error("Грешка:", error);
+            addMessage("⚠️ Опа, загубих връзка със сървъра. Моля, проверете интернета си.", 'bot');
         }
     }
 
     function addMessage(text, sender) {
-        const div = document.createElement('div');
-        div.className = `message ${sender}`;
-        div.innerText = text;
-        messages.appendChild(div);
-        messages.scrollTop = messages.scrollHeight;
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('message', sender);
+        // Позволяваме нов ред и болдване в отговора
+        msgDiv.innerHTML = text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
     }
-
-    input.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
 </script>
 
 </body>
