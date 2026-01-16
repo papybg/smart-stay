@@ -4,7 +4,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
-const cron = require('node-cron'); // <--- НОВИЯТ ТАЙМЕР
+const cron = require('node-cron'); 
 
 const app = express();
 app.use(cors());
@@ -17,49 +17,47 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// 2. TUYA (ТОК)
+// 2. TUYA (ЕЛЕКТРОМЕР)
 const tuya = new TuyaContext({
   baseUrl: 'https://openapi.tuyaeu.com',
   accessKey: process.env.TUYA_ACCESS_ID,
   secretKey: process.env.TUYA_ACCESS_SECRET,
 });
 
-// 3. GEMINI (AI)
+// 3. GEMINI (AI МОЗЪК)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// --- АВТОМАТИЗАЦИЯТА (CRON JOB) ---
-// Стартира се на всеки 10 минути
+// --- АВТОПИЛОТ (Включва се на всеки 10 мин) ---
 cron.schedule('*/10 * * * *', async () => {
-    console.log('⏰ [Auto-Check] Проверка за пристигащи гости...');
+    console.log('⏰ [Auto-Pilot] Сканиране за резервации...');
     
     try {
-        // Търсим резервации, които започват в следващите 150 минути (2 часа и малко)
-        // Използваме timezone 'EET' (Източна Европа), за да е точно времето
+        // Търсим резервации в следващите 4 часа (заради часовата разлика с UTC)
+        // Ако гостът идва в 14:00, а сега е 11:00, това ще го хване.
         const query = `
             SELECT * FROM bookings 
-            WHERE check_in::timestamp BETWEEN (NOW() AT TIME ZONE 'UTC') 
-            AND (NOW() AT TIME ZONE 'UTC' + INTERVAL '150 minutes')
+            WHERE check_in::timestamp > NOW() 
+            AND check_in::timestamp < (NOW() + INTERVAL '4 hours')
         `;
         
         const result = await pool.query(query);
 
         if (result.rows.length > 0) {
-            console.log(`🛎️ Намерени са ${result.rows.length} пристигащи гости! Проверка на тока...`);
+            console.log(`🛎️ Намерени са ${result.rows.length} чакащи гости! Проверявам тока...`);
             await checkAndTurnOnPower();
         } else {
-            console.log('💤 Няма гости в следващите 2 часа.');
+            console.log('💤 Няма гости в близките 4 часа.');
         }
 
     } catch (err) {
-        console.error('Greška pri Cron Job:', err);
+        console.error('Грешка при таймера:', err);
     }
 });
 
-// Функция, която умната брава ползва само ако е нужно
 async function checkAndTurnOnPower() {
     const deviceId = process.env.TUYA_DEVICE_ID;
     try {
-        // 1. Виждаме дали вече свети
+        // Проверка: Свети ли вече?
         const statusData = await tuya.request({
             path: `/v1.0/iot-03/devices/${deviceId}/status`,
             method: 'GET',
@@ -67,6 +65,7 @@ async function checkAndTurnOnPower() {
 
         const switchStatus = statusData.result.find(item => item.code === 'switch');
         
+        // Ако switch e false (спрян), го пускаме
         if (switchStatus && switchStatus.value === false) {
             console.log("🔌 Токът е СПРЯН. Гостите идват -> ПУСКАМ ГО!");
             
@@ -84,26 +83,17 @@ async function checkAndTurnOnPower() {
     }
 }
 
-// --- СТАНДАРТНИ ЕНДПОЙНТИ ---
+// --- ЕНДПОЙНТИ ---
 
-async function checkBookingInDB(code) {
-  try {
-    const res = await pool.query(
-      "SELECT guest_name, check_in, check_out, lock_pin, payment_status FROM bookings WHERE reservation_code = $1", 
-      [code.trim()]
-    );
-    return res.rows.length > 0 ? res.rows[0] : { error: "Няма такава резервация." };
-  } catch (err) {
-    return { error: "Проблем с базата." };
-  }
-}
-
+// Бутон за ръчно управление (Дистанционното)
 app.get('/toggle', async (req, res) => {
-  // Този endpoint остава за ръчното дистанционно
   const deviceId = process.env.TUYA_DEVICE_ID;
   try {
     const statusData = await tuya.request({ path: `/v1.0/iot-03/devices/${deviceId}/status`, method: 'GET' });
     const switchStatus = statusData.result.find(item => item.code === 'switch');
+    
+    if (!switchStatus) return res.send('Грешка: Не намирам шалтер!');
+
     const newVal = !switchStatus.value; 
 
     await tuya.request({
@@ -119,6 +109,8 @@ app.get('/toggle', async (req, res) => {
 
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
+  
+  // Използваме твоя мощен Gemini 3
   let modelName = "gemini-3-flash-preview"; 
   let usedFallback = false;
   
@@ -132,7 +124,8 @@ app.post('/chat', async (req, res) => {
     try {
         result = await model.generateContent(userMessage);
     } catch (aiErr) {
-        modelName = "gemini-2.5-flash";
+        // Резерва: Gemini 2.5
+        modelName = "gemini-2.5-flash"; 
         usedFallback = true;
         model = genAI.getGenerativeModel({ model: modelName });
         result = await model.generateContent(userMessage);
@@ -140,12 +133,22 @@ app.post('/chat', async (req, res) => {
 
     let botResponse = result.response.text().trim();
 
+    // Логика за проверка на код
     if (botResponse.includes("CHECK_CODE:")) {
       const code = botResponse.split(":")[1].trim().replace("[", "").replace("]", "");
-      const dbData = await checkBookingInDB(code);
+      
+      // Търсим в базата
+      let dbData;
+      try {
+        const dbRes = await pool.query(
+          "SELECT guest_name, check_in, check_out, lock_pin, payment_status FROM bookings WHERE reservation_code = $1", 
+          [code.trim()]
+        );
+        dbData = dbRes.rows.length > 0 ? dbRes.rows[0] : { error: "Няма такава резервация." };
+      } catch (e) { dbData = { error: "Грешка база." }; }
       
       const finalModel = genAI.getGenerativeModel({ model: modelName });
-      const finalResult = await finalModel.generateContent(`Данни: ${JSON.stringify(dbData)}. Отговори дали резервацията е намерена.`);
+      const finalResult = await finalModel.generateContent(`Данни: ${JSON.stringify(dbData)}. Отговори любезно.`);
       botResponse = finalResult.response.text();
     }
 
@@ -156,11 +159,11 @@ app.post('/chat', async (req, res) => {
   }
 });
 
+// Админ панелът ползва това за добавяне
 app.post('/add-booking', async (req, res) => {
   const { guest_name, check_in, check_out, reservation_code } = req.body;
   const lock_pin = Math.floor(100000 + Math.random() * 900000).toString();
   try {
-    // ВАЖНО: Тук check_in трябва да е формат 'YYYY-MM-DD HH:MM:SS' за да работи точно
     const result = await pool.query(
       `INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) 
        VALUES ($1, $2, $3, $4, $5, 'paid') RETURNING *`,
@@ -176,4 +179,4 @@ app.get('/bookings', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🤖 SMART STAY SERVER + AUTO PILOT READY`));
+app.listen(PORT, () => console.log(`🤖 SMART STAY СЪРВЪРЪТ Е ГОТОВ!`));
