@@ -30,21 +30,36 @@ async function checkBookingInDB(code) {
 
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
+  let modelName = "gemini-3-flash-preview"; 
+  
   try {
-    // ВРЪЩАМЕ МОДЕЛА, КОЙТО ТИ ПОСОЧИ: gemini-3-flash-preview
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-3-flash-preview", 
+    let model = genAI.getGenerativeModel({ 
+      model: modelName, 
       systemInstruction: "Ти си Smart Stay Agent. Ако потребителят ти даде код (напр. TEST1), отговори само: CHECK_CODE: [кода]."
     });
 
-    const result = await model.generateContent(userMessage);
+    let result;
+    try {
+        // Опит с Gemini 3
+        result = await model.generateContent(userMessage);
+    } catch (aiErr) {
+        // АКО GEMINI 3 Е ПРЕТОВАРЕН (Грешка 503), ПРЕВКЛЮЧВАМЕ НА 1.5 FLASH
+        console.log("Gemini 3 е зает (Error 503), превключвам на 1.5 Flash...");
+        modelName = "gemini-1.5-flash";
+        model = genAI.getGenerativeModel({ 
+            model: modelName,
+            systemInstruction: "Ти си Smart Stay Agent. Ако потребителят ти даде код (напр. TEST1), отговори само: CHECK_CODE: [кода]."
+        });
+        result = await model.generateContent(userMessage);
+    }
+
     const botResponse = result.response.text().trim();
 
     if (botResponse.includes("CHECK_CODE:")) {
       const code = botResponse.split(":")[1].trim().replace("[", "").replace("]", "");
       const dbData = await checkBookingInDB(code);
       
-      const finalModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+      const finalModel = genAI.getGenerativeModel({ model: modelName });
       const finalResult = await finalModel.generateContent(`Данни: ${JSON.stringify(dbData)}. Отговори любезно на български дали резервацията е намерена и кажи ПИН кода само ако статусът е paid.`);
       
       res.json({ reply: finalResult.response.text() });
@@ -52,8 +67,8 @@ app.post('/chat', async (req, res) => {
       res.json({ reply: botResponse });
     }
   } catch (err) {
-    console.error("AI Error:", err);
-    res.status(500).json({ reply: "Грешка при връзката с АИ." });
+    console.error("Критична AI Error:", err.message);
+    res.status(500).json({ reply: "В момента системата е претоварена, моля опитайте след малко." });
   }
 });
 
@@ -76,4 +91,4 @@ app.get('/bookings', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🤖 АГЕНТЪТ Е ОНЛАЙН С GEMINI 3`));
+app.listen(PORT, () => console.log(`🤖 АГЕНТЪТ Е ОНЛАЙН (Hybrid AI Mode)`));
