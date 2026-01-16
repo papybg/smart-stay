@@ -24,7 +24,7 @@ const tuya = new TuyaContext({
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// --- АВТОПИЛОТ ---
+// --- АВТОПИЛОТ (Българско време) ---
 cron.schedule('*/10 * * * *', async () => {
     try {
         const query = `
@@ -34,19 +34,20 @@ cron.schedule('*/10 * * * *', async () => {
         `;
         const result = await pool.query(query);
         if (result.rows.length > 0) {
-            console.log("🛎️ Гост идва! Пускам тока автоматично...");
+            console.log("🛎️ Автопилот: Намерена резервация. Пускам тока.");
             await toggleTuya(true);
         }
     } catch (err) { console.error('Cron error:', err); }
 });
 
 async function toggleTuya(targetValue) {
-    const deviceId = process.env.TUYA_DEVICE_ID;
-    await tuya.request({
-        path: `/v1.0/iot-03/devices/${deviceId}/commands`,
-        method: 'POST',
-        body: { commands: [{ code: 'switch', value: targetValue }] }
-    });
+    try {
+        await tuya.request({
+            path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
+            method: 'POST',
+            body: { commands: [{ code: 'switch', value: targetValue }] }
+        });
+    } catch (e) { console.error("Tuya Switch Error:", e.message); }
 }
 
 // --- ЕНДПОЙНТИ ---
@@ -74,25 +75,27 @@ app.get('/toggle', async (req, res) => {
 
 app.post('/chat', async (req, res) => {
     const userMessage = req.body.message;
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-3-flash-preview", 
-        systemInstruction: "Ти си любезен Smart Stay Асистент. Ако видиш код, отговори: CHECK_CODE: [кода]. Ако получиш данни, ги кажи любезно на БЪЛГАРСКИ. Ако данните показват грешка, кажи, че няма такава резервация и НЕ СИ ИЗМИСЛЯЙ НИЩО."
-    });
-
+    const sysPrompt = "Ти си любезен Smart Stay Асистент. Ако видиш код, отговори: CHECK_CODE: [кода]. Ако получиш данни, ги кажи любезно на БЪЛГАРСКИ. Ако няма данни, кажи че не намираш резервация. НЕ СИ ИЗМИСЛЯЙ!";
+    
     try {
-        const result = await model.generateContent(userMessage);
+        // Опит с Gemini 3
+        let model = genAI.getGenerativeModel({ model: "gemini-2.5-pro", systemInstruction: sysPrompt });
+        let result = await model.generateContent(userMessage);
         let botResponse = result.response.text().trim();
 
         if (botResponse.includes("CHECK_CODE:")) {
-            const code = botResponse.split(":")[1].trim().replace("[", "").replace("]", "");
+            const code = botResponse.split(":")[1].trim().replace(/[\[\]]/g, "");
             const dbRes = await pool.query("SELECT * FROM bookings WHERE reservation_code = $1", [code]);
-            const dbData = dbRes.rows.length > 0 ? dbRes.rows[0] : { error: "НЕ СЪЩЕСТВУВА" };
+            const dbData = dbRes.rows.length > 0 ? dbRes.rows[0] : { error: "not_found" };
             
-            const finalResult = await model.generateContent(`Данни от базата: ${JSON.stringify(dbData)}. Ако е грешка, кажи че няма такава резервация. Ако е истинска, кажи името на госта, датата и ПИН кода.`);
+            const finalResult = await model.generateContent(`Данни от базата: ${JSON.stringify(dbData)}. Отговори на госта.`);
             botResponse = finalResult.response.text();
         }
         res.json({ reply: botResponse });
-    } catch (err) { res.status(500).json({ reply: "Грешка при АИ." }); }
+    } catch (err) {
+        console.error("AI Error:", err);
+        res.json({ reply: "Извинете, в момента не мога да проверя кода. Моля, опитайте след минута." });
+    }
 });
 
 app.post('/add-booking', async (req, res) => {
@@ -112,5 +115,4 @@ app.get('/bookings', async (req, res) => {
     res.json(result.rows);
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Server listening on ${PORT}`));
+app.listen(process.env.PORT || 10000, () => console.log("Server Live"));
