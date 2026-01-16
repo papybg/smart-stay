@@ -1,14 +1,19 @@
 {
-  "name": "smart-stay-engine",
-  "version": "2.0.0",
-  "description": "Cloud Control",
-  "main": "server.js",
+  "name": "smart-stay",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "express": "^4.18.2",
+    "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.5",
-    "@tuya/tuya-connector-nodejs": "*"
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "pg": "^8.17.1"
   }
 }
