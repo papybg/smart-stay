@@ -2,43 +2,47 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <title>Smart Remote</title>
+    <title>Smart Stay Remote</title>
     <style>
-        body { background: #1a1a1a; color: white; text-align: center; padding-top: 50px; font-family: sans-serif; }
-        .btn { width: 150px; height: 150px; border-radius: 50%; border: 5px solid #333; cursor: pointer; font-weight: bold; font-size: 20px; transition: 0.3s; }
-        .on { background: #00ff88; color: #1a1a1a; box-shadow: 0 0 20px #00ff88; }
-        .off { background: #333; color: #888; }
-        .status-text { margin-top: 20px; color: #888; font-size: 14px; }
+        body { background: #121212; color: white; font-family: sans-serif; text-align: center; padding-top: 50px; }
+        .power-btn { 
+            width: 180px; height: 180px; border-radius: 50%; border: 8px solid #333;
+            cursor: pointer; font-size: 24px; font-weight: bold; transition: 0.4s;
+            outline: none; background: #222;
+        }
+        .on { color: #00ff88; border-color: #00ff88; box-shadow: 0 0 30px #00ff88; }
+        .off { color: #555; border-color: #333; }
+        .status-info { margin-top: 30px; font-size: 18px; color: #aaa; }
     </style>
 </head>
 <body>
-    <h1>Управление на тока</h1>
-    <button id="mainBtn" class="btn off" onclick="toggle()">...</button>
-    <div id="st" class="status-text">Проверка на връзката...</div>
+    <h1>КОНТРОЛ НА ТОКА</h1>
+    <button id="btn" class="power-btn off" onclick="toggle()">...</button>
+    <div id="st" class="status-info">Синхронизиране...</div>
 
     <script>
         const API = 'https://smart-stay.onrender.com';
-        
-        async function updateStatus() {
+
+        async function getStatus() {
             try {
                 const res = await fetch(`${API}/status`);
                 const data = await res.json();
-                const btn = document.getElementById('mainBtn');
-                btn.innerText = data.is_on ? 'ON' : 'OFF';
-                btn.className = 'btn ' + (data.is_on ? 'on' : 'off');
-                document.getElementById('st').innerText = 'Реален статус: ' + (data.is_on ? 'ВКЛЮЧЕНО' : 'ИЗКЛЮЧЕНО');
-            } catch (e) { document.getElementById('st').innerText = 'Грешка при синхронизация'; }
+                const btn = document.getElementById('btn');
+                btn.innerText = data.is_on ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН';
+                btn.className = 'power-btn ' + (data.is_on ? 'on' : 'off');
+                document.getElementById('st').innerText = 'Реално състояние: ' + (data.is_on ? 'РАБОТИ' : 'СПРЯНО');
+            } catch (e) { document.getElementById('st').innerText = 'Няма връзка със сървъра'; }
         }
 
         async function toggle() {
-            document.getElementById('st').innerText = 'Изпращане на сигнал...';
+            document.getElementById('st').innerText = 'Изпращане на команда...';
             await fetch(`${API}/toggle`);
-            updateStatus();
+            getStatus();
         }
 
-        // Проверява статуса на всеки 3 секунди автоматично
-        setInterval(updateStatus, 3000);
-        updateStatus();
+        // Автоматично опресняване на статуса на всеки 3 секунди
+        setInterval(getStatus, 3000);
+        getStatus();
     </script>
 </body>
 </html>
