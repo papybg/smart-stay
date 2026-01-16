@@ -4,7 +4,6 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// ТОВА Е ЧАСТТА, КОЯТО ЛИПСВАШЕ:
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -32,8 +31,9 @@ async function checkBookingInDB(code) {
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
   
-  // 1. Опитваме първо с най-новия модел (Gemini 3 / 2.0 Flash Exp)
-  let modelName = "gemini-2.0-flash-exp"; 
+  // 1. ОСНОВЕН ОПИТ: Gemini 3 Flash Preview
+  // (Това е най-горният от твоя списък)
+  let modelName = "gemini-3-flash-preview"; 
   let usedFallback = false;
   
   try {
@@ -46,9 +46,10 @@ app.post('/chat', async (req, res) => {
     try {
         result = await model.generateContent(userMessage);
     } catch (aiErr) {
-        // 2. АКО GEMINI 3 Е ПРЕТОВАРЕН (Грешка 503), ПРЕВКЛЮЧВАМЕ НА 1.5 FLASH
-        console.log("Gemini 3 е зает (Error 503), превключвам на 1.5 Flash...");
-        modelName = "gemini-1.5-flash";
+        // 2. РЕЗЕРВЕН ОПИТ: Gemini 2.5 Flash
+        // (Това е стабилната алтернатива от твоя списък)
+        console.log("⚠️ Gemini 3 е зает! Минавам на Gemini 2.5 Flash...");
+        modelName = "gemini-2.5-flash";
         usedFallback = true;
         
         model = genAI.getGenerativeModel({ 
@@ -70,13 +71,15 @@ app.post('/chat', async (req, res) => {
       botResponse = finalResult.response.text();
     }
 
-    // 3. Маркери за диагностика: (v3 ✨) или (v1.5 ⚡)
-    const debugInfo = usedFallback ? " (v1.5 ⚡)" : " (v3 ✨)";
+    // Маркери за диагностика:
+    // (v3 🚀) = Gemini 3
+    // (v2.5 ⚡) = Gemini 2.5
+    const debugInfo = usedFallback ? " (v2.5 ⚡)" : " (v3 🚀)";
     res.json({ reply: botResponse + debugInfo });
 
   } catch (err) {
-    console.error("Критична AI Error:", err.message);
-    res.status(500).json({ reply: "В момента системата е претоварена, моля опитайте след малко." });
+    console.error("❌ ГРЕШКА:", err.message);
+    res.status(500).json({ reply: "В момента Агентът се обновява. Моля, опитайте пак след малко." });
   }
 });
 
@@ -99,4 +102,4 @@ app.get('/bookings', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🤖 АГЕНТЪТ Е ОНЛАЙН (Hybrid AI Mode)`));
+app.listen(PORT, () => console.log(`🤖 АГЕНТЪТ Е ОНЛАЙН (Gemini 3 + 2.5 Fallback)`));
