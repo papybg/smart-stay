@@ -15,7 +15,6 @@
         .input-area { padding: 20px; border-top: 1px solid #eee; display: flex; gap: 10px; }
         input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 25px; outline: none; }
         button { background: #2563eb; color: white; border: none; padding: 12px 20px; border-radius: 25px; cursor: pointer; font-weight: bold; }
-        button:disabled { background: #ccc; }
     </style>
 </head>
 <body>
@@ -32,39 +31,31 @@
 </div>
 
 <script>
+    // ИНТЕЛИГЕНТЕН АДРЕС: Ако сме на компютъра ползва localhost, ако сме в Render ползва самия него.
+    const API_URL = window.location.hostname === 'localhost' 
+        ? 'http://localhost:10000' 
+        : window.location.origin;
+
     const input = document.getElementById('userInput');
     const messages = document.getElementById('messages');
-    const btn = document.getElementById('sendBtn');
-
-    // Позволява пращане с Enter
-    input.addEventListener("keypress", function(event) {
-        if (event.key === "Enter") sendMessage();
-    });
 
     async function sendMessage() {
         const text = input.value.trim();
         if (!text) return;
 
-        // 1. Показваме съобщението на потребителя
         addMessage(text, 'user');
         input.value = '';
-        btn.disabled = true;
 
-        // 2. Пращаме към сървъра (Агента)
         try {
-            const response = await fetch('http://localhost:10000/chat', {
+            const response = await fetch(`${API_URL}/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: text })
             });
             const data = await response.json();
-            
-            // 3. Показваме отговора на Агента
             addMessage(data.reply, 'bot');
         } catch (err) {
-            addMessage("Грешка при връзката. Опитайте пак.", 'bot');
-        } finally {
-            btn.disabled = false;
+            addMessage("Грешка при връзката с Агента.", 'bot');
         }
     }
 
@@ -73,8 +64,10 @@
         div.className = `message ${sender}`;
         div.innerText = text;
         messages.appendChild(div);
-        messages.scrollTop = messages.scrollHeight; // Скрол най-долу
+        messages.scrollTop = messages.scrollHeight;
     }
+
+    input.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
 </script>
 
 </body>

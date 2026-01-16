@@ -7,7 +7,6 @@
         body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
         input, button { display: block; width: 100%; margin-bottom: 10px; padding: 10px; }
         button { background: #007bff; color: white; border: none; cursor: pointer; }
-        button:hover { background: #0056b3; }
         .booking { border: 1px solid #ddd; padding: 10px; margin-top: 10px; border-radius: 5px; background: #f9f9f9; }
     </style>
 </head>
@@ -15,21 +14,22 @@
     <h1>🏨 Нова Резервация</h1>
     <form id="bookingForm">
         <input type="text" id="guest_name" placeholder="Име на госта" required>
-        <input type="text" id="reservation_code" placeholder="Код от Airbnb (напр. HMW123)" required>
+        <input type="text" id="reservation_code" placeholder="Код (напр. TEST100)" required>
         <label>Настаняване:</label>
         <input type="datetime-local" id="check_in" required>
         <label>Напускане:</label>
         <input type="datetime-local" id="check_out" required>
-        <button type="submit">ЗАПИШИ РЕЗЕРВАЦИЯТА</button>
+        <button type="submit">ЗАПИШИ В БАЗАТА</button>
     </form>
 
     <h2>📜 Списък с гости</h2>
     <div id="list">Зареждане...</div>
 
     <script>
-        const API_URL = 'http://localhost:10000';
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:10000' 
+            : window.location.origin;
 
-        // 1. Функция за добавяне
         document.getElementById('bookingForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
@@ -47,28 +47,22 @@
 
             const response = await res.json();
             if (response.success) {
-                alert(`Готово! Генериран ПИН код за вратата: ${response.booking.lock_pin}`);
-                loadBookings(); // Презареди списъка
-            } else {
-                alert('Грешка: ' + response.error);
+                alert(`Успех! ПИН: ${response.booking.lock_pin}`);
+                loadBookings();
             }
         });
 
-        // 2. Функция за показване на списъка
         async function loadBookings() {
             const res = await fetch(`${API_URL}/bookings`);
             const bookings = await res.json();
-            const list = document.getElementById('list');
-            list.innerHTML = bookings.map(b => `
+            document.getElementById('list').innerHTML = bookings.map(b => `
                 <div class="booking">
-                    <strong>${b.guest_name}</strong> (Код Airbnb: ${b.reservation_code})<br>
-                    🔐 ПИН за врата: <strong>${b.lock_pin}</strong><br>
-                    📅 От: ${new Date(b.check_in).toLocaleString()} До: ${new Date(b.check_out).toLocaleString()}
+                    <strong>${b.guest_name}</strong> - Код: ${b.reservation_code}<br>
+                    🔐 ПИН: ${b.lock_pin}
                 </div>
             `).join('');
         }
-
-        loadBookings(); // Зареди веднага при отваряне
+        loadBookings();
     </script>
 </body>
 </html>

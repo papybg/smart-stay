@@ -17,7 +17,6 @@ const pool = new Pool({
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 async function checkBookingInDB(code) {
-  console.log(`🔎 Търсене в базата за код: ${code}`);
   try {
     const res = await pool.query(
       "SELECT guest_name, check_in, check_out, lock_pin, payment_status FROM bookings WHERE reservation_code = $1", 
@@ -25,7 +24,6 @@ async function checkBookingInDB(code) {
     );
     return res.rows.length > 0 ? res.rows[0] : { error: "Няма такава резервация." };
   } catch (err) {
-    console.error("❌ Грешка при SQL:", err);
     return { error: "Проблем с базата." };
   }
 }
@@ -33,7 +31,6 @@ async function checkBookingInDB(code) {
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
   try {
-    // ТУК Е ПРОМЯНАТА
     const model = genAI.getGenerativeModel({ 
       model: "models/gemini-3-flash-preview", 
       systemInstruction: "Ти си Smart Stay Agent. Ако потребителят ти даде код (напр. TEST1), отговори само: CHECK_CODE: [кода]."
@@ -47,15 +44,14 @@ app.post('/chat', async (req, res) => {
       const dbData = await checkBookingInDB(code);
       
       const finalModel = genAI.getGenerativeModel({ model: "models/gemini-3-flash-preview" });
-      const finalResult = await finalModel.generateContent(`Данни: ${JSON.stringify(dbData)}. Отговори на български дали резервацията е намерена и кажи ПИН кода ако статусът е paid.`);
+      const finalResult = await finalModel.generateContent(`Данни: ${JSON.stringify(dbData)}. Отговори любезно на български дали резервацията е намерена и кажи ПИН кода само ако статусът е paid.`);
       
       res.json({ reply: finalResult.response.text() });
     } else {
       res.json({ reply: botResponse });
     }
   } catch (err) {
-    console.error("🔥 ГРЕШКА:", err);
-    res.status(500).json({ reply: "Грешка при връзката с АИ. Моля, опитайте пак." });
+    res.status(500).json({ reply: "Грешка при връзката с АИ." });
   }
 });
 
@@ -78,4 +74,4 @@ app.get('/bookings', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🤖 АГЕНТЪТ Е ОНЛАЙН на порт ${PORT}`));
+app.listen(PORT, () => console.log(`🤖 АГЕНТЪТ Е ОНЛАЙН`));
