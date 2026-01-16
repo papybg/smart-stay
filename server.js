@@ -31,9 +31,9 @@ async function checkBookingInDB(code) {
 app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
   try {
-    // Използваме стабилното име на модела
+    // ВРЪЩАМЕ МОДЕЛА, КОЙТО ТИ ПОСОЧИ: gemini-3-flash-preview
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash", 
+      model: "gemini-3-flash-preview", 
       systemInstruction: "Ти си Smart Stay Agent. Ако потребителят ти даде код (напр. TEST1), отговори само: CHECK_CODE: [кода]."
     });
 
@@ -44,7 +44,7 @@ app.post('/chat', async (req, res) => {
       const code = botResponse.split(":")[1].trim().replace("[", "").replace("]", "");
       const dbData = await checkBookingInDB(code);
       
-      const finalModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const finalModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
       const finalResult = await finalModel.generateContent(`Данни: ${JSON.stringify(dbData)}. Отговори любезно на български дали резервацията е намерена и кажи ПИН кода само ако статусът е paid.`);
       
       res.json({ reply: finalResult.response.text() });
@@ -57,7 +57,6 @@ app.post('/chat', async (req, res) => {
   }
 });
 
-// Ендпойнт за добавяне на резервации (за админ панела)
 app.post('/add-booking', async (req, res) => {
   const { guest_name, check_in, check_out, reservation_code } = req.body;
   const lock_pin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -77,4 +76,4 @@ app.get('/bookings', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🤖 АГЕНТЪТ Е ОНЛАЙН`));
+app.listen(PORT, () => console.log(`🤖 АГЕНТЪТ Е ОНЛАЙН С GEMINI 3`));
