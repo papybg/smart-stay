@@ -1,129 +1,32 @@
 <!DOCTYPE html>
-<html lang="bg">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Stay Admin</title>
-    <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background: #f4f4f9; }
-        h1 { text-align: center; color: #333; }
-        .form-group { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
-        button:hover { background: #218838; }
-        table { width: 100%; margin-top: 20px; border-collapse: collapse; background: white; }
-        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
-        th { background: #007bff; color: white; }
-    </style>
-</head>
-<body>
-
-    <h1>🏨 Управление на Резервации</h1>
-
-    <div class="form-group">
-        <h3>➕ Нова резервация</h3>
-        <input type="text" id="guest_name" placeholder="Име на госта (напр. Ivan Petrov)">
-        
-        <label>Дата и час на пристигане:</label>
-        <input type="datetime-local" id="check_in">
-        
-        <label>Дата и час на напускане:</label>
-        <input type="datetime-local" id="check_out">
-        
-        <input type="text" id="reservation_code" placeholder="Код за резервация (напр. RES123)">
-        <button onclick="addBooking()">Запиши в Neon DB</button>
-    </div>
-
-    <h3>📋 Списък с резервации</h3>
-    <table id="bookings-table">
-        <thead>
-            <tr>
-                <th>Име</th>
-                <th>Пристига</th>
-                <th>Напуска</th>
-                <th>Код</th>
-                <th>ПИН (Авто)</th>
-            </tr>
-        </thead>
-        <tbody id="table-body"></tbody>
-    </table>
+<html lang="bg"><body style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+    <h2>➕ Нова резервация</h2>
+    <input type="text" id="guest" placeholder="Име">
+    <input type="datetime-local" id="in">
+    <input type="datetime-local" id="out">
+    <input type="text" id="code" placeholder="Код">
+    <button onclick="add()" style="width:100%; padding:10px; background:green; color:white; margin-top:10px;">ЗАПИШИ В NEON</button>
+    
+    <table id="list" style="width:100%; margin-top:20px; border-collapse: collapse;"></table>
 
     <script>
-        // ТУК Е КЛЮЧЪТ! Вече сочи директно към облака
-        const API_URL = 'https://smart-stay.onrender.com';
-
-        async function addBooking() {
-            const guest_name = document.getElementById('guest_name').value;
-            const check_in = document.getElementById('check_in').value;
-            const check_out = document.getElementById('check_out').value;
-            const reservation_code = document.getElementById('reservation_code').value;
-
-            if(!guest_name || !check_in || !check_out || !reservation_code) {
-                alert("Моля, попълнете всички полета!");
-                return;
-            }
-
-            // Преобразуваме датата в формат, който базата харесва (Postgres)
-            const formattedCheckIn = check_in.replace('T', ' ') + ':00';
-            const formattedCheckOut = check_out.replace('T', ' ') + ':00';
-
-            try {
-                const res = await fetch(`${API_URL}/add-booking`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        guest_name, 
-                        check_in: formattedCheckIn, 
-                        check_out: formattedCheckOut, 
-                        reservation_code 
-                    })
-                });
-
-                const data = await res.json();
-                if (data.success) {
-                    alert(`✅ Готово! ПИН кодът е: ${data.booking.lock_pin}`);
-                    loadBookings(); // Презарежда таблицата
-                    // Чистим полетата
-                    document.getElementById('guest_name').value = '';
-                    document.getElementById('reservation_code').value = '';
-                } else {
-                    alert('Грешка: ' + data.error);
-                }
-            } catch (err) {
-                alert('Грешка при връзка със сървъра: ' + err.message);
-            }
+        const API = 'https://smart-stay.onrender.com';
+        async function add() {
+            const body = {
+                guest_name: document.getElementById('guest').value,
+                check_in: document.getElementById('in').value.replace('T', ' ') + ':00',
+                check_out: document.getElementById('out').value.replace('T', ' ') + ':00',
+                reservation_code: document.getElementById('code').value
+            };
+            const res = await fetch(`${API}/add-booking`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+            const data = await res.json();
+            if(data.success) { alert("ПИН: " + data.booking.lock_pin); location.reload(); }
         }
-
-        async function loadBookings() {
-            try {
-                const res = await fetch(`${API_URL}/bookings`);
-                const bookings = await res.json();
-                
-                const tbody = document.getElementById('table-body');
-                tbody.innerHTML = '';
-
-                bookings.forEach(b => {
-                    // Форматиране на датите за по-красиво
-                    const inDate = new Date(b.check_in).toLocaleString('bg-BG');
-                    const outDate = new Date(b.check_out).toLocaleString('bg-BG');
-
-                    const row = `<tr>
-                        <td>${b.guest_name}</td>
-                        <td>${inDate}</td>
-                        <td>${outDate}</td>
-                        <td><b>${b.reservation_code}</b></td>
-                        <td>🔐 ${b.lock_pin}</td>
-                    </tr>`;
-                    tbody.innerHTML += row;
-                });
-            } catch (err) {
-                console.error("Не мога да заредя резервациите:", err);
-            }
+        async function load() {
+            const res = await fetch(`${API}/bookings`);
+            const data = await res.json();
+            document.getElementById('list').innerHTML = data.map(b => `<tr><td>${b.guest_name}</td><td>${new Date(b.check_in).toLocaleString('bg-BG')}</td></tr>`).join('');
         }
-
-        // Зарежда списъка веднага щом отвориш страницата
-        loadBookings();
+        load();
     </script>
-
-</body>
-</html>
+</body></html>
