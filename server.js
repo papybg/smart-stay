@@ -68,12 +68,11 @@ app.get('/toggle', async (req, res) => {
 
 app.post('/chat', async (req, res) => {
     const userMessage = req.body.message;
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-3-flash-preview", 
-        systemInstruction: "Ти си Smart Stay Асистент. Ако видиш код, отговори само: CHECK_CODE: [кода]. Ако получиш данни, ги кажи любезно на БЪЛГАРСКИ. Ако няма данни, кажи че не намираш такава резервация."
-    });
+    const systemInstruction = "Ти си Smart Stay Асистент. Ако видиш код, отговори само: CHECK_CODE: [кода]. Ако получиш данни, ги кажи любезно на БЪЛГАРСКИ. Ако няма данни, кажи че не намираш такава резервация.";
 
-    try {
+    // Помощна функция за изпълнение на заявката с конкретен модел
+    const runAI = async (modelName) => {
+        const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
         let result = await model.generateContent(userMessage);
         let botResponse = result.response.text().trim();
 
@@ -84,8 +83,24 @@ app.post('/chat', async (req, res) => {
             const finalResult = await model.generateContent(`ДАННИ: ${JSON.stringify(dbData)}. Отговори любезно.`);
             botResponse = finalResult.response.text();
         }
-        res.json({ reply: botResponse });
-    } catch (err) { res.json({ reply: "Опитай пак." }); }
+        return botResponse;
+    };
+
+    try {
+        // 1. Опит с основния модел (Gemini 3.0 Preview)
+        const reply = await runAI("gemini-3.0-flash-preview");
+        res.json({ reply });
+    } catch (err) {
+        console.warn("⚠️ Gemini 3.0 failed, switching to fallback (2.5 Flash)...", err.message);
+        try {
+            // 2. Fallback към по-стабилен модел (Gemini 2.5)
+            const reply = await runAI("gemini-2.5-flash");
+            res.json({ reply });
+        } catch (fallbackErr) {
+            console.error("❌ All models failed:", fallbackErr);
+            res.json({ reply: "Опитай пак. (Грешка в AI модула)" });
+        }
+    }
 });
 
 app.post('/add-booking', async (req, res) => {
