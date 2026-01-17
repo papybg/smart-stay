@@ -127,7 +127,6 @@ cron.schedule('*/10 * * * *', async () => {
     } catch (err) { console.error('Cron OFF error:', err); }
 });
 
-app.get('/status', async (req, res) => {
 app.get('/status', basicAuth, async (req, res) => {
     try {
         const isOn = await getSmartStatus();
@@ -135,7 +134,6 @@ app.get('/status', basicAuth, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/toggle', async (req, res) => {
 app.get('/toggle', basicAuth, async (req, res) => {
     try {
         const currentStatus = await getSmartStatus();
@@ -189,7 +187,6 @@ app.post('/chat', async (req, res) => {
     }
 });
 
-app.post('/add-booking', async (req, res) => {
 app.post('/add-booking', basicAuth, async (req, res) => {
     const { guest_name, check_in, check_out, reservation_code } = req.body;
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -200,7 +197,6 @@ app.post('/add-booking', basicAuth, async (req, res) => {
     res.json({ success: true, pin: result.rows[0].lock_pin });
 });
 
-app.get('/bookings', async (req, res) => {
 app.get('/bookings', basicAuth, async (req, res) => {
     const result = await pool.query('SELECT * FROM bookings ORDER BY created_at DESC');
     res.json(result.rows);
