@@ -189,12 +189,25 @@ app.post('/chat', async (req, res) => {
 
 app.post('/add-booking', basicAuth, async (req, res) => {
     const { guest_name, check_in, check_out, reservation_code } = req.body;
-    const pin = Math.floor(100000 + Math.random() * 900000).toString();
-    const result = await pool.query(
-        "INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid') RETURNING lock_pin",
-        [guest_name, check_in, check_out, reservation_code, pin]
-    );
-    res.json({ success: true, pin: result.rows[0].lock_pin });
+
+    // 1. ВАЛИДАЦИЯ: Не позволяваме запис, ако липсват данни
+    if (!guest_name || !check_in || !check_out || !reservation_code) {
+        return res.status(400).json({ error: "Моля попълнете всички полета (вкл. код на резервация)!" });
+    }
+
+    try {
+        const pin = Math.floor(100000 + Math.random() * 900000).toString();
+        const result = await pool.query(
+            "INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid') RETURNING lock_pin",
+            [guest_name, check_in, check_out, reservation_code, pin]
+        );
+        res.json({ success: true, pin: result.rows[0].lock_pin });
+    } catch (err) {
+        console.error("Booking Error:", err);
+        // Ако базата върне грешка за дублиран код (код 23505 в Postgres)
+        if (err.code === '23505') return res.status(400).json({ error: "Вече има резервация с този код!" });
+        res.status(500).json({ error: "Грешка при запис в базата." });
+    }
 });
 
 app.get('/bookings', basicAuth, async (req, res) => {
