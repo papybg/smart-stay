@@ -63,7 +63,7 @@ cron.schedule('*/10 * * * *', async () => {
     try {
         const query = `
             SELECT * FROM bookings 
-            WHERE check_in::timestamp > (NOW() AT TIME ZONE 'UTC' + INTERVAL '2 hours') 
+            WHERE check_in::timestamp > (NOW() AT TIME ZONE 'UTC') 
             AND check_in::timestamp < (NOW() AT TIME ZONE 'UTC' + INTERVAL '6 hours')
         `;
         const result = await pool.query(query);
@@ -195,6 +195,29 @@ app.post('/add-booking', basicAuth, async (req, res) => {
         return res.status(400).json({ error: "Моля попълнете всички полета (вкл. код на резервация)!" });
     }
 
+    // 2. ВАЛИДАЦИЯ НА ДАТИ: Проверка за минало време и логика
+    const startDate = new Date(check_in);
+    const endDate = new Date(check_out);
+    const now = new Date();
+
+    if (startDate < now) {
+        return res.status(400).json({ error: "Грешка: Датата на настаняване е в миналото!" });
+    }
+    if (endDate <= startDate) {
+        return res.status(400).json({ error: "Грешка: Датата на напускане трябва да е след настаняването!" });
+    }
+
+    // 3. ПРОВЕРКА ЗА ЗАСТЪПВАНЕ (Overlap)
+    // Търсим дали има резервация, която започва преди новата да свърши И свършва след като новата започне
+    const overlapCheck = await pool.query(
+        "SELECT * FROM bookings WHERE check_in < $2 AND check_out > $1",
+        [check_in, check_out]
+    );
+
+    if (overlapCheck.rows.length > 0) {
+        return res.status(400).json({ error: "Грешка: Има застъпване с друга резервация за тези дати!" });
+    }
+
     try {
         const pin = Math.floor(100000 + Math.random() * 900000).toString();
         const result = await pool.query(
@@ -213,6 +236,13 @@ app.post('/add-booking', basicAuth, async (req, res) => {
 app.get('/bookings', basicAuth, async (req, res) => {
     const result = await pool.query('SELECT * FROM bookings ORDER BY created_at DESC');
     res.json(result.rows);
+});
+
+app.delete('/bookings/:id', basicAuth, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM bookings WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.listen(process.env.PORT || 10000);

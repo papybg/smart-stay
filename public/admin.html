@@ -10,22 +10,54 @@
     <table id="list" style="width:100%; margin-top:20px; border-collapse: collapse;"></table>
 
     <script>
-        const API = 'https://smart-stay.onrender.com';
+        const API = ''; // Оставяме празно за автоматично разпознаване (localhost/render)
+
         async function add() {
             const body = {
                 guest_name: document.getElementById('guest').value,
-                check_in: document.getElementById('in').value.replace('T', ' ') + ':00',
-                check_out: document.getElementById('out').value.replace('T', ' ') + ':00',
+                check_in: document.getElementById('in').value,
+                check_out: document.getElementById('out').value,
                 reservation_code: document.getElementById('code').value
             };
+
             const res = await fetch(`${API}/add-booking`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
             const data = await res.json();
-            if(data.success) { alert("ПИН: " + data.booking.lock_pin); location.reload(); }
+            
+            if(data.success) { 
+                alert("✅ Успешно! ПИН код: " + data.pin);
+                // Изчистване на формата
+                document.querySelectorAll('input').forEach(i => i.value = '');
+                load(); // Презареждане само на таблицата, без рефреш на страницата
+            } else {
+                alert("❌ Грешка: " + data.error);
+            }
         }
+
+        async function del(id) {
+            if(!confirm('Сигурни ли сте, че искате да изтриете тази резервация?')) return;
+            await fetch(`${API}/bookings/${id}`, { method: 'DELETE' });
+            load();
+        }
+
         async function load() {
             const res = await fetch(`${API}/bookings`);
             const data = await res.json();
-            document.getElementById('list').innerHTML = data.map(b => `<tr><td>${b.guest_name}</td><td>${new Date(b.check_in).toLocaleString('bg-BG')}</td></tr>`).join('');
+            
+            const header = `<tr style="background:#333; color:white; text-align:left;"><th>Гост</th><th>Настаняване</th><th>Напускане</th><th>Код</th><th>ПИН</th><th>Действие</th></tr>`;
+            
+            // Филтрираме само активните (бъдещи и текущи) резервации
+            const activeData = data.filter(b => new Date(b.check_out) > new Date());
+
+            document.getElementById('list').innerHTML = header + activeData.map(b => `
+                <tr style="border-bottom:1px solid #ccc;">
+                    <td style="padding:8px;">${b.guest_name}</td>
+                    <td style="padding:8px;">${new Date(b.check_in).toLocaleString('bg-BG')}</td>
+                    <td style="padding:8px;">${new Date(b.check_out).toLocaleString('bg-BG')}</td>
+                    <td style="padding:8px;">${b.reservation_code}</td>
+                    <td style="padding:8px; font-weight:bold;">${b.lock_pin}</td>
+                    <td style="padding:8px;"><button onclick="del(${b.id})" style="background:#d9534f; color:white; border:none; padding:5px 10px; cursor:pointer;">Изтрий</button></td>
+                </tr>
+            `).join('');
         }
         load();
     </script>
