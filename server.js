@@ -9,6 +9,21 @@ const cron = require('node-cron');
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// --- SECURITY: BASIC AUTH ---
+const basicAuth = (req, res, next) => {
+    const user = process.env.ADMIN_USER || 'admin';
+    const pass = process.env.ADMIN_PASS || 'smartstay2026'; // Смени паролата в .env!
+    const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+    const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+    if (login && password && login === user && password === pass) return next();
+    res.set('WWW-Authenticate', 'Basic realm="Smart Stay Admin"');
+    res.status(401).send('Authentication required.');
+};
+
+// Защитаваме админските панели ПРЕДИ да ги сервираме като статични файлове
+app.get(['/admin.html', '/remote.html'], basicAuth, (req, res, next) => next());
+
 app.use(express.static('public'));
 
 const pool = new Pool({
@@ -23,6 +38,25 @@ const tuya = new TuyaContext({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// --- CACHE SYSTEM (Пестене на заявки) ---
+let deviceCache = {
+    isOn: false,
+    lastUpdated: 0
+};
+
+// Помощна функция: Взима статус интелигентно (от кеша или от Tuya)
+async function getSmartStatus() {
+    const now = Date.now();
+    // Ако информацията е по-стара от 30 секунди, питаме Tuya
+    if (now - deviceCache.lastUpdated > 30000) {
+        const data = await tuya.request({ path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/status`, method: 'GET' });
+        const sw = data.result.find(i => i.code === 'switch');
+        deviceCache.isOn = sw.value;
+        deviceCache.lastUpdated = now;
+    }
+    return deviceCache.isOn;
+}
 
 // --- АВТОПИЛОТ ---
 cron.schedule('*/10 * * * *', async () => {
@@ -40,28 +74,80 @@ cron.schedule('*/10 * * * *', async () => {
                 method: 'POST',
                 body: { commands: [{ code: 'switch', value: true }] }
             });
+            // 1. Първо проверяваме статуса (през кеша)
+            const isAlreadyOn = await getSmartStatus();
+
+            if (!isAlreadyOn) {
+                console.log("🛎️ Автопилот: Пускам тока за гости.");
+                await tuya.request({
+                    path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
+                    method: 'POST',
+                    body: { commands: [{ code: 'switch', value: true }] }
+                });
+                // Обновяваме кеша ръчно, защото знаем, че сме го пуснали
+                deviceCache.isOn = true;
+                deviceCache.lastUpdated = Date.now();
+            } else { console.log("✅ Автопилот: Токът вече е пуснат. Няма нужда от действие."); }
         }
     } catch (err) { console.error('Cron error:', err); }
 });
 
-app.get('/status', async (req, res) => {
+// --- АВТОПИЛОТ (ИЗКЛЮЧВАНЕ) ---
+cron.schedule('*/10 * * * *', async () => {
     try {
-        const data = await tuya.request({ path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/status`, method: 'GET' });
-        const sw = data.result.find(i => i.code === 'switch');
-        res.json({ is_on: sw.value });
+        // Търсим резервации, които са приключили преди повече от 1 час (но по-малко от 2 часа, за да не пращаме команди постоянно)
+        const query = `
+            SELECT * FROM bookings 
+            WHERE check_out::timestamp < (NOW() AT TIME ZONE 'UTC' - INTERVAL '1 hour') 
+            AND check_out::timestamp > (NOW() AT TIME ZONE 'UTC' - INTERVAL '2 hours')
+        `;
+        const result = await pool.query(query);
+        if (result.rows.length > 0) {
+            console.log("🌑 Автопилот: Изключвам тока след напускане.");
+            await tuya.request({
+                path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
+                method: 'POST',
+                body: { commands: [{ code: 'switch', value: false }] }
+            });
+            // 1. Проверяваме дали вече не е изключен (през кеша)
+            const isStillOn = await getSmartStatus();
+
+            if (isStillOn) {
+                console.log("🌑 Автопилот: Изключвам тока след напускане.");
+                await tuya.request({
+                    path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
+                    method: 'POST',
+                    body: { commands: [{ code: 'switch', value: false }] }
+                });
+                // Обновяваме кеша ръчно
+                deviceCache.isOn = false;
+                deviceCache.lastUpdated = Date.now();
+            } else { console.log("✅ Автопилот: Токът вече е спрян. Няма нужда от действие."); }
+        }
+    } catch (err) { console.error('Cron OFF error:', err); }
+});
+
+app.get('/status', async (req, res) => {
+app.get('/status', basicAuth, async (req, res) => {
+    try {
+        const isOn = await getSmartStatus();
+        res.json({ is_on: isOn });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/toggle', async (req, res) => {
+app.get('/toggle', basicAuth, async (req, res) => {
     try {
-        const data = await tuya.request({ path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/status`, method: 'GET' });
-        const sw = data.result.find(i => i.code === 'switch');
-        const newVal = !sw.value;
+        const currentStatus = await getSmartStatus();
+        const newVal = !currentStatus;
         await tuya.request({
             path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
             method: 'POST',
             body: { commands: [{ code: 'switch', value: newVal }] }
         });
+        // Веднага обновяваме кеша, за да реагира интерфейсът мигновено
+        deviceCache.isOn = newVal;
+        deviceCache.lastUpdated = Date.now();
         res.send(`OK: ${newVal}`);
     } catch (e) { res.status(500).send(e.message); }
 });
@@ -104,6 +190,7 @@ app.post('/chat', async (req, res) => {
 });
 
 app.post('/add-booking', async (req, res) => {
+app.post('/add-booking', basicAuth, async (req, res) => {
     const { guest_name, check_in, check_out, reservation_code } = req.body;
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
     const result = await pool.query(
@@ -114,6 +201,7 @@ app.post('/add-booking', async (req, res) => {
 });
 
 app.get('/bookings', async (req, res) => {
+app.get('/bookings', basicAuth, async (req, res) => {
     const result = await pool.query('SELECT * FROM bookings ORDER BY created_at DESC');
     res.json(result.rows);
 });
