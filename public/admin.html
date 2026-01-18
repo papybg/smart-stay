@@ -13,10 +13,13 @@
         const API = ''; // Оставяме празно за автоматично разпознаване (localhost/render)
 
         async function add() {
+            const inDate = new Date(document.getElementById('in').value);
+            const outDate = new Date(document.getElementById('out').value);
+
             const body = {
                 guest_name: document.getElementById('guest').value,
-                check_in: document.getElementById('in').value,
-                check_out: document.getElementById('out').value,
+                check_in: inDate.toISOString(), // Пращаме UTC време
+                check_out: outDate.toISOString(),
                 reservation_code: document.getElementById('code').value
             };
 
@@ -35,12 +38,17 @@
 
         async function del(id) {
             if(!confirm('Сигурни ли сте, че искате да изтриете тази резервация?')) return;
-            await fetch(`${API}/bookings/${id}`, { method: 'DELETE' });
-            load();
+            const res = await fetch(`${API}/bookings/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                load();
+            } else {
+                alert("❌ Грешка при изтриване!");
+            }
         }
 
         async function load() {
-            const res = await fetch(`${API}/bookings`);
+            // Добавяме ?t=... за да сме сигурни, че не взимаме кеширан списък
+            const res = await fetch(`${API}/bookings?t=${Date.now()}`);
             const data = await res.json();
             
             const header = `

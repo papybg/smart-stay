@@ -281,6 +281,12 @@ app.post('/add-booking', basicAuth, async (req, res) => {
         return res.status(400).json({ error: "Грешка: Датата на напускане трябва да е след настаняването!" });
     }
 
+    // 2.1. ПРОВЕРКА ЗА ДУБЛИРАН КОД (Преди датите)
+    const codeCheck = await pool.query("SELECT id FROM bookings WHERE reservation_code = $1", [reservation_code]);
+    if (codeCheck.rows.length > 0) {
+        return res.status(400).json({ error: "Вече има резервация с този код!" });
+    }
+
     // 3. ПРОВЕРКА ЗА ЗАСТЪПВАНЕ (Overlap)
     // Търсим дали има резервация, която започва преди новата да свърши И свършва след като новата започне
     const overlapCheck = await pool.query(
@@ -308,6 +314,7 @@ app.post('/add-booking', basicAuth, async (req, res) => {
 });
 
 app.get('/bookings', basicAuth, async (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     const result = await pool.query('SELECT * FROM bookings ORDER BY created_at DESC');
     res.json(result.rows);
 });
@@ -315,6 +322,7 @@ app.get('/bookings', basicAuth, async (req, res) => {
 app.delete('/bookings/:id', basicAuth, async (req, res) => {
     try {
         await pool.query('DELETE FROM bookings WHERE id = $1', [req.params.id]);
+        console.log(`🗑️ Изтрита резервация ID: ${req.params.id}`);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
