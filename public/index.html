@@ -2,96 +2,227 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Stay Agent</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smart Stay Concierge</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .chat-container { width: 100%; max-width: 400px; background: white; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column; height: 80vh; }
-        .header { background: #0084ff; color: white; padding: 15px; text-align: center; font-weight: bold; }
-        .chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-        .message { max-width: 80%; padding: 10px 15px; border-radius: 18px; font-size: 14px; line-height: 1.4; }
-        .bot { background: #e4e6eb; color: black; align-self: flex-start; border-bottom-left-radius: 2px; }
-        .user { background: #0084ff; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
-        .input-area { display: flex; padding: 10px; border-top: 1px solid #ddd; background: #fff; }
-        input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
-        button { background: #0084ff; color: white; border: none; padding: 10px 20px; margin-left: 10px; border-radius: 20px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #006bcf; }
-        .typing { font-style: italic; color: #888; font-size: 12px; margin-left: 10px; display: none; }
+        /* --- МОДЕРЕН UI (App-like) --- */
+        :root {
+            --primary-color: #0084ff; /* Messenger Blue */
+            --bg-color: #f0f2f5;
+            --my-msg-bg: #0084ff;
+            --bot-msg-bg: #e4e6eb;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 0;
+            /* 100dvh е магията за мобилни браузъри - заема точно видимата част */
+            height: 100dvh; 
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* Спира скрола на цялата страница */
+        }
+
+        /* Хедър - Фиксиран горе */
+        header {
+            background: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 18px;
+            color: #333;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        /* Основна зона за чат - Скролва се */
+        #chat-box {
+            flex: 1; /* Заема цялото свободно място */
+            overflow-y: auto; /* Само то се скролва */
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch; /* Мазен скрол за iOS */
+        }
+
+        /* Съобщения */
+        .message {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 18px;
+            font-size: 15px;
+            line-height: 1.4;
+            position: relative;
+            word-wrap: break-word;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .bot {
+            background: var(--bot-msg-bg);
+            color: #050505;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .user {
+            background: var(--primary-color);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        /* Зона за писане - Фиксирана долу */
+        .input-area {
+            background: white;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-top: 1px solid #ddd;
+            /* Безопасна зона за iPhone X/11/12/13/14 */
+            padding-bottom: env(safe-area-inset-bottom, 10px); 
+        }
+
+        input {
+            flex: 1;
+            padding: 12px 15px;
+            background: #f0f2f5;
+            border: none;
+            border-radius: 20px;
+            font-size: 16px; /* 16px спира зуума на iPhone при писане */
+            outline: none;
+        }
+
+        button {
+            background: none;
+            border: none;
+            color: var(--primary-color);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 5px 10px;
+            transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.9); }
+
+        /* Анимация "Пише..." */
+        .typing-indicator {
+            display: none;
+            align-self: flex-start;
+            background: var(--bot-msg-bg);
+            padding: 8px 12px;
+            border-radius: 15px;
+            margin-bottom: 5px;
+            color: #666;
+            font-size: 12px;
+            font-style: italic;
+        }
+        
+        /* Специален стил за ПИН кодове в текста */
+        .highlight-pin {
+            background: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            border: 1px solid #ccc;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
     </style>
 </head>
 <body>
 
-<div class="chat-container">
-    <div class="header">Smart Stay Agent 🤖</div>
-    <div class="chat-box" id="chat-box">
-        <div class="message bot">Здравейте! Аз съм вашият виртуален домакин. Моля, въведете своя <b>Код за резервация</b>, за да получите достъп.</div>
+    <header>
+        🤖 <span>Дигитален Асистент</span>
+    </header>
+
+    <div id="chat-box">
+        <div class="message bot">
+            Здравейте! Аз съм вашият виртуален домакин. 👋<br><br>
+            Напишете вашия <b>Код за резервация</b>, за да ви дам достъп до апартамента.
+        </div>
+        <div class="typing-indicator" id="loader">● ● ●</div>
     </div>
-    <div class="typing" id="typing">Агентът пише...</div>
+
     <div class="input-area">
-        <input type="text" id="user-input" placeholder="Напиши съобщение..." onkeypress="handleKeyPress(event)">
-        <button onclick="sendMessage()">Изпрати</button>
+        <input type="text" id="user-input" placeholder="Съобщение..." autocomplete="off">
+        <button onclick="sendMessage()">➤</button>
     </div>
-</div>
 
-<script>
-    // ---------------------------------------------------------
-    // ТУК Е МАГИЯТА ЗА ВРЪЗКАТА С RENDER
-    // ---------------------------------------------------------
-    const API_URL = window.location.hostname === 'localhost' 
-        ? 'http://localhost:10000' 
-        : 'https://smart-stay.onrender.com'; 
-    // ---------------------------------------------------------
+    <script>
+        // =======================================================
+        // ⚠️ ВАЖНО: Сложи тук истинския линк от Render!
+        // =======================================================
+        const BACKEND_URL = 'https://tvoyat-backend-v-render.onrender.com'; 
+        // =======================================================
 
-    const chatBox = document.getElementById('chat-box');
-    const userInput = document.getElementById('user-input');
-    const typingIndicator = document.getElementById('typing');
+        const chatBox = document.getElementById('chat-box');
+        const userInput = document.getElementById('user-input');
+        const loader = document.getElementById('loader');
 
-    function handleKeyPress(event) {
-        if (event.key === 'Enter') sendMessage();
-    }
+        // Пращане с Enter
+        userInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') sendMessage();
+        });
 
-    async function sendMessage() {
-        const text = userInput.value.trim();
-        if (!text) return;
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
 
-        // 1. Показваме съобщението на потребителя
-        addMessage(text, 'user');
-        userInput.value = '';
-        
-        // 2. Показваме "Агентът пише..."
-        typingIndicator.style.display = 'block';
-        chatBox.scrollTop = chatBox.scrollHeight;
-
-        try {
-            // 3. Изпращаме към Render
-            const response = await fetch(`${API_URL}/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text })
-            });
-
-            const data = await response.json();
+            // 1. Показваме съобщението на потребителя
+            addMessage(text, 'user');
+            userInput.value = '';
             
-            // 4. Скриваме "Агентът пише..." и показваме отговора
-            typingIndicator.style.display = 'none';
-            addMessage(data.reply, 'bot');
+            // 2. Показваме анимацията
+            loader.style.display = 'block';
+            chatBox.scrollTop = chatBox.scrollHeight;
 
-        } catch (error) {
-            typingIndicator.style.display = 'none';
-            console.error("Грешка:", error);
-            addMessage("⚠️ Опа, загубих връзка със сървъра. Моля, проверете интернета си.", 'bot');
+            try {
+                const response = await fetch(`${BACKEND_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+
+                const data = await response.json();
+                
+                // 3. Махаме анимацията и показваме отговора
+                loader.style.display = 'none';
+                addMessage(data.reply, 'bot');
+
+            } catch (error) {
+                loader.style.display = 'none';
+                addMessage("⚠️ Няма връзка. Моля проверете интернет връзката си.", 'bot');
+                console.error(error);
+            }
         }
-    }
 
-    function addMessage(text, sender) {
-        const msgDiv = document.createElement('div');
-        msgDiv.classList.add('message', sender);
-        // Позволяваме нов ред и болдване в отговора
-        msgDiv.innerHTML = text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-        chatBox.appendChild(msgDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
-</script>
+        function addMessage(text, sender) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message', sender);
+            
+            // Форматиране на текст (Bold и PIN кодове)
+            let formatted = text
+                .replace(/\n/g, '<br>')
+                .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') // Bold
+                .replace(/CHECK_CODE: (.*)/g, ''); // Крием системните кодове ако излязат
+
+            msgDiv.innerHTML = formatted;
+            
+            // Вмъкваме ПРЕДИ loader-а
+            chatBox.insertBefore(msgDiv, loader);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    </script>
 
 </body>
 </html>
