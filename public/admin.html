@@ -1,96 +1,176 @@
 <!DOCTYPE html>
-<html lang="bg"><body style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px;">
-    <h2>➕ Нова резервация (v2.2)</h2>
-    <input type="text" id="guest" placeholder="Име">
-    <input type="datetime-local" id="in">
-    <input type="datetime-local" id="out">
-    <input type="text" id="code" placeholder="Код">
-    <button onclick="add()" style="width:100%; padding:10px; background:green; color:white; margin-top:10px;">ЗАПИШИ В NEON</button>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Stay Admin</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: auto; padding: 20px; background: #f4f4f4; }
+        h2 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+        .control-panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        input { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:hover { background: #218838; }
+        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        th { background: #333; color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #ddd; }
+        .live-status { font-weight: bold; padding: 10px; text-align: center; background: #ddd; margin-bottom: 20px; border-radius: 4px; }
+        .status-on { background: #d4edda; color: #155724; }
+        .status-off { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+
+    <div id="liveStatus" class="live-status">Checking System Status...</div>
+
+    <div class="control-panel">
+        <h2>➕ Нова резервация</h2>
+        <input type="text" id="guest" placeholder="Име на госта">
+        <label><small>Настаняване (Check-in):</small></label>
+        <input type="datetime-local" id="in">
+        <label><small>Напускане (Check-out):</small></label>
+        <input type="datetime-local" id="out">
+        <input type="text" id="code" placeholder="Код на резервация (напр. HMA...)">
+        <button onclick="add()">ЗАПИШИ РЕЗЕРВАЦИЯТА</button>
+    </div>
     
-    <table id="list" style="width:100%; margin-top:20px; border-collapse: collapse;"></table>
+    <h3>📅 Активни резервации</h3>
+    <table id="list"></table>
 
     <script>
         const API = ''; // Оставяме празно за автоматично разпознаване (localhost/render)
 
+        // 1. Функция за добавяне с КОРЕКЦИЯ НА ЧАСОВЕТЕ
         async function add() {
-            const inDate = new Date(document.getElementById('in').value);
-            const outDate = new Date(document.getElementById('out').value);
+            const guest = document.getElementById('guest').value;
+            const inVal = document.getElementById('in').value;
+            const outVal = document.getElementById('out').value;
+            const code = document.getElementById('code').value;
 
+            if(!guest || !inVal || !outVal || !code) {
+                alert("Моля попълнете всички полета!");
+                return;
+            }
+
+            // ТУК Е FIX-ът: .toISOString() превръща твоето време в UTC за сървъра
+            // Така 14:00 БГ става 12:00 UTC, и после се връща правилно
             const body = {
-                guest_name: document.getElementById('guest').value,
-                check_in: inDate.toISOString(), // Това ВАДИ 2 часа (14:00 -> 12:00 UTC)
-                check_out: outDate.toISOString(), 
-                reservation_code: document.getElementById('code').value
+                guest_name: guest,
+                check_in: new Date(inVal).toISOString(),
+                check_out: new Date(outVal).toISOString(),
+                reservation_code: code
             };
 
-            const res = await fetch(`${API}/add-booking`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-            const data = await res.json();
-            
-            if(data.success) { 
-                alert("✅ Успешно! ПИН код: " + data.pin);
-                // Изчистване на формата
-                document.querySelectorAll('input').forEach(i => i.value = '');
-                load(); // Презареждане само на таблицата, без рефреш на страницата
-            } else {
-                alert("❌ Грешка: " + data.error);
+            try {
+                const res = await fetch(`${API}/add-booking`, { 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                
+                if(data.success) { 
+                    alert("✅ Успешно! ПИН код за вратата: " + data.pin);
+                    // Чистим полетата
+                    document.getElementById('guest').value = '';
+                    document.getElementById('code').value = '';
+                    load(); 
+                } else {
+                    alert("❌ Грешка: " + data.error);
+                }
+            } catch (e) {
+                alert("Грешка при свързване със сървъра!");
             }
         }
 
         async function del(id) {
-            if(!confirm('Сигурни ли сте, че искате да изтриете тази резервация?')) return;
-            const res = await fetch(`${API}/bookings/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                load();
-            } else {
-                alert("❌ Грешка при изтриване!");
-            }
+            if(!confirm('Сигурни ли сте? Това ще изтрие резервацията завинаги.')) return;
+            await fetch(`${API}/bookings/${id}`, { method: 'DELETE' });
+            load();
         }
 
+        // 2. Функция за зареждане на таблицата с ПРАВИЛНИ статуси
         async function load() {
-            // Добавяме ?t=... за да сме сигурни, че не взимаме кеширан списък
-            const res = await fetch(`${API}/bookings?t=${Date.now()}`);
-            const data = await res.json();
-            
-            const header = `
-                <tr style="background:#333; color:white; text-align:left;">
-                    <th style="padding:10px;">Гост</th>
-                    <th>Настаняване / Ток ON</th>
-                    <th>Напускане / Ток OFF</th>
-                    <th>Брава (PIN)</th>
-                    <th>Действие</th>
-                </tr>`;
-            
-            // Филтрираме само активните (бъдещи и текущи) резервации
-            const activeData = data.filter(b => new Date(b.check_out) > new Date());
+            try {
+                const res = await fetch(`${API}/bookings?t=${Date.now()}`); // Без кеш
+                const data = await res.json();
+                
+                const header = `
+                    <tr>
+                        <th>Гост / Код</th>
+                        <th>Настаняване (ON)</th>
+                        <th>Напускане (OFF)</th>
+                        <th>Действие</th>
+                    </tr>`;
+                
+                // Показваме резервации до 24ч назад
+                const activeData = data.filter(b => new Date(b.check_out) > new Date(Date.now() - 86400000));
 
-            document.getElementById('list').innerHTML = header + activeData.map(b => {
-                // Логика за визуализация на статусите
-                const checkInDate = new Date(b.check_in);
-                const checkOutDate = new Date(b.check_out);
-                const offTime = new Date(checkOutDate.getTime() + 3600000); // +1 час
+                document.getElementById('list').innerHTML = header + activeData.map(b => {
+                    const checkIn = new Date(b.check_in);
+                    const checkOut = new Date(b.check_out);
+                    
+                    // Планираното спиране е 1 час след напускане
+                    const plannedOff = new Date(checkOut.getTime() + 3600000); 
 
-                const onStatus = b.power_on_time ? '✅ <small style="color:green">ВКЛЮЧЕН</small>' : '⏳ <small style="color:#888">ЧАКА</small>';
-                const offStatus = b.power_off_time ? '✅ <small style="color:red">ИЗКЛЮЧЕН</small>' : '⏳ <small style="color:#888">ЧАКА</small>';
+                    // Статуси от базата данни (кога реално е станало)
+                    const onStatus = b.power_on_time 
+                        ? `<div style="color:green; font-weight:bold;">⚡ ВКЛЮЧЕН в ${new Date(b.power_on_time).toLocaleTimeString('bg-BG')}</div>` 
+                        : '<div style="color:#999;">⏳ Чака таймер</div>';
+                        
+                    const offStatus = b.power_off_time 
+                        ? `<div style="color:red; font-weight:bold;">🌑 ИЗКЛЮЧЕН</div>` 
+                        : `<div style="color:#999;">⏳ Ще спре в ${plannedOff.toLocaleTimeString('bg-BG', {hour:'2-digit', minute:'2-digit'})}</div>`;
 
-                return `
-                <tr style="border-bottom:1px solid #ccc;">
-                    <td style="padding:8px;">${b.guest_name}</td>
-                    <td style="padding:8px;">
-                        <div>📅 ${checkInDate.toLocaleString('bg-BG')}</div>
-                        <div style="margin-top:4px;">⚡ ${onStatus}</div>
-                    </td>
-                    <td style="padding:8px;">
-                        <div>📅 ${checkOutDate.toLocaleString('bg-BG')}</div>
-                        <div style="margin-top:4px;">🔌 Планирано спиране: ${offTime.toLocaleTimeString('bg-BG', {hour:'2-digit', minute:'2-digit'})} ${offStatus}</div>
-                    </td>
-                    <td style="padding:8px;">
-                        <div style="font-weight:bold; font-size:1.1em;">🔑 ${b.lock_pin}</div>
-                        <small style="color:#666">Res: ${b.reservation_code}</small>
-                    </td>
-                    <td style="padding:8px;"><button onclick="del(${b.id})" style="background:#d9534f; color:white; border:none; padding:5px 10px; cursor:pointer;">Изтрий</button></td>
-                </tr>
-            `}).join('');
+                    return `
+                    <tr>
+                        <td>
+                            <b>${b.guest_name}</b><br>
+                            <small>Res: ${b.reservation_code}</small><br>
+                            <span style="background:#eee; padding:2px 5px; border-radius:3px;">🔑 ${b.lock_pin}</span>
+                        </td>
+                        <td>
+                            ${checkIn.toLocaleString('bg-BG')}<br>
+                            ${onStatus}
+                        </td>
+                        <td>
+                            ${checkOut.toLocaleString('bg-BG')}<br>
+                            ${offStatus}
+                        </td>
+                        <td>
+                            <button onclick="del(${b.id})" style="background:#dc3545; padding:5px;">Изтрий</button>
+                        </td>
+                    </tr>`;
+                }).join('');
+
+                // Обновяваме и глобалния статус най-горе
+                checkSystemStatus();
+
+            } catch (e) { console.error(e); }
         }
+
+        // 3. Проверка дали лампата свети В МОМЕНТА (независимо от резервациите)
+        async function checkSystemStatus() {
+            try {
+                const res = await fetch(`${API}/status`);
+                const data = await res.json();
+                const div = document.getElementById('liveStatus');
+                if (data.is_on) {
+                    div.innerHTML = "⚡ ВНИМАНИЕ: ТОКЪТ В АПАРТАМЕНТА Е ВКЛЮЧЕН";
+                    div.className = "live-status status-on";
+                } else {
+                    div.innerHTML = "🌑 Токът в апартамента е изключен";
+                    div.className = "live-status status-off";
+                }
+            } catch(e) {}
+        }
+
+        // Първоначално зареждане
         load();
+        
+        // Автоматичен рефреш на всеки 30 секунди
+        setInterval(load, 30000);
+
     </script>
-</body></html>
+</body>
+</html>
