@@ -5,83 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Smart Stay Concierge</title>
     <style>
-        /* --- МОДЕРЕН UI (App-like) --- */
+        /* --- ДИЗАЙН ЗА ТЕЛЕФОН (MESSENGER STYLE) --- */
         :root {
-            --primary-color: #0084ff; /* Messenger Blue */
+            --primary-color: #0084ff;
             --bg-color: #f0f2f5;
-            --my-msg-bg: #0084ff;
-            --bot-msg-bg: #e4e6eb;
+            --bot-bg: #e4e6eb;
         }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg-color);
             margin: 0;
-            padding: 0;
-            /* 100dvh е магията за мобилни браузъри - заема точно видимата част */
-            height: 100dvh; 
+            height: 100dvh; /* Цял екран на мобилни */
             display: flex;
             flex-direction: column;
-            overflow: hidden; /* Спира скрола на цялата страница */
+            overflow: hidden;
         }
 
-        /* Хедър - Фиксиран горе */
         header {
             background: white;
             padding: 15px;
             text-align: center;
             font-weight: 600;
             font-size: 18px;
-            color: #333;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
             z-index: 10;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
         }
 
-        /* Основна зона за чат - Скролва се */
         #chat-box {
-            flex: 1; /* Заема цялото свободно място */
-            overflow-y: auto; /* Само то се скролва */
+            flex: 1;
+            overflow-y: auto;
             padding: 15px;
             display: flex;
             flex-direction: column;
             gap: 8px;
             scroll-behavior: smooth;
-            -webkit-overflow-scrolling: touch; /* Мазен скрол за iOS */
         }
 
-        /* Съобщения */
         .message {
             max-width: 85%;
             padding: 10px 14px;
             border-radius: 18px;
             font-size: 15px;
             line-height: 1.4;
-            position: relative;
             word-wrap: break-word;
             animation: fadeIn 0.3s ease;
         }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
-        .bot {
-            background: var(--bot-msg-bg);
-            color: #050505;
-            align-self: flex-start;
-            border-bottom-left-radius: 4px;
-        }
+        .bot { background: var(--bot-bg); color: #050505; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .user { background: var(--primary-color); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
 
-        .user {
-            background: var(--primary-color);
-            color: white;
-            align-self: flex-end;
-            border-bottom-right-radius: 4px;
-        }
-
-        /* Зона за писане - Фиксирана долу */
         .input-area {
             background: white;
             padding: 10px;
@@ -89,7 +64,6 @@
             align-items: center;
             gap: 10px;
             border-top: 1px solid #ddd;
-            /* Безопасна зона за iPhone X/11/12/13/14 */
             padding-bottom: env(safe-area-inset-bottom, 10px); 
         }
 
@@ -99,7 +73,7 @@
             background: #f0f2f5;
             border: none;
             border-radius: 20px;
-            font-size: 16px; /* 16px спира зуума на iPhone при писане */
+            font-size: 16px; 
             outline: none;
         }
 
@@ -108,17 +82,14 @@
             border: none;
             color: var(--primary-color);
             font-size: 20px;
-            cursor: pointer;
             padding: 5px 10px;
-            transition: transform 0.1s;
+            cursor: pointer;
         }
-        button:active { transform: scale(0.9); }
 
-        /* Анимация "Пише..." */
         .typing-indicator {
             display: none;
             align-self: flex-start;
-            background: var(--bot-msg-bg);
+            background: var(--bot-bg);
             padding: 8px 12px;
             border-radius: 15px;
             margin-bottom: 5px;
@@ -126,31 +97,18 @@
             font-size: 12px;
             font-style: italic;
         }
-        
-        /* Специален стил за ПИН кодове в текста */
-        .highlight-pin {
-            background: #fff;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-weight: bold;
-            border: 1px solid #ccc;
-            font-family: monospace;
-            font-size: 1.1em;
-        }
     </style>
 </head>
 <body>
 
-    <header>
-        🤖 <span>Дигитален Асистент</span>
-    </header>
+    <header>🤖 Smart Stay Асистент</header>
 
     <div id="chat-box">
         <div class="message bot">
             Здравейте! Аз съм вашият виртуален домакин. 👋<br><br>
             Напишете вашия <b>Код за резервация</b>, за да ви дам достъп до апартамента.
         </div>
-        <div class="typing-indicator" id="loader">● ● ●</div>
+        <div class="typing-indicator" id="loader">Пише...</div>
     </div>
 
     <div class="input-area">
@@ -159,17 +117,16 @@
     </div>
 
     <script>
-        // =======================================================
-        // ⚠️ ВАЖНО: Сложи тук истинския линк от Render!
-        // =======================================================
-        const BACKEND_URL = 'https://tvoyat-backend-v-render.onrender.com'; 
-        // =======================================================
+        // --- ТУК Е ТВОЯТ ЛИНК, ВЗЕТ ОТ ПРЕДИШНИЯ КОД ---
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:10000' 
+            : 'https://smart-stay.onrender.com';
+        // -----------------------------------------------
 
         const chatBox = document.getElementById('chat-box');
         const userInput = document.getElementById('user-input');
         const loader = document.getElementById('loader');
 
-        // Пращане с Enter
         userInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendMessage();
         });
@@ -178,16 +135,17 @@
             const text = userInput.value.trim();
             if (!text) return;
 
-            // 1. Показваме съобщението на потребителя
+            // 1. Показваме твоето съобщение
             addMessage(text, 'user');
             userInput.value = '';
             
-            // 2. Показваме анимацията
+            // 2. Показваме, че ботът мисли
             loader.style.display = 'block';
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
-                const response = await fetch(`${BACKEND_URL}/chat`, {
+                // 3. Пращаме към Render (smart-stay.onrender.com)
+                const response = await fetch(`${API_URL}/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: text })
@@ -195,14 +153,14 @@
 
                 const data = await response.json();
                 
-                // 3. Махаме анимацията и показваме отговора
+                // 4. Показваме отговора
                 loader.style.display = 'none';
                 addMessage(data.reply, 'bot');
 
             } catch (error) {
                 loader.style.display = 'none';
-                addMessage("⚠️ Няма връзка. Моля проверете интернет връзката си.", 'bot');
                 console.error(error);
+                addMessage("⚠️ Грешка при връзка. Сървърът може да се събужда, опитайте пак след 30 сек.", 'bot');
             }
         }
 
@@ -210,19 +168,15 @@
             const msgDiv = document.createElement('div');
             msgDiv.classList.add('message', sender);
             
-            // Форматиране на текст (Bold и PIN кодове)
             let formatted = text
                 .replace(/\n/g, '<br>')
-                .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') // Bold
-                .replace(/CHECK_CODE: (.*)/g, ''); // Крием системните кодове ако излязат
+                .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                .replace(/CHECK_CODE: (.*)/g, ''); 
 
             msgDiv.innerHTML = formatted;
-            
-            // Вмъкваме ПРЕДИ loader-а
             chatBox.insertBefore(msgDiv, loader);
             chatBox.scrollTop = chatBox.scrollHeight;
         }
     </script>
-
 </body>
 </html>
