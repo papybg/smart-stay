@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 const cron = require('node-cron');
+const ical = require('node-ical'); // Изисква: npm install node-ical
 
 const app = express();
 app.use(cors());
@@ -58,6 +59,15 @@ async function getSmartStatus() {
     return deviceCache.isOn;
 }
 
+// --- DB MIGRATION TOOL (Еднократно изпълнение) ---
+app.get('/update-db', basicAuth, async (req, res) => {
+    try {
+        await pool.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS power_on_time TIMESTAMP");
+        await pool.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS power_off_time TIMESTAMP");
+        res.send("✅ Базата данни е обновена успешно! Добавени са колони за история на тока.");
+    } catch (e) { res.status(500).send("Грешка: " + e.message); }
+});
+
 // --- АВТОПИЛОТ ---
 cron.schedule('*/10 * * * *', async () => {
     try {
@@ -67,7 +77,12 @@ cron.schedule('*/10 * * * *', async () => {
             AND check_in::timestamp < (NOW() AT TIME ZONE 'UTC' + INTERVAL '6 hours')
         `;
         const result = await pool.query(query);
-        if (result.rows.length > 0) {
+        
+        // Обхождаме всяка намерена резервация поотделно
+        for (const booking of result.rows) {
+            // Ако вече сме отбелязали, че токът е пуснат за тази резервация, пропускаме
+            if (booking.power_on_time) continue;
+
             console.log("🛎️ Автопилот: Пускам тока за гости.");
             await tuya.request({
                 path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
@@ -88,6 +103,10 @@ cron.schedule('*/10 * * * *', async () => {
                 deviceCache.isOn = true;
                 deviceCache.lastUpdated = Date.now();
             } else { console.log("✅ Автопилот: Токът вече е пуснат. Няма нужда от действие."); }
+            
+            // ЗАПИСВАМЕ В ИСТОРИЯТА (Дори да е бил пуснат, маркираме, че задачата е изпълнена)
+            await pool.query("UPDATE bookings SET power_on_time = NOW() WHERE id = $1", [booking.id]);
+            console.log(`📝 История: Маркирано включване за резервация #${booking.id}`);
         }
     } catch (err) { console.error('Cron error:', err); }
 });
@@ -102,7 +121,11 @@ cron.schedule('*/10 * * * *', async () => {
             AND check_out::timestamp > (NOW() AT TIME ZONE 'UTC' - INTERVAL '2 hours')
         `;
         const result = await pool.query(query);
-        if (result.rows.length > 0) {
+        
+        for (const booking of result.rows) {
+            // Ако вече сме отбелязали изключване, пропускаме
+            if (booking.power_off_time) continue;
+
             console.log("🌑 Автопилот: Изключвам тока след напускане.");
             await tuya.request({
                 path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
@@ -123,9 +146,60 @@ cron.schedule('*/10 * * * *', async () => {
                 deviceCache.isOn = false;
                 deviceCache.lastUpdated = Date.now();
             } else { console.log("✅ Автопилот: Токът вече е спрян. Няма нужда от действие."); }
+            
+            // ЗАПИСВАМЕ В ИСТОРИЯТА
+            await pool.query("UPDATE bookings SET power_off_time = NOW() WHERE id = $1", [booking.id]);
+            console.log(`📝 История: Маркирано изключване за резервация #${booking.id}`);
         }
     } catch (err) { console.error('Cron OFF error:', err); }
 });
+
+// --- AIRBNB SYNC (На всеки 30 минути) ---
+const syncAirbnb = async () => {
+    console.log("🔄 Airbnb Sync: Проверка за нови резервации...");
+    const icalUrl = process.env.AIRBNB_ICAL_URL;
+    if (!icalUrl) return console.log("⚠️ Няма зададен AIRBNB_ICAL_URL в .env");
+
+    try {
+        const events = await ical.async.fromURL(icalUrl);
+        
+        for (const k in events) {
+            const ev = events[k];
+            if (ev.type !== 'VEVENT') continue;
+
+            // Airbnb дати
+            const checkIn = new Date(ev.start);
+            const checkOut = new Date(ev.end);
+            
+            // Опит за намиране на код (Airbnb често го слага в описанието или UID)
+            // UID формат: 123456789-12345@airbnb.com -> ползваме го за уникалност
+            // Ако намерим "HM..." код в описанието, е супер, иначе ползваме UID
+            let resCode = ev.uid; 
+            const desc = ev.description || "";
+            const codeMatch = desc.match(/(HM[A-Z0-9]{8})/); // Търсим стандартен Airbnb код
+            if (codeMatch) resCode = codeMatch[1];
+
+            // Име на госта (Airbnb често го крие като "Reserved", но понякога го има)
+            const guestName = ev.summary || "Airbnb Guest";
+
+            // Проверка дали вече съществува в базата
+            const exists = await pool.query("SELECT id FROM bookings WHERE reservation_code = $1", [resCode]);
+            
+            if (exists.rows.length === 0) {
+                console.log(`🆕 Нова резервация от Airbnb: ${guestName} (${resCode})`);
+                const pin = Math.floor(100000 + Math.random() * 900000).toString();
+                await pool.query(
+                    "INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid')",
+                    [guestName, checkIn, checkOut, resCode, pin]
+                );
+            }
+        }
+    } catch (err) { console.error("❌ Airbnb Sync Error:", err.message); }
+};
+
+// Стартираме синхронизацията по график И веднага при старт на сървъра
+cron.schedule('*/30 * * * *', syncAirbnb);
+syncAirbnb();
 
 app.get('/status', basicAuth, async (req, res) => {
     try {

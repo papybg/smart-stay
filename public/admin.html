@@ -43,21 +43,45 @@
             const res = await fetch(`${API}/bookings`);
             const data = await res.json();
             
-            const header = `<tr style="background:#333; color:white; text-align:left;"><th>Гост</th><th>Настаняване</th><th>Напускане</th><th>Код</th><th>ПИН</th><th>Действие</th></tr>`;
+            const header = `
+                <tr style="background:#333; color:white; text-align:left;">
+                    <th style="padding:10px;">Гост</th>
+                    <th>Настаняване / Ток ON</th>
+                    <th>Напускане / Ток OFF</th>
+                    <th>Брава (PIN)</th>
+                    <th>Действие</th>
+                </tr>`;
             
             // Филтрираме само активните (бъдещи и текущи) резервации
             const activeData = data.filter(b => new Date(b.check_out) > new Date());
 
-            document.getElementById('list').innerHTML = header + activeData.map(b => `
+            document.getElementById('list').innerHTML = header + activeData.map(b => {
+                // Логика за визуализация на статусите
+                const checkInDate = new Date(b.check_in);
+                const checkOutDate = new Date(b.check_out);
+                const offTime = new Date(checkOutDate.getTime() + 3600000); // +1 час
+
+                const onStatus = b.power_on_time ? '✅ <small style="color:green">ВКЛЮЧЕН</small>' : '⏳ <small style="color:#888">ЧАКА</small>';
+                const offStatus = b.power_off_time ? '✅ <small style="color:red">ИЗКЛЮЧЕН</small>' : '⏳ <small style="color:#888">ЧАКА</small>';
+
+                return `
                 <tr style="border-bottom:1px solid #ccc;">
                     <td style="padding:8px;">${b.guest_name}</td>
-                    <td style="padding:8px;">${new Date(b.check_in).toLocaleString('bg-BG')}</td>
-                    <td style="padding:8px;">${new Date(b.check_out).toLocaleString('bg-BG')}</td>
-                    <td style="padding:8px;">${b.reservation_code}</td>
-                    <td style="padding:8px; font-weight:bold;">${b.lock_pin}</td>
+                    <td style="padding:8px;">
+                        <div>📅 ${checkInDate.toLocaleString('bg-BG')}</div>
+                        <div style="margin-top:4px;">⚡ ${onStatus}</div>
+                    </td>
+                    <td style="padding:8px;">
+                        <div>📅 ${checkOutDate.toLocaleString('bg-BG')}</div>
+                        <div style="margin-top:4px;">🔌 Планирано спиране: ${offTime.toLocaleTimeString('bg-BG', {hour:'2-digit', minute:'2-digit'})} ${offStatus}</div>
+                    </td>
+                    <td style="padding:8px;">
+                        <div style="font-weight:bold; font-size:1.1em;">🔑 ${b.lock_pin}</div>
+                        <small style="color:#666">Res: ${b.reservation_code}</small>
+                    </td>
                     <td style="padding:8px;"><button onclick="del(${b.id})" style="background:#d9534f; color:white; border:none; padding:5px 10px; cursor:pointer;">Изтрий</button></td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
         load();
     </script>
