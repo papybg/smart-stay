@@ -73,8 +73,9 @@ cron.schedule('*/10 * * * *', async () => {
     try {
         const query = `
             SELECT * FROM bookings 
-            WHERE check_in::timestamp > (NOW() AT TIME ZONE 'UTC') 
-            AND check_in::timestamp < (NOW() AT TIME ZONE 'UTC' + INTERVAL '6 hours')
+            WHERE check_in::timestamp < (NOW() AT TIME ZONE 'UTC' + INTERVAL '6 hours')
+            AND check_out::timestamp > (NOW() AT TIME ZONE 'UTC')
+            AND power_on_time IS NULL
         `;
         const result = await pool.query(query);
         
@@ -118,7 +119,8 @@ cron.schedule('*/10 * * * *', async () => {
         const query = `
             SELECT * FROM bookings 
             WHERE check_out::timestamp < (NOW() AT TIME ZONE 'UTC' - INTERVAL '1 hour') 
-            AND check_out::timestamp > (NOW() AT TIME ZONE 'UTC' - INTERVAL '2 hours')
+            AND check_out::timestamp > (NOW() AT TIME ZONE 'UTC' - INTERVAL '24 hours')
+            AND power_off_time IS NULL
         `;
         const result = await pool.query(query);
         
