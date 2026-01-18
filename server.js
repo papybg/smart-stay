@@ -264,6 +264,8 @@ app.post('/chat', async (req, res) => {
 app.post('/add-booking', basicAuth, async (req, res) => {
     const { guest_name, check_in, check_out, reservation_code } = req.body;
 
+    console.log(`📥 New Booking Request: ${guest_name}, In: ${check_in}, Out: ${check_out}`);
+
     // 1. ВАЛИДАЦИЯ: Не позволяваме запис, ако липсват данни
     if (!guest_name || !check_in || !check_out || !reservation_code) {
         return res.status(400).json({ error: "Моля попълнете всички полета (вкл. код на резервация)!" });

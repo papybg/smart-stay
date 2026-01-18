@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="bg"><body style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px;">
-    <h2>➕ Нова резервация</h2>
+    <h2>➕ Нова резервация (v2.1)</h2>
     <input type="text" id="guest" placeholder="Име">
     <input type="datetime-local" id="in">
     <input type="datetime-local" id="out">
@@ -18,8 +18,8 @@
 
             const body = {
                 guest_name: document.getElementById('guest').value,
-                check_in: inDate.toISOString(), // Пращаме UTC време
-                check_out: outDate.toISOString(),
+                check_in: inDate.toISOString(), // Това ВАДИ 2 часа (14:00 -> 12:00 UTC)
+                check_out: outDate.toISOString(), 
                 reservation_code: document.getElementById('code').value
             };
 
