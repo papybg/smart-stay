@@ -175,4 +175,54 @@ cron.schedule('*/10 * * * *', async () => {
             await tuya.request({ path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`, method: 'POST', body: { commands: [{ code: 'switch', value: false }] } });
             await pool.query("UPDATE bookings SET power_off_time = NOW() WHERE id = $1", [b.id]);
         }
-    } catch (e) { console
+    } catch (e) { console.error(e); }
+});
+
+// --- 8. SYNC AIRBNB ---
+const syncAirbnb = async () => {
+    const icalUrl = process.env.AIRBNB_ICAL_URL;
+    if (!icalUrl) return;
+    try {
+        const events = await ical.async.fromURL(icalUrl);
+        for (const k in events) {
+            if (events[k].type !== 'VEVENT') continue;
+            let resCode = events[k].uid;
+            const desc = events[k].description || "";
+            const codeMatch = desc.match(/(HM[A-Z0-9]{8})/);
+            if (codeMatch) resCode = codeMatch[1];
+            const exists = await pool.query("SELECT id FROM bookings WHERE reservation_code = $1", [resCode]);
+            if (exists.rows.length === 0) {
+                const pin = Math.floor(100000 + Math.random() * 900000).toString();
+                await pool.query("INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid')", [events[k].summary || "Airbnb", new Date(events[k].start), new Date(events[k].end), resCode, pin]);
+            }
+        }
+    } catch (e) { console.error(e); }
+};
+cron.schedule('*/30 * * * *', syncAirbnb);
+
+// --- 9. API ROUTES ---
+app.get('/update-db', basicAuth, async (req, res) => {
+    try {
+        await pool.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS power_on_time TIMESTAMP");
+        await pool.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS power_off_time TIMESTAMP");
+        res.send("✅ DB Updated");
+    } catch (e) { res.status(500).send(e.message); }
+});
+app.get('/status', basicAuth, async (req, res) => { try { res.json({ is_on: await getSmartStatus() }); } catch (e) { res.status(500).json(e); } });
+app.get('/toggle', basicAuth, async (req, res) => { try { const s = await getSmartStatus(); await tuya.request({ path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`, method: 'POST', body: { commands: [{ code: 'switch', value: !s }] } }); deviceCache.isOn = !s; deviceCache.lastUpdated = Date.now(); res.send(`OK: ${!s}`); } catch (e) { res.status(500).send(e.message); } });
+app.post('/add-booking', basicAuth, async (req, res) => {
+    const { guest_name, check_in, check_out, reservation_code } = req.body;
+    if (!guest_name || !check_in || !check_out || !reservation_code) return res.status(400).json({ error: "Missing data" });
+    try {
+        const c = await pool.query("SELECT id FROM bookings WHERE reservation_code = $1", [reservation_code]);
+        if (c.rows.length > 0) return res.status(400).json({ error: "Code exists" });
+        const pin = Math.floor(100000 + Math.random() * 900000).toString();
+        const r = await pool.query("INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid') RETURNING lock_pin", [guest_name, check_in, check_out, reservation_code, pin]);
+        res.json({ success: true, pin: r.rows[0].lock_pin });
+    } catch (e) { res.status(500).json({ error: "Error" }); }
+});
+app.get('/bookings', basicAuth, async (req, res) => { const r = await pool.query('SELECT * FROM bookings ORDER BY check_in DESC'); res.json(r.rows); });
+app.delete('/bookings/:id', basicAuth, async (req, res) => { await pool.query('DELETE FROM bookings WHERE id = $1', [req.params.id]); res.json({ success: true }); });
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => { console.log(`Server running on port ${PORT}`); syncAirbnb(); });
