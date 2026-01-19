@@ -109,9 +109,9 @@ app.post('/chat', async (req, res) => {
     2. Ако няма код, говори любезно на български за апартамента.
     ЗНАНИЕ: Настаняване след 14:00, Напускане до 11:00, Wi-Fi: "SmartStay_Guest" / "welcome2026", Паркиране: свободно.
     `;
-
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash", systemInstruction });
+    
+    const runAI = async (modelName) => {
+        const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
         let result = await model.generateContent(userMessage);
         let botResponse = result.response.text().trim();
 
@@ -130,9 +130,21 @@ app.post('/chat', async (req, res) => {
                 botResponse = "Не намирам резервация с код " + code + ".";
             }
         }
-        res.json({ reply: botResponse });
-    } catch (err) {
-        res.json({ reply: "Технически проблем. Опитайте пак." });
+        return botResponse;
+    };
+    
+    try {
+        const reply = await runAI("gemini-3.0-flash-preview");
+        res.json({ reply });
+    } catch (primaryError) {
+        console.warn("⚠️ Primary model (3.0) failed. Switching to fallback (2.5)...", primaryError.message);
+        try {
+            const reply = await runAI("gemini-2.5-flash");
+            res.json({ reply });
+        } catch (fallbackError) {
+            console.error("❌ Fallback model (2.5) also failed.", fallbackError.message);
+            res.json({ reply: "Технически проблем. Опитайте пак." });
+        }
     }
 });
 
