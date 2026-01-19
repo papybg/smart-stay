@@ -69,16 +69,15 @@ async function getSmartStatus() {
     return deviceCache.isOn;
 }
 
-// --- 5. НОВО: ЕКСПОРТ НА КАЛЕНДАР (За Airbnb/Booking) ---
-app.get('/feed', async (req, res) => {
+// --- 5. ЕКСПОРТ НА КАЛЕНДАР (ВЕЧЕ С .ics) ---
+// Airbnb изисква линкът да завършва на .ics
+app.get('/feed.ics', async (req, res) => {
     try {
-        // Взимаме всички бъдещи резервации
         const result = await pool.query("SELECT * FROM bookings");
         
         let icsData = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartStay//NONSGML v1.0//EN\n";
         
         result.rows.forEach(b => {
-            // Форматиране на дати за iCal (YYYYMMDDTHHmmssZ)
             const start = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
             const end = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
             
@@ -100,7 +99,6 @@ app.get('/feed', async (req, res) => {
         res.status(500).send("Calendar Error");
     }
 });
-// --------------------------------------------------------
 
 // --- 6. AI ЧАТ ---
 app.post('/chat', async (req, res) => {
