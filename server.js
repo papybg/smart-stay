@@ -175,35 +175,66 @@ cron.schedule('*/10 * * * *', async () => {
 // --- 8. SYNC AIRBNB (БРОНИРАНА ВЕРСИЯ) ---
 const syncAirbnb = async () => {
     const icalUrl = process.env.AIRBNB_ICAL_URL;
-    if (!icalUrl) return;
+    
+    if (!icalUrl) {
+        console.error('Липсва AIRBNB_ICAL_URL в .env файла');
+        return;
+    }
+
     try {
         const events = await ical.async.fromURL(icalUrl);
+        
+        // 1. Дефинираме "Хоризонт" - днешна дата и дата след 1 година
+        const now = new Date();
+        const maxFutureDate = new Date();
+        maxFutureDate.setFullYear(now.getFullYear() + 1);
+
+        let addedCount = 0;
+
         for (const k in events) {
             // ТУК Е "БРОНИЖИЛЕТКАТА" - Всяка резервация е в собствен try/catch
             try {
-                if (events[k].type !== 'VEVENT') continue;
+                const event = events[k];
+                if (event.type !== 'VEVENT') continue;
+                if (!event.start) continue;
                 
-                let resCode = events[k].uid || "UNKNOWN";
-                const desc = events[k].description || "";
+                const startDate = new Date(event.start);
+                const endDate = new Date(event.end || event.start);
+
+                // --- ЗАЩИТАТА (ФИЛТЪР) ---
+                // 1. Ако е минало събитие (по-старо от вчера) -> Пропускаме
+                // 2. Ако е твърде далеч в бъдещето (над 1 година) -> Пропускаме
+                if (startDate < new Date(now.getTime() - 86400000) || startDate > maxFutureDate) {
+                    continue;
+                }
+                
+                let resCode = event.uid || `airbnb-${startDate.getTime()}`;
+                const desc = event.description || "";
                 const codeMatch = desc.match(/(HM[A-Z0-9]{8})/);
                 if (codeMatch) resCode = codeMatch[1];
                 
-                // Дори и да не сменим базата, режем текста за всеки случай
-                let guestName = events[k].summary || "Airbnb Guest";
+                // Airbnb скрива имената, затова слагаме етикет
+                let guestName = event.summary === 'Reserved' || !event.summary 
+                    ? 'Airbnb Guest (Synced)' 
+                    : event.summary;
+
+                // Орязване за всеки случай
                 if (guestName.length > 250) guestName = guestName.substring(0, 250);
                 if (resCode.length > 250) resCode = resCode.substring(0, 250);
 
                 const exists = await pool.query("SELECT id FROM bookings WHERE reservation_code = $1", [resCode]);
                 if (exists.rows.length === 0) {
-                    console.log(`🆕 Importing: ${guestName} (${resCode})`);
                     const pin = Math.floor(100000 + Math.random() * 900000).toString();
-                    await pool.query("INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid')", [guestName, new Date(events[k].start), new Date(events[k].end), resCode, pin]);
+                    await pool.query("INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid')", [guestName, startDate, endDate, resCode, pin]);
+                    addedCount++;
+                    console.log(`✅ Imported booking: ${startDate.toISOString()} - ${guestName}`);
                 }
             } catch (innerError) {
                 // Ако един запис гръмне, само го логваме и продължаваме!
                 console.error(`⚠️ Skipping bad event: ${innerError.message}`);
             }
         }
+        console.log(`Sync complete. New bookings added: ${addedCount}`);
     } catch (e) { console.error("Airbnb Critical Error:", e.message); }
 };
 cron.schedule('*/30 * * * *', syncAirbnb);
