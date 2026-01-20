@@ -97,11 +97,9 @@ app.get('/feed.ics', async (req, res) => {
     }
 });
 
-// --- 6. AI ЧАТ (С ФУНКЦИЯ ЗА РЕЗЕРВЕН МОДЕЛ) ---
+// --- 6. AI ЧАТ (Gemini 3 Flash Preview + Fallback) ---
 app.post('/chat', async (req, res) => {
     const userMessage = req.body.message;
-
-    // Четене на ръководството
     let manualData = "";
     try {
         if (fs.existsSync('manual.txt')) manualData = fs.readFileSync('manual.txt', 'utf8');
@@ -114,7 +112,6 @@ app.post('/chat', async (req, res) => {
     ${manualData}
     `;
 
-    // ФУНКЦИЯ ЗА ГЕНЕРИРАНЕ С fallback
     async function generateAIResponse(prompt, instructions) {
         try {
             console.log("🤖 Опит с Gemini 3 Flash Preview...");
@@ -127,9 +124,7 @@ app.post('/chat', async (req, res) => {
                 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", systemInstruction: instructions });
                 const result = await model.generateContent(prompt);
                 return result.response.text();
-            } catch (err2) {
-                throw new Error("И двата модела се провалиха.");
-            }
+            } catch (err2) { throw new Error("AI Failed completely."); }
         }
     }
 
@@ -143,7 +138,6 @@ app.post('/chat', async (req, res) => {
             const dbData = dbRes.rows.length > 0 ? dbRes.rows[0] : null;
 
             if (dbData) {
-                // Пак викаме AI да оформи отговора
                 const prompt = `Резервация намерена: ${JSON.stringify(dbData)}. Поздрави госта, дай му ПИН кода (${dbData.lock_pin}) и му пожелай приятен престой.`;
                 botResponse = await generateAIResponse(prompt, systemInstruction);
             } else {
@@ -178,7 +172,7 @@ cron.schedule('*/10 * * * *', async () => {
     } catch (e) { console.error(e); }
 });
 
-// --- 8. SYNC AIRBNB ---
+// --- 8. SYNC AIRBNB (Със защита от дълги имена) ---
 const syncAirbnb = async () => {
     const icalUrl = process.env.AIRBNB_ICAL_URL;
     if (!icalUrl) return;
@@ -186,28 +180,50 @@ const syncAirbnb = async () => {
         const events = await ical.async.fromURL(icalUrl);
         for (const k in events) {
             if (events[k].type !== 'VEVENT') continue;
-            let resCode = events[k].uid;
+            let resCode = events[k].uid || "UNKNOWN";
             const desc = events[k].description || "";
             const codeMatch = desc.match(/(HM[A-Z0-9]{8})/);
             if (codeMatch) resCode = codeMatch[1];
+            
+            // Защита: Режем името до 250 символа за всеки случай
+            let guestName = events[k].summary || "Airbnb Guest";
+            if (guestName.length > 250) guestName = guestName.substring(0, 250);
+
             const exists = await pool.query("SELECT id FROM bookings WHERE reservation_code = $1", [resCode]);
             if (exists.rows.length === 0) {
+                console.log(`🆕 Importing: ${guestName} (${resCode})`);
                 const pin = Math.floor(100000 + Math.random() * 900000).toString();
-                await pool.query("INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid')", [events[k].summary || "Airbnb", new Date(events[k].start), new Date(events[k].end), resCode, pin]);
+                await pool.query("INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ($1, $2, $3, $4, $5, 'paid')", [guestName, new Date(events[k].start), new Date(events[k].end), resCode, pin]);
             }
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Airbnb Sync Error:", e.message); }
 };
 cron.schedule('*/30 * * * *', syncAirbnb);
 
-// --- 9. API ROUTES ---
-app.get('/update-db', basicAuth, async (req, res) => {
+// --- 9. API ROUTES & AUTO-FIX ---
+
+// Функция за автоматично разширяване на базата при старт
+const ensureDbSchema = async () => {
     try {
         await pool.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS power_on_time TIMESTAMP");
         await pool.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS power_off_time TIMESTAMP");
-        res.send("✅ DB Updated");
-    } catch (e) { res.status(500).send(e.message); }
+        
+        // ТУК Е РЕШЕНИЕТО НА ПРОБЛЕМА С "value too long"
+        // Разширяваме колоните до 255 символа
+        await pool.query("ALTER TABLE bookings ALTER COLUMN reservation_code TYPE VARCHAR(255)");
+        await pool.query("ALTER TABLE bookings ALTER COLUMN guest_name TYPE VARCHAR(255)");
+        
+        console.log("✅ Database schema verified and updated (255 chars limit).");
+    } catch (e) {
+        console.log("⚠️ DB Schema info:", e.message); 
+    }
+};
+
+app.get('/update-db', basicAuth, async (req, res) => {
+    await ensureDbSchema();
+    res.send("✅ Database fix triggered manually.");
 });
+
 app.get('/status', basicAuth, async (req, res) => { try { res.json({ is_on: await getSmartStatus() }); } catch (e) { res.status(500).json(e); } });
 app.get('/toggle', basicAuth, async (req, res) => { try { const s = await getSmartStatus(); await tuya.request({ path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`, method: 'POST', body: { commands: [{ code: 'switch', value: !s }] } }); deviceCache.isOn = !s; deviceCache.lastUpdated = Date.now(); res.send(`OK: ${!s}`); } catch (e) { res.status(500).send(e.message); } });
 app.post('/add-booking', basicAuth, async (req, res) => {
@@ -225,15 +241,12 @@ app.get('/bookings', basicAuth, async (req, res) => { const r = await pool.query
 app.delete('/bookings/:id', basicAuth, async (req, res) => { await pool.query('DELETE FROM bookings WHERE id = $1', [req.params.id]); res.json({ success: true }); });
 
 const PORT = process.env.PORT || 10000;
-// --- FIX DATABASE (Изпълни веднъж: smart-stay.onrender.com/fix-db) ---
-app.get('/fix-db', async (req, res) => {
-    try {
-        // Увеличаваме лимита на колоните от 50 на 255 символа
-        await pool.query("ALTER TABLE bookings ALTER COLUMN reservation_code TYPE VARCHAR(255)");
-        await pool.query("ALTER TABLE bookings ALTER COLUMN guest_name TYPE VARCHAR(255)");
-        res.send("✅ Базата данни е поправена! Вече приема дълги кодове.");
-    } catch (e) {
-        res.status(500).send("Грешка: " + e.message);
-    }
+app.listen(PORT, async () => {
+    console.log(`Server running on port ${PORT}`);
+    
+    // Първо оправяме базата
+    await ensureDbSchema();
+    
+    // После пускаме синхронизацията с Airbnb
+    syncAirbnb();
 });
-app.listen(PORT, () => { console.log(`Server running on port ${PORT}`); syncAirbnb(); });
