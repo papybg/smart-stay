@@ -225,4 +225,15 @@ app.get('/bookings', basicAuth, async (req, res) => { const r = await pool.query
 app.delete('/bookings/:id', basicAuth, async (req, res) => { await pool.query('DELETE FROM bookings WHERE id = $1', [req.params.id]); res.json({ success: true }); });
 
 const PORT = process.env.PORT || 10000;
+// --- FIX DATABASE (Изпълни веднъж: smart-stay.onrender.com/fix-db) ---
+app.get('/fix-db', async (req, res) => {
+    try {
+        // Увеличаваме лимита на колоните от 50 на 255 символа
+        await pool.query("ALTER TABLE bookings ALTER COLUMN reservation_code TYPE VARCHAR(255)");
+        await pool.query("ALTER TABLE bookings ALTER COLUMN guest_name TYPE VARCHAR(255)");
+        res.send("✅ Базата данни е поправена! Вече приема дълги кодове.");
+    } catch (e) {
+        res.status(500).send("Грешка: " + e.message);
+    }
+});
 app.listen(PORT, () => { console.log(`Server running on port ${PORT}`); syncAirbnb(); });
