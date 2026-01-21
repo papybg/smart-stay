@@ -28,7 +28,7 @@ app.use(express.static('public'));
 // --- API Routes ---
 
 // API for the chat functionality
-app.post('/api/chat', async (req, res) => {
+app.post('/chat', async (req, res) => {
   // Your chat logic here...
   res.json({ reply: "Здравейте! Аз съм Бобо." });
 });
