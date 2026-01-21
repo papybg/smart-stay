@@ -1,46 +1,45 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { syncBookingsFromGmail } from './services/detective.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// --- Middleware Configuration ---
+// --- Конфигурация ---
 
-// 1. CORS: Whitelist specific domains for better security.
-const allowedOrigins = [
-  'https://stay.bgm-design.com', // As mentioned in your original code comment
-  // Add other domains or localhost ports for development if needed
-  // e.g., 'http://localhost:5500', 'http://127.0.0.1:5500'
-];
+// 1. CORS: Позволява заявки от други домейни. Опростено за лесна настройка.
+app.use(cors());
 
-app.use(cors({ origin: allowedOrigins }));
-
-// 2. Body Parser: To handle JSON payloads in POST requests.
+// 2. JSON Parser: Позволява на сървъра да чете JSON данни, изпратени от чата.
 app.use(express.json());
 
-// 3. Static Files: Serve all frontend files from the 'public' directory.
-// This correctly handles requests for '/', '/index.html', '/admin.html', etc.
-app.use(express.static('public'));
+// 3. Сервиране на статични файлове (КЛЮЧОВА КОРЕКЦИЯ):
+// Това казва на сървъра да покаже файловете от папката 'public' (index.html, admin.html и т.н.).
+// Така като отворите https://smart-stay.onrender.com, ще се зареди чатът.
+app.use(express.static(path.join(__dirname, 'public')));
 
+// --- API Маршрути ---
 
-// --- API Routes ---
-
-// API for the chat functionality
-app.post('/chat', async (req, res) => {
-  // Your chat logic here...
-  res.json({ reply: "Здравейте! Аз съм Бобо." });
+// API за чат функционалността
+app.post('/api/chat', async (req, res) => {
+  // Вашата логика за чата идва тук...
+  // Засега връщаме прост отговор.
+  res.json({ reply: "Здравейте! Аз съм Бобо. Получих вашето съобщение." });
 });
 
-
-// --- Server Startup ---
+// --- Стартиране на сървъра ---
 
 app.listen(PORT, () => {
   console.log(`🚀 Bobo is live on port ${PORT}!`);
   
-  // Start the Gmail sync process on startup and then schedule it
+  // Стартира синхронизацията с Gmail при старт и я насрочва
   console.log('Starting initial Gmail sync...');
   syncBookingsFromGmail();
-  setInterval(syncBookingsFromGmail, 15 * 60 * 1000); // Every 15 minutes
+  setInterval(syncBookingsFromGmail, 15 * 60 * 1000); // На всеки 15 минути
 });
