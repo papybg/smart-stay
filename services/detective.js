@@ -74,7 +74,9 @@ export async function syncBookingsFromGmail() {
         console.log(`✅ Поправен код за: ${details.guest_name}`);
       }
     }
-  } catch (err) { console.error('❌ Пълна грешка при синхронизация:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2)); }
+  } catch (err) { 
+    console.error('❌ Грешка при синхронизация:', err.stack || err); 
+  }
 }
 
 async function processMessage(id, gmail, genAI) {
