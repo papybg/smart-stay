@@ -74,14 +74,14 @@ export async function syncBookingsFromGmail() {
         console.log(`✅ Поправен код за: ${details.guest_name}`);
       }
     }
-  } catch (err) { console.error('❌ Грешка при синхронизация:', err); }
+  } catch (err) { console.error('❌ Пълна грешка при синхронизация:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2)); }
 }
 
 async function processMessage(id, gmail, genAI) {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const res = await gmail.users.messages.get({ userId: 'me', id });
-    const prompt = `Extract JSON: reservation_code (6-10 chars like HMQW123), guest_name, check_in, check_out. Text: ${res.data.snippet}`;
+    const prompt = `Extract a valid JSON object with these exact keys: "reservation_code", "guest_name", "check_in", "check_out". The date format for check_in and check_out MUST be YYYY-MM-DD. Text: ${res.data.snippet}`;
     const result = await model.generateContent(prompt);
     const data = JSON.parse(result.response.text().replace(/```json|```/g, '').trim());
     return data;
