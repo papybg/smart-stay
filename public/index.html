@@ -117,12 +117,6 @@
     </div>
 
     <script>
-        // --- ТУК Е ТВОЯТ ЛИНК, ВЗЕТ ОТ ПРЕДИШНИЯ КОД ---
-        const API_URL = window.location.hostname === 'localhost' 
-            ? 'http://localhost:10000' 
-            : 'https://smart-stay.onrender.com';
-        // -----------------------------------------------
-
         const chatBox = document.getElementById('chat-box');
         const userInput = document.getElementById('user-input');
         const loader = document.getElementById('loader');
@@ -144,12 +138,16 @@
             chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
-                // 3. Пращаме към Render (smart-stay.onrender.com)
-                const response = await fetch(`${API_URL}/api/chat`, {
+                // 3. Пращаме към сървъра с относителен път
+                const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: text })
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
 
                 const data = await response.json();
                 
@@ -159,8 +157,8 @@
 
             } catch (error) {
                 loader.style.display = 'none';
-                console.error(error);
-                addMessage("⚠️ Грешка при връзка. Сървърът може да се събужда, опитайте пак след 30 сек.", 'bot');
+                console.error('Fetch error:', error);
+                addMessage("⚠️ Грешка при свързване със сървъра. Моля, опитайте отново по-късно.", 'bot');
             }
         }
 

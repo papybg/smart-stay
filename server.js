@@ -40,7 +40,7 @@ app.post('/api/chat', async (req, res) => {
   // --- Логика на Бота ---
 
   // 1. Проверка за код за резервация
-  const codeRegex = /^[a-zA-Z0-9]{6,10}$/;
+  const codeRegex = /^HM[A-Z0-9]{8,10}$/;
   if (codeRegex.test(userInput)) {
     if (!sql) {
       return res.status(500).json({ reply: "Грешка: Липсва връзка с базата данни." });
