@@ -49,7 +49,7 @@ export async function syncBookingsFromGmail() {
     
     const query = '(from:automated@airbnb.com OR from:me) subject:(confirmed OR потвърдена) is:unread';
     const res = await gmail.users.messages.list({ userId: 'me', q: query });
-    const messages = res.data.messages || [];
+    const messages = res.data?.messages || [];
 
     for (const msg of messages) {
       const details = await processMessage(msg.id, gmail, genAI);
