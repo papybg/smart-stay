@@ -9,101 +9,113 @@ import { TuyaContext } from '@tuya/tuya-connector-nodejs';
 const app = express();
 const PORT = process.env.PORT || 10000;
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
+
+// ИЗПОЛЗВАМЕ СТАБИЛЕН МОДЕЛ ЗА ДА НЕ Е "ИДИОТ"
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
-// SMART TUYA CONFIG
-// Опитва да намери валидни ключове, независимо как са кръстени в Render
-const tuyaUser = process.env.TUYA_ACCESS_ID || process.env.TUYA_DEVICE_ID;
-const tuyaKey = process.env.TUYA_ACCESS_SECRET || process.env.TUYA_LOCAL_KEY;
-
+// TUYA CLOUD CONFIG
 const tuya = new TuyaContext({
     baseUrl: 'https://openapi.tuyaeu.com',
-    accessKey: tuyaUser,
-    secretKey: tuyaKey,
+    accessKey: process.env.TUYA_ACCESS_ID || process.env.TUYA_DEVICE_ID,
+    secretKey: process.env.TUYA_ACCESS_SECRET || process.env.TUYA_LOCAL_KEY,
 });
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Помощна функция за намиране на ID-то на устройството
-function getDeviceID() {
-    // Ако TUYA_DEVICE_ID съдържа 'vocw' (грешката), ползваме го, но принципно тук трябва да е дългото ID
-    return process.env.TUYA_DEVICE_ID; 
-}
-
-// --- АВТОМАТИЗАЦИЯ ---
-async function handlePowerAutomation() {
-    try {
-        const now = new Date();
-        const bookings = await sql`SELECT * FROM bookings`;
-        for (const b of bookings) {
-            const checkIn = new Date(b.check_in);
-            const checkOut = new Date(b.check_out);
-            // Токът се пуска 2 часа преди настаняване и спира 1 час след напускане
-            const onTime = new Date(checkIn.getTime() - (2 * 60 * 60 * 1000));
-            const offTime = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
-
-            if (now >= onTime && now < offTime && !b.power_on_time) {
-                await controlDevice(true);
-                await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
-            } else if (now >= offTime && !b.power_off_time) {
-                await controlDevice(false);
-                await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
-            }
-        }
-    } catch (e) { console.error('Auto Loop Error'); }
+// --- TUYA HELPERS ---
+async function getTuyaStatus(deviceId) {
+    const res = await tuya.request({ method: 'GET', path: `/v1.0/devices/${deviceId}/status` });
+    if (!res.result) throw new Error("No status returned");
+    // Търсим първия ключ, който прилича на прекъсвач (switch_1, switch, led_switch)
+    return res.result.find(s => s.code.includes('switch'));
 }
 
 async function controlDevice(state) {
+    const deviceId = process.env.TUYA_DEVICE_ID;
     try {
+        // Първо виждаме как се казва кода на прекъсвача (switch_1 или само switch)
+        const statusItem = await getTuyaStatus(deviceId);
+        const codeName = statusItem ? statusItem.code : 'switch_1';
+        
+        console.log(`🔌 Опит за превключване на ${codeName} към ${state}`);
+        
         await tuya.request({
             method: 'POST',
-            path: `/v1.0/devices/${getDeviceID()}/commands`,
-            body: { commands: [{ code: 'switch_1', value: state }] }
+            path: `/v1.0/devices/${deviceId}/commands`,
+            body: { commands: [{ code: codeName, value: state }] }
         });
-    } catch (e) { console.error('Tuya Cloud Error:', e.message); }
+    } catch (e) { console.error('Tuya Error:', e.message); }
 }
 
 // --- ENDPOINTS ---
+
 app.get('/status', async (req, res) => {
     try {
-        const r = await tuya.request({ method: 'GET', path: `/v1.0/devices/${getDeviceID()}/status` });
-        const sw = r.result.find(s => s.code.includes('switch'));
-        res.json({ is_on: sw ? sw.value : false });
-    } catch (err) { res.json({ is_on: false }); }
+        const item = await getTuyaStatus(process.env.TUYA_DEVICE_ID);
+        res.json({ is_on: item ? item.value : false });
+    } catch (err) { res.json({ is_on: false, error: err.message }); }
 });
 
 app.get('/toggle', async (req, res) => {
     try {
-        const devId = getDeviceID();
-        // Взимаме текущия статус
-        const r = await tuya.request({ method: 'GET', path: `/v1.0/devices/${devId}/status` });
-        const sw = r.result.find(s => s.code.includes('switch'));
-        // Обръщаме го
-        await controlDevice(!sw.value);
-        res.json({ success: true });
+        const item = await getTuyaStatus(process.env.TUYA_DEVICE_ID);
+        if (item) {
+            await controlDevice(!item.value);
+            res.json({ success: true, new_state: !item.value });
+        } else {
+            throw new Error("Device switch not found");
+        }
     } catch (err) { 
         console.error(err);
-        res.status(500).json({ error: "Toggle Failed" }); 
+        res.status(500).json({ error: "Toggle Failed: " + err.message }); 
     }
 });
 
-app.get('/calendar.ics', async (req, res) => {
+// --- SMART AI CHAT (ПОПРАВЕН) ---
+app.post('/api/chat', async (req, res) => {
+    const { message } = req.body;
+    const cleanMsg = message.trim().toUpperCase();
+    let contextData = "";
+
+    // 1. Проверка: Ако потребителят споменава код (дори в изречение)
+    const codeMatch = cleanMsg.match(/HM[A-Z0-9]{8,10}/);
+    if (codeMatch) {
+        try {
+            const booking = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeMatch[0]} LIMIT 1`;
+            if (booking.length > 0) {
+                contextData = `[СИСТЕМНА БЕЛЕЖКА: Потребителят пита за резервация ${booking[0].reservation_code}. 
+                Гост: ${booking[0].guest_name}. 
+                Настаняване: ${booking[0].check_in}. 
+                ПИН КОД ЗА ВРАТАТА: ${booking[0].lock_pin}.
+                Предай му ПИН кода учтиво.]`;
+            } else {
+                contextData = `[СИСТЕМНА БЕЛЕЖКА: Потребителят даде код ${codeMatch[0]}, но той не съществува в базата.]`;
+            }
+        } catch (e) { console.error("DB Error", e); }
+    }
+
     try {
-        const bookings = await sql`SELECT * FROM bookings`;
-        let ics = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Bobo//BG\n";
-        bookings.forEach(b => {
-            const s = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + "Z";
-            const e = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + "Z";
-            ics += `BEGIN:VEVENT\nUID:${b.id}\nDTSTART:${s}\nDTEND:${e}\nSUMMARY:${b.guest_name}\nEND:VEVENT\n`;
+        // Използваме 1.5 Pro или Flash, който е по-умен от старите модели
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-1.5-flash",
+            systemInstruction: "Ти си Бобо, витуален иконом на апартаменти Smart Stay. Твоята задача е да помагаш на гостите с настаняването. Бъди учтив, кратък и услужлив. Ако имаш информация за ПИН код в системната бележка, дай го на потребителя. Ако не знаеш нещо, кажи, че ще провериш при администратора."
         });
-        ics += "END:VCALENDAR";
-        res.setHeader('Content-Type', 'text/calendar');
-        res.send(ics);
-    } catch (e) { res.status(500).send("Err"); }
+
+        const chat = model.startChat({
+            history: [],
+        });
+
+        const result = await chat.sendMessage(contextData + "\nПотребител: " + message);
+        res.json({ reply: result.response.text() });
+    } catch (error) {
+        console.error("AI Error:", error);
+        res.json({ reply: "Съжалявам, в момента връзката с мозъка ми е прекъсната. Моля, свържете се с хоста." });
+    }
 });
 
+// --- ADMIN & SYNC ---
 app.get('/bookings', async (req, res) => {
     res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`);
 });
@@ -124,16 +136,44 @@ app.delete('/bookings/:id', async (req, res) => {
     res.json({success: true});
 });
 
-app.post('/api/chat', async (req, res) => {
-    const { message } = req.body;
-    if (/^HM[A-Z0-9]{8,10}$/.test(message.trim())) {
-        const r = await sql`SELECT lock_pin FROM bookings WHERE reservation_code = ${message.trim().toUpperCase()} LIMIT 1`;
-        if (r.length > 0) return res.json({ reply: `ПИН: ${r[0].lock_pin}` });
-    }
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const result = await model.generateContent(`Ти си Бобо. Отговори кратко: ${message}`);
-    res.json({ reply: result.response.text() });
+app.get('/calendar.ics', async (req, res) => {
+    try {
+        const bookings = await sql`SELECT * FROM bookings`;
+        let ics = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Bobo//BG\n";
+        bookings.forEach(b => {
+            const s = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + "Z";
+            const e = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + "Z";
+            ics += `BEGIN:VEVENT\nUID:${b.id}\nDTSTART:${s}\nDTEND:${e}\nSUMMARY:${b.guest_name}\nEND:VEVENT\n`;
+        });
+        ics += "END:VCALENDAR";
+        res.setHeader('Content-Type', 'text/calendar');
+        res.send(ics);
+    } catch (e) { res.status(500).send("Err"); }
 });
+
+// --- AUTO LOOP ---
+async function handlePowerAutomation() {
+    try {
+        const now = new Date();
+        const bookings = await sql`SELECT * FROM bookings`;
+        for (const b of bookings) {
+            const checkIn = new Date(b.check_in);
+            const checkOut = new Date(b.check_out);
+            const onTime = new Date(checkIn.getTime() - (2 * 60 * 60 * 1000));
+            const offTime = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
+
+            if (now >= onTime && now < offTime && !b.power_on_time) {
+                console.log(`💡 Авто-Включване за ${b.guest_name}`);
+                await controlDevice(true);
+                await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
+            } else if (now >= offTime && !b.power_off_time) {
+                console.log(`🌑 Авто-Изключване след ${b.guest_name}`);
+                await controlDevice(false);
+                await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
+            }
+        }
+    } catch (e) { console.error('Auto Loop Error:', e.message); }
+}
 
 app.listen(PORT, () => {
     console.log(`🚀 Bobo is live on port ${PORT}`);
