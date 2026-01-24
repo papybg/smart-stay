@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import cron from 'node-cron'; // Задължително
 import { syncBookingsFromGmail } from './services/detective.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
@@ -11,9 +12,7 @@ const PORT = process.env.PORT || 10000;
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
-// --- TUYA CONFIG (CLOUD) ---
-// Използваме ключовете, които имаш в Render. 
-// Ако си объркал имената, тези редове (||) ще хванат правилната стойност.
+// --- TUYA CONFIG ---
 const tuyaUser = process.env.TUYA_ACCESS_ID || process.env.TUYA_DEVICE_ID;
 const tuyaKey = process.env.TUYA_ACCESS_SECRET || process.env.TUYA_LOCAL_KEY;
 
@@ -27,22 +26,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// --- TUYA CORE FUNCTIONS (IOT-03 STANDARD) ---
-// Използваме пътя от стария код, защото е доказано работещ за твоето устройство
-
-async function getTuyaStatus() {
-    // Взимаме статуса през специализирания Electrical Endpoint
-    const res = await tuya.request({ 
-        method: 'GET', 
-        path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/status` 
-    });
-    // Търсим точно 'switch', както е при електромерите
-    return res.result.find(s => s.code === 'switch');
-}
+// --- TUYA ФУНКЦИИ (ПО СТАНДАРТ IOT-03 ОТ СТАРИЯ КОД) ---
 
 async function controlDevice(state) {
     try {
-        console.log(`🔌 IOT-03: Изпращане на switch=${state}`);
+        console.log(`🔌 Tuya IOT-03: Задаване на switch=${state}`);
         await tuya.request({
             method: 'POST',
             path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
@@ -57,13 +45,50 @@ async function controlDevice(state) {
     }
 }
 
-// --- ENDPOINTS ---
+async function getTuyaStatus() {
+    try {
+        const res = await tuya.request({ 
+            method: 'GET', 
+            path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/status` 
+        });
+        // Търсим точно 'switch' (стандарт за електромери)
+        return res.result.find(s => s.code === 'switch');
+    } catch (e) { return null; }
+}
 
+// --- АВТОПИЛОТ (CRON) ---
+cron.schedule('*/10 * * * *', async () => {
+    console.log("⏰ CRON: Проверка на графика...");
+    try {
+        const bookings = await sql`SELECT * FROM bookings`;
+        const now = new Date();
+
+        for (const b of bookings) {
+            const checkIn = new Date(b.check_in);
+            const checkOut = new Date(b.check_out);
+            const onTime = new Date(checkIn.getTime() - (2 * 60 * 60 * 1000));
+            const offTime = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
+
+            if (now >= onTime && now < offTime && !b.power_on_time) {
+                console.log(`💡 АВТО: Пускане за ${b.guest_name}`);
+                await controlDevice(true);
+                await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
+            } 
+            else if (now >= offTime && !b.power_off_time) {
+                console.log(`🌑 АВТО: Спиране след ${b.guest_name}`);
+                await controlDevice(false);
+                await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
+            }
+        }
+    } catch (err) { console.error('Cron Error:', err); }
+});
+
+// --- ENDPOINTS ---
 app.get('/status', async (req, res) => {
     try {
         const status = await getTuyaStatus();
         res.json({ is_on: status ? status.value : false });
-    } catch (err) { res.json({ is_on: false, error: err.message }); }
+    } catch (err) { res.json({ is_on: false }); }
 });
 
 app.get('/toggle', async (req, res) => {
@@ -73,49 +98,56 @@ app.get('/toggle', async (req, res) => {
             await controlDevice(!status.value);
             res.json({ success: true, new_state: !status.value });
         } else {
-            throw new Error("Device switch not found");
+            res.status(500).json({ error: "Device not found" });
         }
-    } catch (err) { 
-        console.error(err);
-        res.status(500).json({ error: "Toggle Failed" }); 
-    }
+    } catch (err) { res.status(500).json({ error: "Fail" }); }
 });
 
-// --- SMART AI CHAT (HYBRID MODEL) ---
+// --- SMART AI (FAILOVER SYSTEM) ---
 app.post('/api/chat', async (req, res) => {
     const { message } = req.body;
-    let systemContext = "";
+    let systemInfo = "";
 
-    // 1. Проверка за код в съобщението (Бърз метод)
+    // 1. Проверка за код
     const codeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]{8,10}/);
-    
     if (codeMatch) {
         try {
             const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeMatch[0]} LIMIT 1`;
             if (r.length > 0) {
-                systemContext = `[СИСТЕМНИ ДАННИ: Намерена е резервация! Гост: ${r[0].guest_name}. ПИН код за вратата: ${r[0].lock_pin}. Предай ПИН кода на госта учтиво.]`;
+                systemInfo = `[СИСТЕМНА ИНФОРМАЦИЯ: Клиентът е с резервация! Име: ${r[0].guest_name}. ПИН КОД: ${r[0].lock_pin}. Предай му кода учтиво.]`;
             } else {
-                systemContext = `[СИСТЕМНИ ДАННИ: Кодът ${codeMatch[0]} е валиден формат, но не съществува в базата.]`;
+                systemInfo = `[СИСТЕМНА ИНФОРМАЦИЯ: Кодът ${codeMatch[0]} не е намерен.]`;
             }
         } catch (e) { console.error("DB Error", e); }
     }
 
-    // 2. Генерация на отговор
-    try {
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
-            systemInstruction: "Ти си Бобо, интелигентен иконом на Smart Stay. Говориш на български. Твоята цел е да помагаш на гостите. Ако получиш СИСТЕМНИ ДАННИ за ПИН код, задължително ги предай на госта."
-        });
-        
-        const result = await model.generateContent(systemContext + "\nПотребител: " + message);
-        res.json({ reply: result.response.text() });
-    } catch (error) {
-        res.json({ reply: "Бобо е малко изморен (AI Error). Моля, опитайте пак." });
+    // 2. Списък с модели за пробване (по ред)
+    const modelsToTry = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-1.5-flash"];
+    let finalReply = "Съжалявам, Бобо има технически проблем с мозъка.";
+
+    for (const modelName of modelsToTry) {
+        try {
+            console.log(`🤖 Опит с модел: ${modelName}`);
+            const model = genAI.getGenerativeModel({ 
+                model: modelName, 
+                systemInstruction: "Ти си Бобо - умен иконом на Smart Stay. Отговаряй кратко и учтиво на български. Ако имаш СИСТЕМНА ИНФОРМАЦИЯ с ПИН код, предай го."
+            });
+            
+            const result = await model.generateContent(systemInfo + "\nКлиент: " + message);
+            finalReply = result.response.text();
+            
+            // Ако сме тук, значи е успешно -> спираме цикъла
+            break; 
+        } catch (error) {
+            console.warn(`⚠️ Грешка с ${modelName}:`, error.message);
+            // Продължаваме към следващия модел в списъка...
+        }
     }
+
+    res.json({ reply: finalReply });
 });
 
-// --- ADMIN & AUTO ---
-
+// --- ADMIN ---
 app.get('/bookings', async (req, res) => {
     res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`);
 });
@@ -151,34 +183,8 @@ app.get('/calendar.ics', async (req, res) => {
     } catch (e) { res.status(500).send("Err"); }
 });
 
-// Автопилот (на всеки 5 мин)
-async function handlePowerAutomation() {
-    try {
-        const now = new Date();
-        const bookings = await sql`SELECT * FROM bookings`;
-        for (const b of bookings) {
-            const checkIn = new Date(b.check_in);
-            const checkOut = new Date(b.check_out);
-            
-            // Настройки за време: 2 часа преди настаняване / 1 час след напускане
-            const onTime = new Date(checkIn.getTime() - (2 * 60 * 60 * 1000));
-            const offTime = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
-
-            if (now >= onTime && now < offTime && !b.power_on_time) {
-                console.log(`💡 Авто-ON: ${b.guest_name}`);
-                await controlDevice(true);
-                await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
-            } else if (now >= offTime && !b.power_off_time) {
-                console.log(`🌑 Авто-OFF: ${b.guest_name}`);
-                await controlDevice(false);
-                await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
-            }
-        }
-    } catch (e) { console.error('Auto Loop Error'); }
-}
-
 app.listen(PORT, () => {
     console.log(`🚀 Bobo is live on port ${PORT}`);
+    syncBookingsFromGmail();
     setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
-    setInterval(handlePowerAutomation, 5 * 60 * 1000);
 });
