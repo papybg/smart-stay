@@ -17,36 +17,41 @@ const PORT = process.env.PORT || 10000;
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
-const device = new TuyAPI({
-    id: process.env.TUYA_DEVICE_ID,
-    key: process.env.TUYA_LOCAL_KEY,
-    ip: process.env.TUYA_DEVICE_IP
-});
+// ПРОВЕРКА ЗА TUYA КЛЮЧОВЕ - предотвратява TypeError
+let device = null;
+if (process.env.TUYA_DEVICE_ID && process.env.TUYA_LOCAL_KEY) {
+    device = new TuyAPI({
+        id: process.env.TUYA_DEVICE_ID,
+        key: process.env.TUYA_LOCAL_KEY,
+        ip: process.env.TUYA_DEVICE_IP
+    });
+} else {
+    console.warn("⚠️ ВНИМАНИЕ: Tuya ключовете липсват. Дистанционното няма да работи.");
+}
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- iCAL ГЕНЕРАТОР (Спира имейлите за грешка от Airbnb) ---
+// --- iCAL ГЕНЕРАТОР ---
 app.get('/calendar.ics', async (req, res) => {
     try {
         const bookings = await sql`SELECT * FROM bookings`;
         let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartStay//Bobo//BG\n";
-        
         bookings.forEach(b => {
             const start = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + "Z";
             const end = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + "Z";
             icsContent += `BEGIN:VEVENT\nUID:${b.id}@smartstay\nDTSTART:${start}\nDTEND:${end}\nSUMMARY:Резервация: ${b.guest_name}\nEND:VEVENT\n`;
         });
-        
         icsContent += "END:VCALENDAR";
         res.setHeader('Content-Type', 'text/calendar');
         res.send(icsContent);
-    } catch (e) { res.status(500).send("Грешка при генериране на календар"); }
+    } catch (e) { res.status(500).send("Грешка при календар"); }
 });
 
 // --- АВТОМАТИЗАЦИЯ НА ТОКА ---
 async function handlePowerAutomation() {
+    if (!device) return;
     try {
         const now = new Date();
         const bookings = await sql`SELECT * FROM bookings`;
@@ -68,6 +73,7 @@ async function handlePowerAutomation() {
 }
 
 async function controlDevice(state) {
+    if (!device) return;
     try {
         await device.find();
         await device.connect();
@@ -101,6 +107,7 @@ app.delete('/bookings/:id', async (req, res) => {
 });
 
 app.get('/status', async (req, res) => {
+    if (!device) return res.json({ is_on: false, error: "Tuya not configured" });
     try {
         await device.find(); await device.connect();
         const status = await device.get(); await device.disconnect();
@@ -109,6 +116,7 @@ app.get('/status', async (req, res) => {
 });
 
 app.get('/toggle', async (req, res) => {
+    if (!device) return res.status(400).json({ error: "Tuya not configured" });
     try {
         await device.find(); await device.connect();
         const status = await device.get();
