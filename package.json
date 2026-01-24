@@ -9,7 +9,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@neondatabase/serverless": "^0.10.4",
-    "@tuya/tuya-connector-nodejs": "^1.0.10",
+    "@tuya/tuya-connector-nodejs": "^0.0.8",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
