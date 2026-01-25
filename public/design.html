@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Power Control Dashboard - On State</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Noto+Sans:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#06f957", // Neon Green
+                        "background-light": "#f5f8f6", // Not really used in this specific dark design but required by rules
+                        "background-dark": "#121212", // Deep Dark Charcoal
+                        "surface-dark": "#1a1a1a",
+                        "accent-dim": "#3a5543",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"],
+                        "body": ["Noto Sans", "sans-serif"],
+                    },
+                    borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+                    boxShadow: {
+                        'neon': '0 0 10px #06f957, 0 0 20px #06f957, 0 0 40px rgba(6, 249, 87, 0.4)',
+                        'neon-sm': '0 0 5px #06f957, 0 0 10px rgba(6, 249, 87, 0.3)',
+                        'reactor': '0 0 15px #06f957, inset 0 0 20px rgba(6, 249, 87, 0.5)',
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        /* Custom utilities for that cyberpunk feel */
+        .cyber-grid {
+            background-size: 40px 40px;
+            background-image: linear-gradient(to right, rgba(6, 249, 87, 0.05) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(6, 249, 87, 0.05) 1px, transparent 1px);
+            mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+        }
+        
+        .glass-panel {
+            background: rgba(18, 18, 18, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(6, 249, 87, 0.2);
+        }
+
+        .pulse-slow {
+            animation: pulse-glow 3s infinite ease-in-out;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; box-shadow: 0 0 15px #06f957; }
+            50% { opacity: 0.8; box-shadow: 0 0 25px #06f957, 0 0 50px rgba(6, 249, 87, 0.3); }
+        }
+        
+        .text-glow {
+            text-shadow: 0 0 8px rgba(6, 249, 87, 0.6);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-white font-display overflow-hidden select-none">
+<!-- Background Grid Effect -->
+<div class="fixed inset-0 cyber-grid pointer-events-none z-0"></div>
+<div class="relative flex flex-col h-screen w-full max-w-md mx-auto z-10">
+<!-- Header -->
+<header class="flex items-center justify-between p-6 pt-12 pb-4">
+<button class="flex items-center justify-center w-10 h-10 rounded-full bg-surface-dark border border-white/10 text-white/60 hover:text-primary hover:border-primary/50 transition-colors">
+<span class="material-symbols-outlined text-[24px]">grid_view</span>
+</button>
+<div class="flex flex-col items-center">
+<h1 class="text-sm tracking-[0.2em] font-bold text-primary text-glow text-center uppercase">Smart Stay Control</h1>
+<div class="flex gap-1 mt-1">
+<div class="w-1 h-1 rounded-full bg-primary animate-pulse"></div>
+<div class="w-1 h-1 rounded-full bg-primary/50"></div>
+<div class="w-1 h-1 rounded-full bg-primary/20"></div>
+</div>
+</div>
+<button class="flex items-center justify-center w-10 h-10 rounded-full bg-surface-dark border border-white/10 text-white/60 hover:text-primary hover:border-primary/50 transition-colors">
+<span class="material-symbols-outlined text-[24px]">settings</span>
+</button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col items-center justify-center w-full px-6 gap-8 relative">
+<!-- Connection Status Pill -->
+<div class="absolute top-4 flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/20 bg-primary/5 shadow-neon-sm">
+<span class="material-symbols-outlined text-[16px] text-primary">wifi</span>
+<span class="text-xs font-bold tracking-wider text-primary">CONNECTED_5G</span>
+</div>
+<!-- Central Reactor Button (ON STATE) -->
+<div class="relative group cursor-pointer my-8">
+<!-- Outer glow rings -->
+<div class="absolute -inset-8 rounded-full border border-primary/10 opacity-60 animate-[spin_10s_linear_infinite]"></div>
+<div class="absolute -inset-16 rounded-full border border-primary/5 border-dashed opacity-40 animate-[spin_15s_linear_infinite_reverse]"></div>
+<!-- Main Glow Aura -->
+<div class="absolute inset-0 rounded-full bg-primary blur-2xl opacity-40 pulse-slow"></div>
+<!-- The Button Itself -->
+<button class="relative flex items-center justify-center w-64 h-64 rounded-full bg-background-dark border-4 border-primary shadow-neon active:scale-95 transition-transform duration-200">
+<!-- Inner mechanical detail ring -->
+<div class="absolute inset-2 rounded-full border border-primary/30"></div>
+<div class="absolute inset-4 rounded-full border-[6px] border-surface-dark bg-background-dark"></div>
+<!-- Core Indicator -->
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-32 h-32 rounded-full bg-gradient-to-br from-primary/20 to-transparent flex items-center justify-center shadow-reactor border border-primary/40">
+<span class="material-symbols-outlined text-[64px] text-primary text-glow drop-shadow-lg">power_settings_new</span>
+</div>
+</div>
+<!-- Tiny decorations around the button -->
+<div class="absolute top-8 left-1/2 -translate-x-1/2 w-1 h-2 bg-primary"></div>
+<div class="absolute bottom-8 left-1/2 -translate-x-1/2 w-1 h-2 bg-primary"></div>
+<div class="absolute left-8 top-1/2 -translate-y-1/2 w-2 h-1 bg-primary"></div>
+<div class="absolute right-8 top-1/2 -translate-y-1/2 w-2 h-1 bg-primary"></div>
+</button>
+</div>
+<!-- Status Headline -->
+<div class="text-center z-10 flex flex-col gap-2">
+<h2 class="text-4xl font-bold text-white tracking-tight drop-shadow-md">ACTIVE</h2>
+<p class="text-primary/80 text-sm tracking-[0.2em] uppercase font-medium">Power Grid Online</p>
+</div>
+<!-- Stats Grid -->
+<div class="grid grid-cols-2 gap-4 w-full mt-4">
+<!-- Stat 1 -->
+<div class="bg-surface-dark/50 border border-primary/20 p-4 rounded-xl flex flex-col items-start backdrop-blur-sm group hover:border-primary/50 transition-colors">
+<div class="flex items-center justify-between w-full mb-2">
+<span class="text-[10px] text-white/50 uppercase tracking-wider font-bold">Voltage</span>
+<span class="material-symbols-outlined text-[16px] text-primary">bolt</span>
+</div>
+<div class="text-2xl font-bold text-white group-hover:text-primary transition-colors">220<span class="text-sm font-normal text-white/50 ml-1">V</span></div>
+<div class="text-[10px] text-primary mt-1">Stable</div>
+</div>
+<!-- Stat 2 -->
+<div class="bg-surface-dark/50 border border-primary/20 p-4 rounded-xl flex flex-col items-start backdrop-blur-sm group hover:border-primary/50 transition-colors">
+<div class="flex items-center justify-between w-full mb-2">
+<span class="text-[10px] text-white/50 uppercase tracking-wider font-bold">Output</span>
+<span class="material-symbols-outlined text-[16px] text-primary">speed</span>
+</div>
+<div class="text-2xl font-bold text-white group-hover:text-primary transition-colors">100<span class="text-sm font-normal text-white/50 ml-1">%</span></div>
+<div class="text-[10px] text-primary mt-1">Maximum</div>
+</div>
+</div>
+</main>
+<!-- Glassmorphism Footer -->
+<footer class="glass-panel mt-auto pb-8 pt-6 px-6 rounded-t-3xl">
+<div class="flex flex-col items-center gap-4">
+<div class="text-center">
+<p class="text-primary text-xs font-mono font-bold tracking-[0.1em] uppercase animate-pulse">
+<span class="mr-2">&gt;&gt;&gt;</span> System: Synchronized <span class="ml-2">&lt;&lt;&lt;</span>
+</p>
+</div>
+<div class="w-full h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent"></div>
+<div class="flex w-full justify-around items-center pt-2">
+<button class="flex flex-col items-center gap-1 text-primary group">
+<div class="p-2 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
+<span class="material-symbols-outlined text-[24px]">home_iot_device</span>
+</div>
+<span class="text-[10px] font-bold tracking-wide opacity-100">HOME</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-white/40 hover:text-white group transition-colors">
+<div class="p-2 rounded-full group-hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-[24px]">bar_chart</span>
+</div>
+<span class="text-[10px] font-bold tracking-wide">STATS</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-white/40 hover:text-white group transition-colors">
+<div class="p-2 rounded-full group-hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-[24px]">schedule</span>
+</div>
+<span class="text-[10px] font-bold tracking-wide">TIMER</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-white/40 hover:text-white group transition-colors">
+<div class="p-2 rounded-full group-hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-[24px]">account_circle</span>
+</div>
+<span class="text-[10px] font-bold tracking-wide">PROFILE</span>
+</button>
+</div>
+</div>
+</footer>
+</div>
+</body></html>

@@ -6,7 +6,7 @@
     <title>Smart Stay - Админ Панел</title>
     <style>
         body { font-family: -apple-system, system-ui, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { color: #333; border-bottom: 2px solid #eee; padding-bottom: 15px; }
         
         /* Форма */
@@ -18,18 +18,29 @@
 
         /* Таблица */
         table { width: 100%; border-collapse: collapse; margin-top: 30px; }
-        th { text-align: left; padding: 10px; background: #f8f9fa; color: #666; font-size: 14px; }
-        td { padding: 12px 10px; border-bottom: 1px solid #eee; font-size: 15px; }
-        .badge { background: #e1f0ff; color: #0084ff; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-        .delete-btn { color: red; background: none; border: none; cursor: pointer; font-weight: bold; }
+        th { text-align: left; padding: 10px; background: #f8f9fa; color: #666; font-size: 14px; border-bottom: 2px solid #ddd; }
+        td { padding: 12px 10px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: top; }
         
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 4px; }
+        .badge-res { background: #e1f0ff; color: #0084ff; }
+        .badge-on { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .badge-off { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+        .delete-btn { color: red; background: none; border: none; cursor: pointer; font-weight: bold; }
         .error { color: red; font-size: 14px; margin-top: 5px; display: none; }
+        
+        /* За мобилни устройства */
+        @media (max-width: 600px) {
+            td, th { display: block; width: 100%; box-sizing: border-box; }
+            tr { display: block; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+            td { border-bottom: none; padding: 5px 0; }
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>📅 Управление на Резервации</h1>
+    <h1>📅 Управление & Ток</h1>
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
         <div class="form-group">
@@ -37,9 +48,9 @@
             <input type="text" id="guestName" placeholder="Иван Петров">
         </div>
         <div class="form-group">
-            <label>Код на резервация (HM...)</label>
+            <label>Код (HM...)</label>
             <div style="display: flex; gap: 5px;">
-                <input type="text" id="resCode" placeholder="HM123456">
+                <input type="text" id="resCode" placeholder="HM...">
                 <button onclick="generateCode()" style="width: 50px;">🎲</button>
             </div>
         </div>
@@ -49,30 +60,31 @@
         <div class="form-group">
             <label>Настаняване (Check-in)</label>
             <input type="datetime-local" id="checkIn">
+            <small style="color:green">Токът ще тръгне 2 часа по-рано.</small>
         </div>
         <div class="form-group">
             <label>Напускане (Check-out)</label>
             <input type="datetime-local" id="checkOut">
+            <small style="color:red">Токът ще спре 1 час по-късно.</small>
         </div>
     </div>
 
-    <div id="errorMsg" class="error">⚠️ Грешка: Има засичане с друга резервация за тези дати!</div>
+    <div id="errorMsg" class="error">⚠️ Грешка: Засичане на дати!</div>
     <button class="add-btn" onclick="addBooking()">➕ Добави Резервация</button>
 
     <hr>
 
-    <h3>Активни резервации</h3>
+    <h3>График на тока</h3>
     <table>
         <thead>
             <tr>
-                <th>Гост</th>
-                <th>Период</th>
-                <th>Кодове</th>
+                <th>Гост / Код</th>
+                <th>⚡ ВКЛЮЧВАНЕ (Check-in -2ч)</th>
+                <th>🌑 ИЗКЛЮЧВАНЕ (Check-out +1ч)</th>
                 <th>Действие</th>
             </tr>
         </thead>
-        <tbody id="bookingList">
-            </tbody>
+        <tbody id="bookingList"></tbody>
     </table>
     
     <div style="margin-top: 20px; text-align: right;">
@@ -83,7 +95,29 @@
 <script>
     let currentBookings = [];
 
-    // 1. Зареждане на резервациите при старт
+    // Форматиране на дата за БГ стандарт
+    function formatBG(dateStr) {
+        if (!dateStr) return '---';
+        const d = new Date(dateStr);
+        return d.toLocaleString('bg-BG', { 
+            day: '2-digit', month: '2-digit', 
+            hour: '2-digit', minute: '2-digit' 
+        });
+    }
+
+    // Изчисляване на време за ток
+    function getPowerTimes(checkInStr, checkOutStr) {
+        const checkIn = new Date(checkInStr);
+        const checkOut = new Date(checkOutStr);
+        
+        // Включване: -2 часа
+        const powerOn = new Date(checkIn.getTime() - (2 * 60 * 60 * 1000));
+        // Изключване: +1 час
+        const powerOff = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
+
+        return { on: powerOn, off: powerOff };
+    }
+
     async function loadBookings() {
         const res = await fetch('/bookings');
         currentBookings = await res.json();
@@ -94,36 +128,40 @@
         const tbody = document.getElementById('bookingList');
         tbody.innerHTML = '';
         bookings.forEach(b => {
-            const start = new Date(b.check_in).toLocaleString('bg-BG');
-            const end = new Date(b.check_out).toLocaleString('bg-BG');
+            const times = getPowerTimes(b.check_in, b.check_out);
+            
             const row = `
                 <tr>
-                    <td><b>${b.guest_name}</b></td>
-                    <td style="font-size: 13px;">От: ${start}<br>До: ${end}</td>
                     <td>
-                        <span class="badge">HM: ${b.reservation_code}</span><br>
-                        <small>PIN: ${b.lock_pin}</small>
+                        <b>${b.guest_name}</b><br>
+                        <span class="badge badge-res">${b.reservation_code}</span><br>
+                        <small>ПИН: ${b.lock_pin}</small>
                     </td>
-                    <td><button class="delete-btn" onclick="deleteBooking(${b.id})">Изтрий</button></td>
+                    <td>
+                        <span class="badge badge-on">⚡ ${formatBG(times.on)}</span><br>
+                        <small>Настаняване: ${formatBG(b.check_in)}</small>
+                    </td>
+                    <td>
+                        <span class="badge badge-off">🌑 ${formatBG(times.off)}</span><br>
+                        <small>Напускане: ${formatBG(b.check_out)}</small>
+                    </td>
+                    <td><button class="delete-btn" onclick="deleteBooking(${b.id})">❌</button></td>
                 </tr>
             `;
             tbody.innerHTML += row;
         });
     }
 
-    // 2. Генериране на случаен код
     function generateCode() {
         const rnd = Math.floor(Math.random() * 900000) + 100000;
         document.getElementById('resCode').value = 'HM' + rnd;
     }
 
-    // 3. ПРОВЕРКА ЗА ЗАСИЧАНЕ (Conflict Check)
+    // Проверка за засичане (Overlap)
     function hasOverlap(newStart, newEnd) {
         return currentBookings.some(booking => {
             const bStart = new Date(booking.check_in);
             const bEnd = new Date(booking.check_out);
-            
-            // Логика: Новата започва ПРЕДИ старата да свърши И свършва СЛЕД като старата е започнала
             return newStart < bEnd && newEnd > bStart;
         });
     }
@@ -131,32 +169,31 @@
     async function addBooking() {
         const name = document.getElementById('guestName').value;
         const code = document.getElementById('resCode').value;
-        const inDate = document.getElementById('checkIn').value;
-        const outDate = document.getElementById('checkOut').value;
+        const inVal = document.getElementById('checkIn').value;
+        const outVal = document.getElementById('checkOut').value;
         const errorEl = document.getElementById('errorMsg');
 
-        if (!name || !code || !inDate || !outDate) {
+        if (!name || !code || !inVal || !outVal) {
             alert("Попълни всички полета!");
             return;
         }
 
-        const start = new Date(inDate);
-        const end = new Date(outDate);
+        const start = new Date(inVal);
+        const end = new Date(outVal);
 
         if (start >= end) {
-            alert("Датата на напускане трябва да е след настаняването!");
+            alert("Грешка: Напускането е преди настаняването!");
             return;
         }
 
-        // --- ТУК Е ЗАЩИТАТА ---
         if (hasOverlap(start, end)) {
             errorEl.style.display = 'block';
-            errorEl.innerText = "⚠️ ВНИМАНИЕ: Засичане на дати! Имате друга резервация по това време.";
-            return; // Спираме записа
+            errorEl.innerText = "⚠️ ВНИМАНИЕ: Засичане с друга резервация!";
+            return;
         }
         errorEl.style.display = 'none';
-        // ---------------------
 
+        // ИЗПРАЩАНЕ КЪМ СЪРВЪРА (Като ISO стринг, за да запазим часа)
         try {
             const res = await fetch('/add-booking', {
                 method: 'POST',
@@ -164,18 +201,17 @@
                 body: JSON.stringify({
                     guest_name: name,
                     reservation_code: code,
-                    check_in: inDate,
-                    check_out: outDate
+                    check_in: start.toISOString(), // <-- ТОВА ОПРАВЯ ЧАСОВИТЕ ЗОНИ
+                    check_out: end.toISOString()
                 })
             });
             
             if (res.ok) {
-                // Изчистваме формата
                 document.getElementById('guestName').value = '';
                 document.getElementById('resCode').value = '';
-                loadBookings(); // Презареждаме таблицата
+                loadBookings();
             } else {
-                alert("Грешка при запис в базата.");
+                alert("Грешка при запис.");
             }
         } catch (e) { console.error(e); }
     }

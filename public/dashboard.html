@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Stay - Команден Център</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* --- ОСНОВНИ НАСТРОЙКИ --- */
+        :root { 
+            --primary: #0084ff; 
+            --neon-cyan: hsl(190, 80%, 55%);
+            --bg-light: #f4f6f8; 
+            --bg-dark: #111827; /* Тъмен фон за Remote таба */
+        }
+        
+        body { font-family: -apple-system, 'Inter', sans-serif; margin: 0; padding: 0; background: var(--bg-light); height: 100vh; display: flex; flex-direction: column; }
+        
+        /* --- НАВИГАЦИЯ (HEADER) --- */
+        header { background: white; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; z-index: 100; }
+        .logo { font-weight: 800; font-size: 20px; color: #333; }
+        
+        .nav-tabs { display: flex; gap: 10px; }
+        .nav-btn { background: none; border: none; padding: 10px 20px; cursor: pointer; font-size: 15px; font-weight: 600; color: #666; border-radius: 8px; transition: 0.2s; }
+        .nav-btn.active { background: var(--primary); color: white; }
+        .nav-btn:hover:not(.active) { background: #eee; }
+
+        /* --- КОНТЕЙНЕР ЗА ТАБОВЕТЕ --- */
+        .main-wrapper { flex: 1; overflow-y: auto; position: relative; }
+        .tab-content { display: none; height: 100%; }
+        .tab-content.active { display: block; }
+
+        /* =========================================
+           ТАБ 1: РЕЗЕРВАЦИИ (ADMIN STYLE)
+           ========================================= */
+        #bookings { padding: 20px; max-width: 1000px; margin: 0 auto; }
+        
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        label { font-weight: 600; font-size: 13px; color: #555; display: block; margin-bottom: 5px; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 15px; }
+        
+        button.action-btn { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+        button.action-btn:hover { background: #006bcf; }
+
+        /* Таблица */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { text-align: left; padding: 12px; background: #f8f9fa; color: #666; font-size: 14px; border-bottom: 2px solid #ddd; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: top; }
+        
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 4px; }
+        .badge-res { background: #e1f0ff; color: #0084ff; }
+        .badge-on { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .badge-off { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .delete-btn { color: red; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 16px; }
+
+        /* =========================================
+           ТАБ 2: УСТРОЙСТВА (REMOTE NEON STYLE)
+           ========================================= */
+        #remote { 
+            background-color: var(--bg-dark); 
+            color: white; 
+            display: none; /* Скрит по подразбиране */
+            height: 100%;
+            display: flex; /* Flexbox за центриране */
+            align-items: center; 
+            justify-content: center;
+            flex-direction: column;
+        }
+        /* Когато е активен, трябва да е flex, а не block, за да работи центрирането */
+        #remote.active { display: flex !important; }
+
+        /* Ефекти за бутона */
+        .neon-container { position: relative; display: flex; flex-direction: column; align-items: center; }
+        
+        .glow-effect {
+            position: absolute; width: 16rem; height: 16rem;
+            background: var(--neon-cyan); opacity: 0;
+            border-radius: 50%; filter: blur(40px);
+            transition: opacity 1s ease-in-out;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 0;
+        }
+
+        .main-btn {
+            position: relative; z-index: 10;
+            width: 12rem; height: 12rem;
+            border-radius: 50%;
+            background: rgba(31, 41, 55, 0.4); /* bg-gray-800/40 */
+            backdrop-filter: blur(4px);
+            border: 8px solid #374151; /* border-gray-700 */
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; outline: none; transition: all 0.3s ease;
+        }
+        
+        .main-btn span { font-size: 80px !important; color: #4b5563; transition: color 0.3s; }
+
+        /* СЪСТОЯНИЕ: ВКЛЮЧЕНО (ON) */
+        .system-on .glow-effect { opacity: 0.4; animation: pulse-glow 4s infinite ease-in-out; }
+        .system-on .main-btn {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 12px var(--neon-cyan), 0 0 25px var(--neon-cyan);
+        }
+        .system-on .main-btn span { color: var(--neon-cyan); }
+        .system-on #status-text { color: white; text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+
+        /* СЪСТОЯНИЕ: ГРЕШКА */
+        .system-error .main-btn { border-color: #ef4444; }
+        .system-error .main-btn span { color: #ef4444; }
+        .system-error #status-text { color: #ef4444; }
+
+        @keyframes pulse-glow { 50% { transform: translate(-50%, -50%) scale(1.1); } }
+
+        .remote-text { text-align: center; margin-top: 2rem; position: relative; z-index: 10; }
+        .remote-text h2 { font-size: 1.25rem; font-weight: bold; letter-spacing: 0.05em; margin: 0; }
+        .remote-text p { color: #9ca3af; font-size: 0.875rem; margin-top: 0.5rem; }
+
+        /* Мобилни корекции */
+        @media (max-width: 600px) {
+            .form-grid { grid-template-columns: 1fr; }
+            td, th { display: block; width: 100%; }
+            tr { display: block; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">🏠 Smart Stay Admin</div>
+        <div class="nav-tabs">
+            <button class="nav-btn active" onclick="switchTab('bookings', this)">📅 Резервации</button>
+            <button class="nav-btn" onclick="switchTab('remote', this)">⚡ Устройства</button>
+        </div>
+    </header>
+
+    <div class="main-wrapper">
+        
+        <div id="bookings" class="tab-content active">
+            <div class="card">
+                <h3>Нова Резервация</h3>
+                <div class="form-grid">
+                    <div>
+                        <label>Име на госта</label>
+                        <input type="text" id="guestName" placeholder="Иван Иванов">
+                    </div>
+                    <div>
+                        <label>Код (HM...)</label>
+                        <div style="display:flex; gap:5px;">
+                            <input type="text" id="resCode">
+                            <button onclick="generateCode()" class="action-btn" style="width:50px; margin:0;">🎲</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label>Настаняване (Check-in)</label>
+                        <input type="datetime-local" id="checkIn">
+                        <small style="color:#155724">⚡ Токът тръгва 2 часа по-рано</small>
+                    </div>
+                    <div>
+                        <label>Напускане (Check-out)</label>
+                        <input type="datetime-local" id="checkOut">
+                        <small style="color:#721c24">🌑 Токът спира 1 час по-късно</small>
+                    </div>
+                </div>
+                <div id="errorMsg" style="color:red; margin-top:10px; display:none;">⚠️ Грешка: Засичане на дати!</div>
+                <button class="action-btn" onclick="addBooking()">➕ Добави Резервация</button>
+            </div>
+
+            <div class="card">
+                <h3>График на тока</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Гост / Код</th>
+                            <th>⚡ ВКЛЮЧВАНЕ</th>
+                            <th>🌑 ИЗКЛЮЧВАНЕ</th>
+                            <th>Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bookingList"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="remote" class="tab-content">
+            <div class="neon-container" id="remote-container">
+                <div class="glow-effect"></div>
+
+                <button onclick="togglePower()" class="main-btn" id="main-btn">
+                    <span class="material-symbols-outlined">power_settings_new</span>
+                </button>
+
+                <div class="remote-text">
+                    <h2 id="status-text">CONNECTING...</h2>
+                    <p>Ръчно управление на захранването</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+    // --- 1. UI ЛОГИКА (ПРЕВКЛЮЧВАНЕ НА ТАБОВЕ) ---
+    function switchTab(tabId, btnElement) {
+        // Скриваме всички табове
+        document.querySelectorAll('.tab-content').forEach(el => {
+            el.classList.remove('active');
+            // Hack: за Remote таба махаме inline display стила, за да се скрие
+            if(el.id === 'remote') el.style.display = ''; 
+        });
+        
+        // Махаме активния клас от бутоните
+        document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+        
+        // Показваме избрания таб
+        const selectedTab = document.getElementById(tabId);
+        selectedTab.classList.add('active');
+        btnElement.classList.add('active');
+        
+        // Ако е Remote таба, пускаме проверката на статуса веднага
+        if(tabId === 'remote') {
+            checkPowerStatus();
+        }
+    }
+
+    // --- 2. ЛОГИКА ЗА РЕЗЕРВАЦИИ (ADMIN) ---
+    let currentBookings = [];
+    
+    // Форматиране за България
+    function formatBG(dateStr) {
+        if (!dateStr) return '---';
+        return new Date(dateStr).toLocaleString('bg-BG', { 
+            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
+        });
+    }
+
+    // Изчисляване на времената за ток
+    function getPowerTimes(checkInStr, checkOutStr) {
+        const checkIn = new Date(checkInStr);
+        const checkOut = new Date(checkOutStr);
+        return { 
+            on: new Date(checkIn.getTime() - (2 * 60 * 60 * 1000)), 
+            off: new Date(checkOut.getTime() + (1 * 60 * 60 * 1000)) 
+        };
+    }
+
+    async function loadBookings() {
+        try {
+            const res = await fetch('/bookings');
+            currentBookings = await res.json();
+            const tbody = document.getElementById('bookingList');
+            tbody.innerHTML = '';
+            
+            currentBookings.forEach(b => {
+                const times = getPowerTimes(b.check_in, b.check_out);
+                tbody.innerHTML += `
+                    <tr>
+                        <td>
+                            <b>${b.guest_name}</b><br>
+                            <span class="badge badge-res">${b.reservation_code}</span><br>
+                            <small>ПИН: ${b.lock_pin}</small>
+                        </td>
+                        <td>
+                            <span class="badge badge-on">⚡ ${formatBG(times.on)}</span><br>
+                            <small>Чек-ин: ${formatBG(b.check_in)}</small>
+                        </td>
+                        <td>
+                            <span class="badge badge-off">🌑 ${formatBG(times.off)}</span><br>
+                            <small>Чек-аут: ${formatBG(b.check_out)}</small>
+                        </td>
+                        <td><button class="delete-btn" onclick="deleteBooking(${b.id})">❌</button></td>
+                    </tr>`;
+            });
+        } catch(e) { console.error("Грешка при зареждане на резервациите"); }
+    }
+
+    async function addBooking() {
+        const name = document.getElementById('guestName').value;
+        const code = document.getElementById('resCode').value;
+        const inVal = document.getElementById('checkIn').value;
+        const outVal = document.getElementById('checkOut').value;
+        const errorEl = document.getElementById('errorMsg');
+        
+        if (!name || !code || !inVal || !outVal) return alert("Попълни всички полета!");
+        
+        const start = new Date(inVal);
+        const end = new Date(outVal);
+
+        if (start >= end) return alert("Грешка: Напускането е преди настаняването!");
+
+        // Проверка за засичане
+        const hasOverlap = currentBookings.some(b => {
+             const bStart = new Date(b.check_in);
+             const bEnd = new Date(b.check_out);
+             return start < bEnd && end > bStart;
+        });
+
+        if(hasOverlap) {
+            errorEl.style.display = 'block';
+            return;
+        }
+        errorEl.style.display = 'none';
+
+        // ВАЖНО: Изпращаме ISO стринг, за да запазим точния час!
+        await fetch('/add-booking', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                guest_name: name, reservation_code: code,
+                check_in: start.toISOString(), check_out: end.toISOString()
+            })
+        });
+        
+        // Чистене и презареждане
+        document.getElementById('guestName').value = '';
+        document.getElementById('resCode').value = '';
+        loadBookings();
+    }
+
+    function generateCode() {
+        document.getElementById('resCode').value = 'HM' + (Math.floor(Math.random()*900000)+100000);
+    }
+    
+    async function deleteBooking(id) {
+        if(confirm('Изтриване на резервацията?')) { 
+            await fetch(`/bookings/${id}`, {method:'DELETE'}); 
+            loadBookings(); 
+        }
+    }
+
+    // --- 3. ЛОГИКА ЗА REMOTE (NEON CONTROL) ---
+    async function checkPowerStatus() {
+        const container = document.getElementById('remote-container');
+        const statusText = document.getElementById('status-text');
+        
+        try {
+            const res = await fetch('/status');
+            const data = await res.json();
+            
+            // Чистим старите класове
+            container.classList.remove('system-on', 'system-error');
+
+            if (data.is_on) {
+                container.classList.add('system-on');
+                statusText.innerText = 'SYSTEM ONLINE';
+            } else {
+                // System OFF (default style)
+                statusText.innerText = 'SYSTEM OFFLINE';
+            }
+        } catch(e) {
+            container.classList.add('system-error');
+            statusText.innerText = 'CONNECTION LOST';
+        }
+    }
+
+    async function togglePower() {
+        const statusText = document.getElementById('status-text');
+        statusText.innerText = 'SENDING...';
+        
+        try {
+            const res = await fetch('/toggle');
+            if(res.ok) {
+                setTimeout(checkPowerStatus, 1000); // Изчакваме малко и проверяваме
+            } else {
+                throw new Error("Toggle fail");
+            }
+        } catch(e) {
+            document.getElementById('remote-container').classList.add('system-error');
+            statusText.innerText = 'COMMAND FAILED';
+        }
+    }
+
+    // --- ИНИЦИАЛИЗАЦИЯ ---
+    loadBookings();
+    setInterval(checkPowerStatus, 15000); // Опресняване на статуса на всеки 15 сек
+
+</script>
+
+</body>
+</html>

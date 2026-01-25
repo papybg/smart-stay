@@ -2,47 +2,121 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Stay Remote</title>
-    <style>
-        body { background: #121212; color: white; font-family: sans-serif; text-align: center; padding-top: 50px; }
-        .power-btn { 
-            width: 180px; height: 180px; border-radius: 50%; border: 8px solid #333;
-            cursor: pointer; font-size: 24px; font-weight: bold; transition: 0.4s;
-            outline: none; background: #222;
+    
+    <!-- Tailwind & Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
+
+    <!-- Config & Custom Styles -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: 'hsl(190, 80%, 55%)', // Bright Cyan
+                    },
+                    boxShadow: {
+                        'neon': "0 0 12px hsl(190, 80%, 55%), 0 0 25px hsl(190, 80%, 55%)",
+                    }
+                }
+            }
         }
-        .on { color: #00ff88; border-color: #00ff88; box-shadow: 0 0 30px #00ff88; }
-        .off { color: #555; border-color: #333; }
-        .status-info { margin-top: 30px; font-size: 18px; color: #aaa; }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        @keyframes pulse-glow { 50% { transform: scale(1.1); } }
+        .pulse-slow { animation: pulse-glow 4s infinite ease-in-out; }
+        .material-symbols-outlined { font-size: 80px !important; }
     </style>
 </head>
-<body>
-    <h1>КОНТРОЛ НА ТОКА</h1>
-    <button id="btn" class="power-btn off" onclick="toggle()">...</button>
-    <div id="st" class="status-info">Синхронизиране...</div>
+<body class="bg-gray-900 flex items-center justify-center h-screen text-white overflow-hidden">
+
+    <div class="relative flex flex-col items-center justify-center">
+        
+        <!-- Background Glow -->
+        <div id="glow-effect" class="absolute w-64 h-64 bg-primary/50 rounded-full blur-2xl transition-opacity duration-1000 ease-in-out pulse-slow"></div>
+
+        <!-- Main Button -->
+        <button id="main-btn" onclick="toggle()" class="relative w-48 h-48 rounded-full border-8 bg-gray-800/40 backdrop-blur-sm transition-all duration-300 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-primary/50">
+            <span class="material-symbols-outlined transition-colors duration-300">
+                power_settings_new
+            </span>
+        </button>
+
+        <!-- Status Text -->
+        <div class="text-center mt-8">
+            <h2 id="status-text" class="text-xl font-bold tracking-wider uppercase">...</h2>
+            <p class="text-gray-500 font-light text-sm">Manual Power Control</p>
+        </div>
+    </div>
 
     <script>
-        const API = ''; // Оставяме празно, за да търси сървъра автоматично (relative path)
+        const API = '';
 
         async function getStatus() {
+            const btn = document.getElementById('main-btn');
+            const icon = btn.querySelector('span');
+            const statusText = document.getElementById('status-text');
+            const glow = document.getElementById('glow-effect');
+
             try {
                 const res = await fetch(`${API}/status`);
+                if (!res.ok) throw new Error('Network response error');
                 const data = await res.json();
-                const btn = document.getElementById('btn');
-                btn.innerText = data.is_on ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН';
-                btn.className = 'power-btn ' + (data.is_on ? 'on' : 'off');
-                document.getElementById('st').innerText = 'Реално състояние: ' + (data.is_on ? 'РАБОТИ' : 'СПРЯНО');
-            } catch (e) { document.getElementById('st').innerText = 'Няма връзка със сървъра'; }
+
+                if (data.is_on) {
+                    // --- ON STATE ---
+                    statusText.innerText = 'SYSTEM ONLINE';
+                    btn.classList.remove('border-gray-700', 'shadow-none');
+                    btn.classList.add('border-primary', 'shadow-neon');
+                    icon.classList.remove('text-gray-600');
+                    icon.classList.add('text-primary');
+                    glow.classList.remove('opacity-0');
+                    glow.classList.add('opacity-40');
+                } else {
+                    // --- OFF STATE ---
+                    statusText.innerText = 'SYSTEM OFFLINE';
+                    btn.classList.remove('border-primary', 'shadow-neon');
+                    btn.classList.add('border-gray-700', 'shadow-none');
+                    icon.classList.remove('text-primary');
+                    icon.classList.add('text-gray-600');
+                    glow.classList.remove('opacity-40');
+                    glow.classList.add('opacity-0');
+                }
+            } catch (e) {
+                statusText.innerText = 'CONNECTION LOST';
+                btn.classList.remove('border-primary', 'shadow-neon', 'border-gray-700');
+                btn.classList.add('border-red-500', 'shadow-none');
+                icon.classList.remove('text-primary', 'text-gray-600');
+                icon.classList.add('text-red-500');
+                glow.classList.add('opacity-0');
+                console.error(e);
+            }
         }
 
         async function toggle() {
-            document.getElementById('st').innerText = 'Изпращане на команда...';
-            await fetch(`${API}/toggle`);
-            getStatus();
+            const statusText = document.getElementById('status-text');
+            statusText.innerText = 'SENDING...';
+            try {
+                const res = await fetch(`${API}/toggle`);
+                if (!res.ok) throw new Error('Toggle command failed');
+                // Optimistically update UI or wait for getStatus
+                setTimeout(getStatus, 400); // Give device time to switch state
+            } catch (e) {
+                console.error(e);
+                statusText.innerText = 'COMMAND FAILED';
+            }
         }
 
-        // Автоматично опресняване на статуса на всеки 10 секунди
-        setInterval(getStatus, 10000);
-        getStatus();
+        // --- Init ---
+        setInterval(getStatus, 10000); // Refresh status every 10 seconds
+        getStatus(); // Initial load
     </script>
+
 </body>
 </html>
