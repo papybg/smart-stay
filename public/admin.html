@@ -3,174 +3,192 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Stay Admin</title>
+    <title>Smart Stay - Админ Панел</title>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: auto; padding: 20px; background: #f4f4f4; }
-        h2 { border-bottom: 2px solid #333; padding-bottom: 10px; }
-        .control-panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        input { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        button { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; }
-        button:hover { background: #218838; }
-        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        th { background: #333; color: white; padding: 12px; text-align: left; }
-        td { padding: 12px; border-bottom: 1px solid #ddd; }
-        .live-status { font-weight: bold; padding: 10px; text-align: center; background: #ddd; margin-bottom: 20px; border-radius: 4px; }
-        .status-on { background: #d4edda; color: #155724; }
-        .status-off { background: #f8d7da; color: #721c24; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #eee; padding-bottom: 15px; }
+        
+        /* Форма */
+        .form-group { margin-bottom: 15px; display: grid; gap: 5px; }
+        label { font-weight: 600; font-size: 14px; color: #555; }
+        input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; }
+        button.add-btn { background: #0084ff; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-size: 16px; width: 100%; font-weight: bold; }
+        button.add-btn:hover { background: #006bcf; }
+
+        /* Таблица */
+        table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+        th { text-align: left; padding: 10px; background: #f8f9fa; color: #666; font-size: 14px; }
+        td { padding: 12px 10px; border-bottom: 1px solid #eee; font-size: 15px; }
+        .badge { background: #e1f0ff; color: #0084ff; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .delete-btn { color: red; background: none; border: none; cursor: pointer; font-weight: bold; }
+        
+        .error { color: red; font-size: 14px; margin-top: 5px; display: none; }
     </style>
 </head>
 <body>
 
-    <div id="liveStatus" class="live-status">Checking System Status...</div>
+<div class="container">
+    <h1>📅 Управление на Резервации</h1>
 
-    <div class="control-panel">
-        <h2>➕ Нова резервация</h2>
-        <input type="text" id="guest" placeholder="Име на госта">
-        <label><small>Настаняване (Check-in):</small></label>
-        <input type="datetime-local" id="in">
-        <label><small>Напускане (Check-out):</small></label>
-        <input type="datetime-local" id="out">
-        <input type="text" id="code" placeholder="Код на резервация (напр. HMA...)">
-        <button onclick="add()">ЗАПИШИ РЕЗЕРВАЦИЯТА</button>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div class="form-group">
+            <label>Име на госта</label>
+            <input type="text" id="guestName" placeholder="Иван Петров">
+        </div>
+        <div class="form-group">
+            <label>Код на резервация (HM...)</label>
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="resCode" placeholder="HM123456">
+                <button onclick="generateCode()" style="width: 50px;">🎲</button>
+            </div>
+        </div>
     </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div class="form-group">
+            <label>Настаняване (Check-in)</label>
+            <input type="datetime-local" id="checkIn">
+        </div>
+        <div class="form-group">
+            <label>Напускане (Check-out)</label>
+            <input type="datetime-local" id="checkOut">
+        </div>
+    </div>
+
+    <div id="errorMsg" class="error">⚠️ Грешка: Има засичане с друга резервация за тези дати!</div>
+    <button class="add-btn" onclick="addBooking()">➕ Добави Резервация</button>
+
+    <hr>
+
+    <h3>Активни резервации</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Гост</th>
+                <th>Период</th>
+                <th>Кодове</th>
+                <th>Действие</th>
+            </tr>
+        </thead>
+        <tbody id="bookingList">
+            </tbody>
+    </table>
     
-    <h3>📅 Активни резервации</h3>
-    <table id="list"></table>
+    <div style="margin-top: 20px; text-align: right;">
+        <a href="/calendar.ics" target="_blank" style="text-decoration: none; color: #0084ff;">📅 Свали календар (ICS)</a>
+    </div>
+</div>
 
-    <script>
-        const API = ''; // Оставяме празно за автоматично разпознаване (localhost/render)
+<script>
+    let currentBookings = [];
 
-        // 1. Функция за добавяне с КОРЕКЦИЯ НА ЧАСОВЕТЕ
-        async function add() {
-            const guest = document.getElementById('guest').value;
-            const inVal = document.getElementById('in').value;
-            const outVal = document.getElementById('out').value;
-            const code = document.getElementById('code').value;
+    // 1. Зареждане на резервациите при старт
+    async function loadBookings() {
+        const res = await fetch('/bookings');
+        currentBookings = await res.json();
+        renderTable(currentBookings);
+    }
 
-            if(!guest || !inVal || !outVal || !code) {
-                alert("Моля попълнете всички полета!");
-                return;
+    function renderTable(bookings) {
+        const tbody = document.getElementById('bookingList');
+        tbody.innerHTML = '';
+        bookings.forEach(b => {
+            const start = new Date(b.check_in).toLocaleString('bg-BG');
+            const end = new Date(b.check_out).toLocaleString('bg-BG');
+            const row = `
+                <tr>
+                    <td><b>${b.guest_name}</b></td>
+                    <td style="font-size: 13px;">От: ${start}<br>До: ${end}</td>
+                    <td>
+                        <span class="badge">HM: ${b.reservation_code}</span><br>
+                        <small>PIN: ${b.lock_pin}</small>
+                    </td>
+                    <td><button class="delete-btn" onclick="deleteBooking(${b.id})">Изтрий</button></td>
+                </tr>
+            `;
+            tbody.innerHTML += row;
+        });
+    }
+
+    // 2. Генериране на случаен код
+    function generateCode() {
+        const rnd = Math.floor(Math.random() * 900000) + 100000;
+        document.getElementById('resCode').value = 'HM' + rnd;
+    }
+
+    // 3. ПРОВЕРКА ЗА ЗАСИЧАНЕ (Conflict Check)
+    function hasOverlap(newStart, newEnd) {
+        return currentBookings.some(booking => {
+            const bStart = new Date(booking.check_in);
+            const bEnd = new Date(booking.check_out);
+            
+            // Логика: Новата започва ПРЕДИ старата да свърши И свършва СЛЕД като старата е започнала
+            return newStart < bEnd && newEnd > bStart;
+        });
+    }
+
+    async function addBooking() {
+        const name = document.getElementById('guestName').value;
+        const code = document.getElementById('resCode').value;
+        const inDate = document.getElementById('checkIn').value;
+        const outDate = document.getElementById('checkOut').value;
+        const errorEl = document.getElementById('errorMsg');
+
+        if (!name || !code || !inDate || !outDate) {
+            alert("Попълни всички полета!");
+            return;
+        }
+
+        const start = new Date(inDate);
+        const end = new Date(outDate);
+
+        if (start >= end) {
+            alert("Датата на напускане трябва да е след настаняването!");
+            return;
+        }
+
+        // --- ТУК Е ЗАЩИТАТА ---
+        if (hasOverlap(start, end)) {
+            errorEl.style.display = 'block';
+            errorEl.innerText = "⚠️ ВНИМАНИЕ: Засичане на дати! Имате друга резервация по това време.";
+            return; // Спираме записа
+        }
+        errorEl.style.display = 'none';
+        // ---------------------
+
+        try {
+            const res = await fetch('/add-booking', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    guest_name: name,
+                    reservation_code: code,
+                    check_in: inDate,
+                    check_out: outDate
+                })
+            });
+            
+            if (res.ok) {
+                // Изчистваме формата
+                document.getElementById('guestName').value = '';
+                document.getElementById('resCode').value = '';
+                loadBookings(); // Презареждаме таблицата
+            } else {
+                alert("Грешка при запис в базата.");
             }
+        } catch (e) { console.error(e); }
+    }
 
-            // ТУК Е FIX-ът: .toISOString() превръща твоето време в UTC за сървъра
-            // Така 14:00 БГ става 12:00 UTC, и после се връща правилно
-            const body = {
-                guest_name: guest,
-                check_in: new Date(inVal).toISOString(),
-                check_out: new Date(outVal).toISOString(),
-                reservation_code: code
-            };
-
-            try {
-                const res = await fetch(`${API}/add-booking`, { 
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'}, 
-                    body: JSON.stringify(body)
-                });
-                const data = await res.json();
-                
-                if(data.success) { 
-                    alert("✅ Успешно! ПИН код за вратата: " + data.pin);
-                    // Чистим полетата
-                    document.getElementById('guest').value = '';
-                    document.getElementById('code').value = '';
-                    load(); 
-                } else {
-                    alert("❌ Грешка: " + data.error);
-                }
-            } catch (e) {
-                alert("Грешка при свързване със сървъра!");
-            }
+    async function deleteBooking(id) {
+        if(confirm('Сигурен ли си?')) {
+            await fetch(`/bookings/${id}`, { method: 'DELETE' });
+            loadBookings();
         }
+    }
 
-        async function del(id) {
-            if(!confirm('Сигурни ли сте? Това ще изтрие резервацията завинаги.')) return;
-            await fetch(`${API}/bookings/${id}`, { method: 'DELETE' });
-            load();
-        }
+    loadBookings();
+</script>
 
-        // 2. Функция за зареждане на таблицата с ПРАВИЛНИ статуси
-        async function load() {
-            try {
-                const res = await fetch(`${API}/bookings?t=${Date.now()}`); // Без кеш
-                const data = await res.json();
-                
-                const header = `
-                    <tr>
-                        <th>Гост / Код</th>
-                        <th>Настаняване (ON)</th>
-                        <th>Напускане (OFF)</th>
-                        <th>Действие</th>
-                    </tr>`;
-                
-                // Показваме резервации до 24ч назад
-                const activeData = data.filter(b => new Date(b.check_out) > new Date(Date.now() - 86400000));
-
-                document.getElementById('list').innerHTML = header + activeData.map(b => {
-                    const checkIn = new Date(b.check_in);
-                    const checkOut = new Date(b.check_out);
-                    
-                    // Планираното спиране е 1 час след напускане
-                    const plannedOff = new Date(checkOut.getTime() + 3600000); 
-
-                    // Статуси от базата данни (кога реално е станало)
-                    const onStatus = b.power_on_time 
-                        ? `<div style="color:green; font-weight:bold;">⚡ ВКЛЮЧЕН в ${new Date(b.power_on_time).toLocaleTimeString('bg-BG')}</div>` 
-                        : '<div style="color:#999;">⏳ Чака таймер</div>';
-                        
-                    const offStatus = b.power_off_time 
-                        ? `<div style="color:red; font-weight:bold;">🌑 ИЗКЛЮЧЕН</div>` 
-                        : `<div style="color:#999;">⏳ Ще спре в ${plannedOff.toLocaleTimeString('bg-BG', {hour:'2-digit', minute:'2-digit'})}</div>`;
-
-                    return `
-                    <tr>
-                        <td>
-                            <b>${b.guest_name}</b><br>
-                            <small>Res: ${b.reservation_code}</small><br>
-                            <span style="background:#eee; padding:2px 5px; border-radius:3px;">🔑 ${b.lock_pin}</span>
-                        </td>
-                        <td>
-                            ${checkIn.toLocaleString('bg-BG')}<br>
-                            ${onStatus}
-                        </td>
-                        <td>
-                            ${checkOut.toLocaleString('bg-BG')}<br>
-                            ${offStatus}
-                        </td>
-                        <td>
-                            <button onclick="del(${b.id})" style="background:#dc3545; padding:5px;">Изтрий</button>
-                        </td>
-                    </tr>`;
-                }).join('');
-
-                // Обновяваме и глобалния статус най-горе
-                checkSystemStatus();
-
-            } catch (e) { console.error(e); }
-        }
-
-        // 3. Проверка дали лампата свети В МОМЕНТА (независимо от резервациите)
-        async function checkSystemStatus() {
-            try {
-                const res = await fetch(`${API}/status`);
-                const data = await res.json();
-                const div = document.getElementById('liveStatus');
-                if (data.is_on) {
-                    div.innerHTML = "⚡ ВНИМАНИЕ: ТОКЪТ В АПАРТАМЕНТА Е ВКЛЮЧЕН";
-                    div.className = "live-status status-on";
-                } else {
-                    div.innerHTML = "🌑 Токът в апартамента е изключен";
-                    div.className = "live-status status-off";
-                }
-            } catch(e) {}
-        }
-
-        // Първоначално зареждане
-        load();
-        
-        // Автоматичен рефреш на всеки 30 секунди
-        setInterval(load, 30000);
-
-    </script>
 </body>
 </html>
