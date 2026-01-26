@@ -204,19 +204,60 @@ app.delete('/bookings/:id', async (req, res) => {
     res.json({success: true});
 });
 
-app.get('/calendar.ics', async (req, res) => {
+// --- НОВА ФУНКЦИЯ ЗА КАЛЕНДАР (AIRBNB COMPATIBLE) ---
+app.get('/feed.ics', async (req, res) => {
     try {
         const bookings = await sql`SELECT * FROM bookings`;
-        let ics = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Bobo//BG\n";
+        
+        // 1. Помощна функция за форматиране на дата (ISO -> ICS format)
+        // Превръща 2026-01-25T14:00:00.000Z в 20260125T140000Z
+        const formatDate = (date) => {
+            return new Date(date).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        };
+
+        const now = formatDate(new Date()); // Време на генериране (DTSTAMP)
+
+        // 2. Начало на ICS файла (Задължителни хедъри)
+        let icsContent = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//Smart Stay//Bg',
+            'CALSCALE:GREGORIAN',
+            'METHOD:PUBLISH' // Важно за синхронизация!
+        ].join('\r\n');
+
+        // 3. Добавяне на събитията
         bookings.forEach(b => {
-            const s = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + "Z";
-            const e = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + "Z";
-            ics += `BEGIN:VEVENT\nUID:${b.id}\nDTSTART:${s}\nDTEND:${e}\nSUMMARY:${b.guest_name}\nEND:VEVENT\n`;
+            const start = formatDate(b.check_in);
+            const end = formatDate(b.check_out);
+            
+            // Airbnb изисква уникален UID и DTSTAMP за всяко събитие
+            const eventBlock = [
+                'BEGIN:VEVENT',
+                `UID:${b.id}@smartstay.bg`,     // Уникален ID
+                `DTSTAMP:${now}`,                // Кога е генериран файла
+                `DTSTART:${start}`,              // Начало
+                `DTEND:${end}`,                  // Край
+                `SUMMARY:Blocked: ${b.guest_name}`, // Заглавие (Airbnb често го игнорира, но е нужно)
+                'STATUS:CONFIRMED',
+                'END:VEVENT'
+            ].join('\r\n');
+
+            icsContent += '\r\n' + eventBlock;
         });
-        ics += "END:VCALENDAR";
-        res.setHeader('Content-Type', 'text/calendar');
-        res.send(ics);
-    } catch (e) { res.status(500).send("Err"); }
+
+        // 4. Край на файла
+        icsContent += '\r\nEND:VCALENDAR';
+
+        // 5. Изпращане с правилните хедъри
+        res.header('Content-Type', 'text/calendar; charset=utf-8');
+        res.header('Content-Disposition', 'inline; filename="feed.ics"');
+        res.send(icsContent);
+
+    } catch (e) { 
+        console.error("ICS Error:", e);
+        res.status(500).send("Error generating calendar"); 
+    }
 });
 
 app.get('/status', async (req, res) => {
