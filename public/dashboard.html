@@ -14,7 +14,7 @@
             --primary: #0084ff; 
             --neon-cyan: hsl(190, 80%, 55%);
             --bg-light: #f4f6f8; 
-            --bg-dark: #111827; /* Тъмен фон за Remote таба */
+            --bg-dark: #111827;
         }
         
         body { font-family: -apple-system, 'Inter', sans-serif; margin: 0; padding: 0; background: var(--bg-light); height: 100vh; display: flex; flex-direction: column; }
@@ -28,7 +28,7 @@
         .nav-btn.active { background: var(--primary); color: white; }
         .nav-btn:hover:not(.active) { background: #eee; }
 
-        /* --- КОНТЕЙНЕР ЗА ТАБОВЕТЕ --- */
+        /* --- КОНТЕЙНЕР --- */
         .main-wrapper { flex: 1; overflow-y: auto; position: relative; }
         .tab-content { display: none; height: 100%; }
         .tab-content.active { display: block; }
@@ -57,23 +57,26 @@
         .badge-off { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .delete-btn { color: red; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 16px; }
 
+        /* Линк за календар */
+        .ics-link-container { text-align: right; margin-top: 10px; }
+        .ics-link { color: var(--primary); text-decoration: none; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 5px; }
+        .ics-link:hover { text-decoration: underline; }
+
         /* =========================================
            ТАБ 2: УСТРОЙСТВА (REMOTE NEON STYLE)
            ========================================= */
         #remote { 
             background-color: var(--bg-dark); 
             color: white; 
-            display: none; /* Скрит по подразбиране */
+            display: none; 
             height: 100%;
-            display: flex; /* Flexbox за центриране */
+            display: flex; 
             align-items: center; 
             justify-content: center;
             flex-direction: column;
         }
-        /* Когато е активен, трябва да е flex, а не block, за да работи центрирането */
         #remote.active { display: flex !important; }
 
-        /* Ефекти за бутона */
         .neon-container { position: relative; display: flex; flex-direction: column; align-items: center; }
         
         .glow-effect {
@@ -89,9 +92,9 @@
             position: relative; z-index: 10;
             width: 12rem; height: 12rem;
             border-radius: 50%;
-            background: rgba(31, 41, 55, 0.4); /* bg-gray-800/40 */
+            background: rgba(31, 41, 55, 0.4);
             backdrop-filter: blur(4px);
-            border: 8px solid #374151; /* border-gray-700 */
+            border: 8px solid #374151;
             display: flex; align-items: center; justify-content: center;
             cursor: pointer; outline: none; transition: all 0.3s ease;
         }
@@ -169,7 +172,7 @@
             </div>
 
             <div class="card">
-                <h3>График на тока</h3>
+                <h3>График на резервациите</h3>
                 <table>
                     <thead>
                         <tr>
@@ -181,17 +184,21 @@
                     </thead>
                     <tbody id="bookingList"></tbody>
                 </table>
+                
+                <div class="ics-link-container">
+                    <a href="/feed.ics" class="ics-link" target="_blank">
+                        📅 Свали календар за Airbnb (feed.ics)
+                    </a>
+                </div>
             </div>
         </div>
 
         <div id="remote" class="tab-content">
             <div class="neon-container" id="remote-container">
                 <div class="glow-effect"></div>
-
                 <button onclick="togglePower()" class="main-btn" id="main-btn">
                     <span class="material-symbols-outlined">power_settings_new</span>
                 </button>
-
                 <div class="remote-text">
                     <h2 id="status-text">CONNECTING...</h2>
                     <p>Ръчно управление на захранването</p>
@@ -202,33 +209,24 @@
     </div>
 
 <script>
-    // --- 1. UI ЛОГИКА (ПРЕВКЛЮЧВАНЕ НА ТАБОВЕ) ---
+    // --- UI NAVIGATION ---
     function switchTab(tabId, btnElement) {
-        // Скриваме всички табове
         document.querySelectorAll('.tab-content').forEach(el => {
             el.classList.remove('active');
-            // Hack: за Remote таба махаме inline display стила, за да се скрие
             if(el.id === 'remote') el.style.display = ''; 
         });
-        
-        // Махаме активния клас от бутоните
         document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
         
-        // Показваме избрания таб
         const selectedTab = document.getElementById(tabId);
         selectedTab.classList.add('active');
         btnElement.classList.add('active');
         
-        // Ако е Remote таба, пускаме проверката на статуса веднага
-        if(tabId === 'remote') {
-            checkPowerStatus();
-        }
+        if(tabId === 'remote') checkPowerStatus();
     }
 
-    // --- 2. ЛОГИКА ЗА РЕЗЕРВАЦИИ (ADMIN) ---
+    // --- BOOKING LOGIC ---
     let currentBookings = [];
     
-    // Форматиране за България
     function formatBG(dateStr) {
         if (!dateStr) return '---';
         return new Date(dateStr).toLocaleString('bg-BG', { 
@@ -236,7 +234,6 @@
         });
     }
 
-    // Изчисляване на времената за ток
     function getPowerTimes(checkInStr, checkOutStr) {
         const checkIn = new Date(checkInStr);
         const checkOut = new Date(checkOutStr);
@@ -290,7 +287,6 @@
 
         if (start >= end) return alert("Грешка: Напускането е преди настаняването!");
 
-        // Проверка за засичане
         const hasOverlap = currentBookings.some(b => {
              const bStart = new Date(b.check_in);
              const bEnd = new Date(b.check_out);
@@ -303,7 +299,6 @@
         }
         errorEl.style.display = 'none';
 
-        // ВАЖНО: Изпращаме ISO стринг, за да запазим точния час!
         await fetch('/add-booking', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -313,7 +308,6 @@
             })
         });
         
-        // Чистене и презареждане
         document.getElementById('guestName').value = '';
         document.getElementById('resCode').value = '';
         loadBookings();
@@ -330,7 +324,7 @@
         }
     }
 
-    // --- 3. ЛОГИКА ЗА REMOTE (NEON CONTROL) ---
+    // --- REMOTE LOGIC ---
     async function checkPowerStatus() {
         const container = document.getElementById('remote-container');
         const statusText = document.getElementById('status-text');
@@ -339,14 +333,12 @@
             const res = await fetch('/status');
             const data = await res.json();
             
-            // Чистим старите класове
             container.classList.remove('system-on', 'system-error');
 
             if (data.is_on) {
                 container.classList.add('system-on');
                 statusText.innerText = 'SYSTEM ONLINE';
             } else {
-                // System OFF (default style)
                 statusText.innerText = 'SYSTEM OFFLINE';
             }
         } catch(e) {
@@ -362,7 +354,7 @@
         try {
             const res = await fetch('/toggle');
             if(res.ok) {
-                setTimeout(checkPowerStatus, 1000); // Изчакваме малко и проверяваме
+                setTimeout(checkPowerStatus, 1000);
             } else {
                 throw new Error("Toggle fail");
             }
@@ -372,11 +364,10 @@
         }
     }
 
-    // --- ИНИЦИАЛИЗАЦИЯ ---
+    // Init
     loadBookings();
-    setInterval(checkPowerStatus, 15000); // Опресняване на статуса на всеки 15 сек
+    setInterval(checkPowerStatus, 15000);
 
 </script>
-
 </body>
 </html>
