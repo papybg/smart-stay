@@ -93,7 +93,7 @@ cron.schedule('*/10 * * * *', async () => {
     } catch (err) { console.error('Cron Error', err.message); }
 });
 
-// --- 4. МОЗЪКЪТ НА БОБО (CHAT API) ---
+// --- 4. МОЗЪКЪТ НА ИКО (CHAT API) ---
 app.post('/api/chat', async (req, res) => {
     const { message, history, authCode } = req.body; 
     let bookingData = null;
@@ -124,7 +124,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     // СТЪПКА 2: Инструкции за AI (Приоритети)
-    let systemInstruction = `Ти си Бобо - умен иконом на частен апартамент "Smart Stay".
+    let systemInstruction = `Ти си Ико - умен иконом на частен апартамент "Smart Stay".
     
     === НАРЪЧНИК (MANUAL.TXT) ===
     ${manualContent}
@@ -158,7 +158,7 @@ app.post('/api/chat', async (req, res) => {
     // СТЪПКА 3: Избор на модел (Failover система)
     // Пробваме най-новия, ако не стане - резервния
     const modelsToTry = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-1.5-flash"];
-    let finalReply = "Бобо има технически затруднения. Моля опитайте пак.";
+    let finalReply = "Ико има технически затруднения. Моля опитайте пак.";
 
     for (const modelName of modelsToTry) {
         try {
@@ -281,7 +281,7 @@ app.get('/toggle', async (req, res) => {
 
 // --- СТАРТ ---
 app.listen(PORT, () => {
-    console.log(`🚀 Bobo is live on port ${PORT}`);
+    console.log(`🚀 Ико is live on port ${PORT}`);
     syncBookingsFromGmail(); // Първоначална синхронизация
     setInterval(syncBookingsFromGmail, 15 * 60 * 1000); // Синхронизация на всеки 15 мин
 });

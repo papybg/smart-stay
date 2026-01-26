@@ -16,7 +16,7 @@ async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
 }
 
 export async function syncBookingsFromGmail() {
-    console.log('🕵️ Бобо Детектива сканира пощата за нови резервации...');
+    console.log('🕵️ Ико Детектива сканира пощата за нови резервации...');
     try {
         if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY || !process.env.GMAIL_CLIENT_ID) {
             console.error('❌ Липсват ENV променливи!');
@@ -54,7 +54,7 @@ export async function syncBookingsFromGmail() {
                 await gmail.users.messages.modify({
                     userId: 'me', id: msg.id, requestBody: { removeLabelIds: ['UNREAD'] }
                 });
-                console.log(`✅ Бобо записа резервация: ${details.guest_name} (${details.reservation_code})`);
+                console.log(`✅ Ико записа резервация: ${details.guest_name} (${details.reservation_code})`);
             }
         }
     } catch (err) { console.error('❌ Грешка при синхронизация:', err); }
