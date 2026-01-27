@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 10000;
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
-// --- ПАМЕТ ЗА ЧАТОВЕТЕ (Резюме на 10 мин) ---
+// --- ПАМЕТ ЗА ЧАТОВЕТЕ (За резюме на 10 мин) ---
 let activeChats = {}; 
 
 // --- НАСТРОЙКА НА ПОЩАТА ---
@@ -29,13 +29,15 @@ const mailer = nodemailer.createTransport({
 async function sendNotification(subject, text) {
     try {
         await mailer.sendMail({
-            from: `"Smart Stay Bot" <${process.env.GMAIL_USER}>`,
+            from: `"Iko Admin" <${process.env.GMAIL_USER}>`,
             to: process.env.GMAIL_USER,
             subject: `🔔 ${subject}`,
             text: text
         });
         console.log(`📧 Изпратен имейл: ${subject}`);
-    } catch (error) { console.error("❌ Грешка имейл:", error); }
+    } catch (error) {
+        console.error("❌ Грешка при имейл:", error.message);
+    }
 }
 
 // --- TUYA (УМЕН ЕЛЕКТРОМЕР) ---
@@ -65,9 +67,14 @@ async function getTuyaStatus() {
 
 // --- ДЕТЕКТИВ ЗА РЕЗЕРВАЦИИ ---
 async function syncBookingsFromGmail() {
+    console.log("🕵️ Ико Детектива сканира пощата за нови резервации...");
     if (!process.env.GMAIL_CLIENT_ID) return;
     try {
-        const auth = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET, "https://developers.google.com/oauthplayground");
+        const auth = new google.auth.OAuth2(
+            process.env.GMAIL_CLIENT_ID, 
+            process.env.GMAIL_CLIENT_SECRET, 
+            "https://developers.google.com/oauthplayground"
+        );
         auth.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
         const gmail = google.gmail({ version: 'v1', auth });
         const res = await gmail.users.messages.list({ userId: 'me', q: 'subject:(reservation confirmed) after:2024/01/01', maxResults: 5 });
@@ -83,34 +90,32 @@ async function syncBookingsFromGmail() {
                 if (exists.length === 0) {
                     const pin = Math.floor(1000 + Math.random() * 9000);
                     await sql`INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ('Airbnb Guest', NOW(), NOW() + INTERVAL '1 day', ${resCode}, ${pin}, 'paid')`;
-                    await sendNotification("💰 НОВА РЕЗЕРВАЦИЯ", `Код: ${resCode}\nПИН: ${pin}`);
+                    await sendNotification("💰 НОВА РЕЗЕРВАЦИЯ", `Открих нов код: ${resCode}. ПИН: ${pin}`);
                 }
             }
         }
     } catch (error) { console.error("Gmail Sync Error"); }
 }
 
-// --- CRON: ТОК & ПРИКЛЮЧИЛИ ЧАТОВЕ ---
+// --- УМЕН CRON: ТОК & ЧАТ ОТЧЕТИ ---
 cron.schedule('*/1 * * * *', async () => {
-    if (!sql) {
-        console.error("Cron Error: Database not configured. Check DATABASE_URL environment variable.");
-        return;
-    }
     const now = new Date();
 
-    // 1. ПРОВЕРКА НА ЧАТОВЕТЕ
-    for (const [userId, session] of Object.entries(activeChats)) {
-        if ((now - session.lastActive) / 1000 / 60 >= 10) {
-            let summaryText = `Резюме на чата с ${userId}:\n\n`;
-            session.messages.forEach(msg => summaryText += `🔹 В: ${msg.q}\n🔸 О: ${msg.a}\n\n`);
-            await sendNotification(`💬 Чат Отчет (${userId})`, summaryText);
-            delete activeChats[userId];
-        }
-    }
-
-    // 2. УМНО УПРАВЛЕНИЕ НА ТОКА
+    // 1. ПРОВЕРКА НА ЧАТОВЕТЕ (10 МИН ТИШИНА)
     try {
-        const bookings = await sql`SELECT * FROM bookings`;
+        for (const [userId, session] of Object.entries(activeChats)) {
+            const diffMinutes = (now - session.lastActive) / 1000 / 60;
+            if (diffMinutes >= 10) {
+                let summaryText = `Резюме на чата с ${userId}:\n\n` + session.messages.map(m => `🔹 В: ${m.q}\n🔸 О: ${m.a}`).join('\n\n');
+                await sendNotification(`💬 Чат Отчет (${userId})`, summaryText);
+                delete activeChats[userId];
+            }
+        }
+    } catch (e) { console.error("Chat Cron Error"); }
+
+    // 2. УПРАВЛЕНИЕ НА ТОКА
+    try {
+        const bookings = await sql`SELECT * FROM bookings WHERE power_off_time IS NULL`;
         const currentStatus = await getTuyaStatus();
         const isDeviceOn = currentStatus ? currentStatus.value : false;
 
@@ -123,7 +128,7 @@ cron.schedule('*/1 * * * *', async () => {
             if (now >= onTime && now < offTime && !b.power_on_time) {
                 if (!isDeviceOn) {
                     await controlDevice(true);
-                    await sendNotification("⚡ ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}. Система активна.`);
+                    await sendNotification("⚡ ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}. Очаква се пристигане.`);
                 }
                 await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
             } else if (now >= offTime && !b.power_off_time) {
@@ -134,10 +139,10 @@ cron.schedule('*/1 * * * *', async () => {
                 await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
             }
         }
-    } catch (err) { console.error('Cron Job Error:', err); }
+    } catch (err) { console.error('Power Cron Error'); }
 });
 
-// --- CHAT API ---
+// --- API ---
 let manualContent = "Липсва manual.txt";
 try { manualContent = fs.readFileSync('manual.txt', 'utf8'); } catch(e){}
 
@@ -153,49 +158,67 @@ app.post('/api/chat', async (req, res) => {
     const codeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]{8,10}/);
     const codeToTest = codeMatch ? codeMatch[0] : authCode;
     if (codeToTest) {
-        const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
-        if (r.length > 0) bookingData = r[0];
+        try {
+            const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
+            if (r.length > 0) bookingData = r[0];
+        } catch(e){}
     }
-    const userId = bookingData ? bookingData.guest_name : "Непознат";
+    const userId = bookingData ? bookingData.guest_name : (codeToTest || "Непознат");
 
-    let systemInstruction = `Ти си Ико. НАРЪЧНИК: ${manualContent}
-    СТАТУС ТОК: ${isOnline ? (isOn ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН (Паднал бушон)') : 'ОФЛАЙН (Авария)'}.
-    Ако гостът каже, че няма ток и е ОФЛАЙН - дай сайта на енергото.
-    Ако е ОНЛАЙН, но ИЗКЛЮЧЕН - кажи, че го пускаш веднага (паднал бушон).
-    Ако има авария, сложи таг [ALERT: проблем] за мейл.`;
+    let systemInstruction = `Ти си Ико, иконом на Апартамент D105 в Aspen Valley.
+    МАНУАЛ: ${manualContent}
+    ТЕХНИЧЕСКИ СТАТУС: Токът е ${isOnline ? (isOn ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН (Бушон)') : 'ОФЛАЙН'}.
+    Ако гостът пита за ток и е ОФЛАЙН, насочи го към сайта на енергото от наръчника.
+    Ако е ОНЛАЙН, но ИЗКЛЮЧЕН, кажи че го пускаш веднага (паднал бушон).
+    При спешен проблем сложи [ALERT: съобщение].`;
 
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction });
         const chat = model.startChat({ history: history || [] });
         const result = await chat.sendMessage(message);
-        let finalReply = result.response.text();
+        let reply = result.response.text();
 
-        // Автоматично вдигане на бушона при оплакване
         if (message.toLowerCase().includes("ток") && isOnline && !isOn) {
             await controlDevice(true);
-            finalReply += "\n\n(Ико: Засекох паднал предпазител и го включих дистанционно.)";
+            reply += "\n\n(Система: Засекох паднал предпазител и го включих дистанционно.)";
         }
 
-        if (finalReply.includes('[ALERT:')) {
-            const m = finalReply.match(/\[ALERT:(.*?)\]/);
+        if (reply.includes('[ALERT:')) {
+            const m = reply.match(/\[ALERT:(.*?)\]/);
             if (m) sendNotification("🚨 СПЕШНО", m[1]);
-            finalReply = finalReply.replace(/\[ALERT:.*?\]/g, '').trim();
+            reply = reply.replace(/\[ALERT:.*?\]/g, '').trim();
         }
 
         if (!activeChats[userId]) activeChats[userId] = { lastActive: new Date(), messages: [] };
         activeChats[userId].lastActive = new Date();
-        activeChats[userId].messages.push({ q: message, a: finalReply });
+        activeChats[userId].messages.push({ q: message, a: reply });
 
-        res.json({ reply: finalReply });
-    } catch (e) { res.json({ reply: "Ико има техническо затруднение." }); }
+        res.json({ reply });
+    } catch (e) { res.json({ reply: "Ико се рестартира, моля изчакайте..." }); }
 });
 
-app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`); });
-app.get('/status', async (req, res) => { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false, online: s !== null }); });
-app.get('/toggle', async (req, res) => { const s = await getTuyaStatus(); if(s) { await controlDevice(!s.value); res.json({success:true}); } else res.status(500).json({error:"Offline"}); });
+// --- АДМИН ПАНЕЛ ЕНДПОЙНТИ ---
+app.get('/bookings', async (req, res) => {
+    try { res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`); } catch(e) { res.status(500).send("DB Error"); }
+});
+
+app.get('/status', async (req, res) => {
+    const s = await getTuyaStatus();
+    res.json({ is_on: s ? s.value : false, online: s !== null, property: "D105 Aspen Valley" });
+});
+
+app.get('/toggle', async (req, res) => {
+    const s = await getTuyaStatus();
+    if (s) {
+        const success = await controlDevice(!s.value);
+        res.json({ success });
+    } else {
+        res.status(500).json({ error: "Device Offline" });
+    }
+});
 
 app.listen(PORT, () => {
-    console.log(`🚀 Iko is live on port ${PORT}`);
+    console.log(`🚀 Iko live on ${PORT}`);
     syncBookingsFromGmail();
     setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
 });
