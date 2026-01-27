@@ -67,7 +67,7 @@ async function getTuyaStatus() {
 
 // --- ДЕТЕКТИВ ЗА РЕЗЕРВАЦИИ ---
 async function syncBookingsFromGmail() {
-    console.log("🕵️ Ико Детектива сканира пощата за нови резервации...");
+    console.log("🕵️ Детектива сканира пощата...");
     if (!process.env.GMAIL_CLIENT_ID) return;
     try {
         const auth = new google.auth.OAuth2(
@@ -94,7 +94,7 @@ async function syncBookingsFromGmail() {
                 }
             }
         }
-    } catch (error) { console.error("Gmail Sync Error"); }
+    } catch (error) { console.error("❌ Gmail Sync Error:", error.message); }
 }
 
 // --- УМЕН CRON: ТОК & ЧАТ ОТЧЕТИ ---
@@ -111,11 +111,13 @@ cron.schedule('*/1 * * * *', async () => {
                 delete activeChats[userId];
             }
         }
-    } catch (e) { console.error("Chat Cron Error"); }
+    } catch (e) { console.error("❌ Chat Cron Error"); }
 
     // 2. УПРАВЛЕНИЕ НА ТОКА
     try {
         const bookings = await sql`SELECT * FROM bookings WHERE power_off_time IS NULL`;
+        if (bookings.length === 0) return;
+
         const currentStatus = await getTuyaStatus();
         const isDeviceOn = currentStatus ? currentStatus.value : false;
 
@@ -126,53 +128,44 @@ cron.schedule('*/1 * * * *', async () => {
             const offTime = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
 
             if (now >= onTime && now < offTime && !b.power_on_time) {
-                if (!isDeviceOn) {
-                    await controlDevice(true);
-                    await sendNotification("⚡ ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}. Очаква се пристигане.`);
-                }
+                if (!isDeviceOn) await controlDevice(true);
                 await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
+                if (!isDeviceOn) await sendNotification("⚡ ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}. Очаква се пристигане.`);
             } else if (now >= offTime && !b.power_off_time) {
-                if (isDeviceOn) {
-                    await controlDevice(false);
-                    await sendNotification("🌑 ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name} напусна.`);
-                }
+                if (isDeviceOn) await controlDevice(false);
                 await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
+                if (isDeviceOn) await sendNotification("🌑 ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name} напусна.`);
             }
         }
-    } catch (err) { console.error('Power Cron Error'); }
+    } catch (err) { console.error('❌ Power Cron Error'); }
 });
 
 // --- API ---
-let manualContent = "Липсва manual.txt";
+let manualContent = "Добре дошли в Апартамент D105 Aspen Valley.";
 try { manualContent = fs.readFileSync('manual.txt', 'utf8'); } catch(e){}
 
 app.use(cors()); app.use(express.json()); app.use(express.static('public'));
 
 app.post('/api/chat', async (req, res) => {
     const { message, history, authCode } = req.body;
-    const currentStatus = await getTuyaStatus();
-    const isOnline = currentStatus !== null;
-    const isOn = isOnline ? currentStatus.value : false;
-
-    let bookingData = null;
-    const codeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]{8,10}/);
-    const codeToTest = codeMatch ? codeMatch[0] : authCode;
-    if (codeToTest) {
-        try {
-            const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
-            if (r.length > 0) bookingData = r[0];
-        } catch(e){}
-    }
-    const userId = bookingData ? bookingData.guest_name : (codeToTest || "Непознат");
-
-    let systemInstruction = `Ти си Ико, иконом на Апартамент D105 в Aspen Valley.
-    МАНУАЛ: ${manualContent}
-    ТЕХНИЧЕСКИ СТАТУС: Токът е ${isOnline ? (isOn ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН (Бушон)') : 'ОФЛАЙН'}.
-    Ако гостът пита за ток и е ОФЛАЙН, насочи го към сайта на енергото от наръчника.
-    Ако е ОНЛАЙН, но ИЗКЛЮЧЕН, кажи че го пускаш веднага (паднал бушон).
-    При спешен проблем сложи [ALERT: съобщение].`;
+    console.log(`📩 Получено съобщение: "${message.substring(0, 30)}..."`);
 
     try {
+        const status = await getTuyaStatus();
+        const isOnline = status !== null;
+        const isOn = isOnline ? status.value : false;
+
+        let bookingData = null;
+        const codeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]{8,10}/);
+        const codeToTest = codeMatch ? codeMatch[0] : authCode;
+        if (codeToTest) {
+            const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
+            if (r.length > 0) bookingData = r[0];
+        }
+        const userId = bookingData ? bookingData.guest_name : (codeToTest || "Непознат");
+
+        const systemInstruction = `Ти си Ико, иконом на Апартамент D105 в Aspen Valley. МАНУАЛ: ${manualContent}. ТЕХНИЧЕСКИ СТАТУС: Токът е ${isOnline ? (isOn ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН (Бушон)') : 'ОФЛАЙН'}. Ако гостът пита за ток и е ОФЛАЙН - дай сайта на енергото. Ако е ИЗКЛЮЧЕН (Бушон) - кажи че го пускаш. Ако има авария, ползвай [ALERT: текст].`;
+
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction });
         const chat = model.startChat({ history: history || [] });
         const result = await chat.sendMessage(message);
@@ -194,10 +187,12 @@ app.post('/api/chat', async (req, res) => {
         activeChats[userId].messages.push({ q: message, a: reply });
 
         res.json({ reply });
-    } catch (e) { res.json({ reply: "Ико се рестартира, моля изчакайте..." }); }
+    } catch (e) { 
+        console.error("❌ ГРЕШКА В ЧАТА:", e.message); 
+        res.json({ reply: `Ико се рестартира (Техническа грешка: ${e.message})` }); 
+    }
 });
 
-// --- АДМИН ПАНЕЛ ЕНДПОЙНТИ ---
 app.get('/bookings', async (req, res) => {
     try { res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`); } catch(e) { res.status(500).send("DB Error"); }
 });
@@ -209,16 +204,12 @@ app.get('/status', async (req, res) => {
 
 app.get('/toggle', async (req, res) => {
     const s = await getTuyaStatus();
-    if (s) {
-        const success = await controlDevice(!s.value);
-        res.json({ success });
-    } else {
-        res.status(500).json({ error: "Device Offline" });
-    }
+    if(s) { const success = await controlDevice(!s.value); res.json({ success }); }
+    else res.status(500).json({ error: "Offline" });
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Iko live on ${PORT}`);
+    console.log(`🚀 Ико е на линия на порт ${PORT} (Платен план)`);
     syncBookingsFromGmail();
     setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
 });
