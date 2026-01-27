@@ -92,6 +92,10 @@ async function syncBookingsFromGmail() {
 
 // --- CRON: ТОК & ПРИКЛЮЧИЛИ ЧАТОВЕ ---
 cron.schedule('*/1 * * * *', async () => {
+    if (!sql) {
+        console.error("Cron Error: Database not configured. Check DATABASE_URL environment variable.");
+        return;
+    }
     const now = new Date();
 
     // 1. ПРОВЕРКА НА ЧАТОВЕТЕ
@@ -130,7 +134,7 @@ cron.schedule('*/1 * * * *', async () => {
                 await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
             }
         }
-    } catch (err) { console.error('Cron Error'); }
+    } catch (err) { console.error('Cron Job Error:', err); }
 });
 
 // --- CHAT API ---
