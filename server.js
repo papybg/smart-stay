@@ -3,50 +3,76 @@ import express from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
 import fs from 'fs';
-import nodemailer from 'nodemailer';
-import { google } from 'googleapis';
+import nodemailer from 'nodemailer'; // <--- НОВО: Библиотека за поща
+import { syncBookingsFromGmail } from './services/detective.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
 import { TuyaContext } from '@tuya/tuya-connector-nodejs';
 
+// --- НАСТРОЙКИ ---
 const app = express();
 const PORT = process.env.PORT || 10000;
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
-// --- ПАМЕТ ЗА ЧАТОВЕТЕ (За резюме на 10 мин) ---
-let activeChats = {}; 
-
-// --- НАСТРОЙКА НА ПОЩАТА ---
+// --- НОВО: НАСТРОЙКА НА ПОЩАЛЬОНА ---
 const mailer = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD
+        user: process.env.GMAIL_USER, // Твоят имейл (същия като за детектив)
+        pass: process.env.GMAIL_APP_PASSWORD // Твоята App парола
     }
 });
 
-async function sendNotification(subject, text) {
+// Функция за пращане на имейл до теб
+async function sendAlertToHost(text, guestInfo) {
+    const guestName = guestInfo ? guestInfo.guest_name : "Непознат/Потенциален клиент";
+    const guestPin = guestInfo ? guestInfo.lock_pin : "Няма ПИН";
+    
+    const mailOptions = {
+        from: '"Iko AI Assistant" <' + process.env.GMAIL_USER + '>',
+        to: process.env.GMAIL_USER, // Праща го на теб самия
+        subject: `🔔 СЪОБЩЕНИЕ ОТ ГОСТ: ${guestName}`,
+        text: `
+        Ико получи съобщение за теб!
+        ------------------------------------------------
+        👤 Гост: ${guestName}
+        🔢 ПИН: ${guestPin}
+        ------------------------------------------------
+        💬 СЪОБЩЕНИЕ:
+        ${text}
+        ------------------------------------------------
+        `
+    };
+
     try {
-        await mailer.sendMail({
-            from: `"Iko Admin" <${process.env.GMAIL_USER}>`,
-            to: process.env.GMAIL_USER,
-            subject: `🔔 ${subject}`,
-            text: text
-        });
-        console.log(`📧 Изпратен имейл: ${subject}`);
+        await mailer.sendMail(mailOptions);
+        console.log("📧 Имейл изпратен успешно до хоста.");
     } catch (error) {
-        console.error("❌ Грешка при имейл:", error.message);
+        console.error("Грешка при пращане на имейл:", error);
     }
 }
 
-// --- TUYA (УМЕН ЕЛЕКТРОМЕР) ---
+// --- 1. ЗАРЕЖДАНЕ НА НАРЪЧНИКА ---
+let manualContent = "Липсва файл manual.txt.";
+try {
+    if (fs.existsSync('manual.txt')) {
+        manualContent = fs.readFileSync('manual.txt', 'utf8');
+    }
+} catch (err) { console.error(err); }
+
+// --- 2. TUYA CONFIG ---
 const tuya = new TuyaContext({
     baseUrl: 'https://openapi.tuyaeu.com',
     accessKey: process.env.TUYA_ACCESS_ID,
     secretKey: process.env.TUYA_ACCESS_SECRET,
 });
 
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
+
+// --- TUYA ФУНКЦИИ ---
 async function controlDevice(state) {
     try {
         await tuya.request({
@@ -54,73 +80,21 @@ async function controlDevice(state) {
             path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
             body: { commands: [{ code: 'switch', value: state }] }
         });
-        return true;
-    } catch (e) { return false; }
+    } catch (e) { console.error('Tuya Error:', e.message); }
 }
 
 async function getTuyaStatus() {
     try {
         const res = await tuya.request({ method: 'GET', path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/status` });
         return res.result.find(s => s.code === 'switch');
-    } catch (e) { return null; } // Offline
+    } catch (e) { return null; }
 }
 
-// --- ДЕТЕКТИВ ЗА РЕЗЕРВАЦИИ ---
-async function syncBookingsFromGmail() {
-    console.log("🕵️ Детектива сканира пощата...");
-    if (!process.env.GMAIL_CLIENT_ID) return;
+// --- 3. АВТОПИЛОТ (CRON) ---
+cron.schedule('*/10 * * * *', async () => {
     try {
-        const auth = new google.auth.OAuth2(
-            process.env.GMAIL_CLIENT_ID, 
-            process.env.GMAIL_CLIENT_SECRET, 
-            "https://developers.google.com/oauthplayground"
-        );
-        auth.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
-        const gmail = google.gmail({ version: 'v1', auth });
-        const res = await gmail.users.messages.list({ userId: 'me', q: 'subject:(reservation confirmed) after:2024/01/01', maxResults: 5 });
-        if (!res.data.messages) return;
-
-        for (const msg of res.data.messages) {
-            const msgFull = await gmail.users.messages.get({ userId: 'me', id: msg.id });
-            const snippet = msgFull.data.snippet;
-            const codeMatch = snippet.match(/(HM[A-Z0-9]{8,10})/);
-            if (codeMatch) {
-                const resCode = codeMatch[1];
-                const exists = await sql`SELECT id FROM bookings WHERE reservation_code = ${resCode}`;
-                if (exists.length === 0) {
-                    const pin = Math.floor(1000 + Math.random() * 9000);
-                    await sql`INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES ('Airbnb Guest', NOW(), NOW() + INTERVAL '1 day', ${resCode}, ${pin}, 'paid')`;
-                    await sendNotification("💰 НОВА РЕЗЕРВАЦИЯ", `Открих нов код: ${resCode}. ПИН: ${pin}`);
-                }
-            }
-        }
-    } catch (error) { console.error("❌ Gmail Sync Error:", error.message); }
-}
-
-// --- УМЕН CRON: ТОК & ЧАТ ОТЧЕТИ ---
-cron.schedule('*/1 * * * *', async () => {
-    const now = new Date();
-
-    // 1. ПРОВЕРКА НА ЧАТОВЕТЕ (10 МИН ТИШИНА)
-    try {
-        for (const [userId, session] of Object.entries(activeChats)) {
-            const diffMinutes = (now - session.lastActive) / 1000 / 60;
-            if (diffMinutes >= 10) {
-                let summaryText = `Резюме на чата с ${userId}:\n\n` + session.messages.map(m => `🔹 В: ${m.q}\n🔸 О: ${m.a}`).join('\n\n');
-                await sendNotification(`💬 Чат Отчет (${userId})`, summaryText);
-                delete activeChats[userId];
-            }
-        }
-    } catch (e) { console.error("❌ Chat Cron Error"); }
-
-    // 2. УПРАВЛЕНИЕ НА ТОКА
-    try {
-        const bookings = await sql`SELECT * FROM bookings WHERE power_off_time IS NULL`;
-        if (bookings.length === 0) return;
-
-        const currentStatus = await getTuyaStatus();
-        const isDeviceOn = currentStatus ? currentStatus.value : false;
-
+        const bookings = await sql`SELECT * FROM bookings`;
+        const now = new Date();
         for (const b of bookings) {
             const checkIn = new Date(b.check_in);
             const checkOut = new Date(b.check_out);
@@ -128,88 +102,132 @@ cron.schedule('*/1 * * * *', async () => {
             const offTime = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
 
             if (now >= onTime && now < offTime && !b.power_on_time) {
-                if (!isDeviceOn) await controlDevice(true);
+                await controlDevice(true);
                 await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
-                if (!isDeviceOn) await sendNotification("⚡ ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}. Очаква се пристигане.`);
             } else if (now >= offTime && !b.power_off_time) {
-                if (isDeviceOn) await controlDevice(false);
+                await controlDevice(false);
                 await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
-                if (isDeviceOn) await sendNotification("🌑 ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name} напусна.`);
             }
         }
-    } catch (err) { console.error('❌ Power Cron Error'); }
+    } catch (err) { console.error('Cron Error'); }
 });
 
-// --- API ---
-let manualContent = "Добре дошли в Апартамент D105 Aspen Valley.";
-try { manualContent = fs.readFileSync('manual.txt', 'utf8'); } catch(e){}
-
-app.use(cors()); app.use(express.json()); app.use(express.static('public'));
-
+// --- 4. МОЗЪКЪТ НА ИКО (CHAT API) ---
 app.post('/api/chat', async (req, res) => {
-    const { message, history, authCode } = req.body;
-    console.log(`📩 Получено съобщение: "${message.substring(0, 30)}..."`);
+    const { message, history, authCode } = req.body; 
+    let bookingData = null;
 
-    try {
-        const status = await getTuyaStatus();
-        const isOnline = status !== null;
-        const isOn = isOnline ? status.value : false;
+    const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]{8,10}/);
+    const codeToTest = textCodeMatch ? textCodeMatch[0] : authCode;
 
-        let bookingData = null;
-        const codeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]{8,10}/);
-        const codeToTest = codeMatch ? codeMatch[0] : authCode;
-        if (codeToTest) {
-            const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
+    if (codeToTest) {
+        try {
+            const r = await sql`
+                SELECT * FROM bookings 
+                WHERE reservation_code = ${codeToTest}
+                AND NOW() >= (check_in - INTERVAL '2 hours')
+                AND NOW() <= (check_out + INTERVAL '1 hour')
+                LIMIT 1
+            `;
             if (r.length > 0) bookingData = r[0];
-        }
-        const userId = bookingData ? bookingData.guest_name : (codeToTest || "Непознат");
-
-        const systemInstruction = `Ти си Ико, иконом на Апартамент D105 в Aspen Valley. МАНУАЛ: ${manualContent}. ТЕХНИЧЕСКИ СТАТУС: Токът е ${isOnline ? (isOn ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН (Бушон)') : 'ОФЛАЙН'}. Ако гостът пита за ток и е ОФЛАЙН - дай сайта на енергото. Ако е ИЗКЛЮЧЕН (Бушон) - кажи че го пускаш. Ако има авария, ползвай [ALERT: текст].`;
-
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction });
-        const chat = model.startChat({ history: history || [] });
-        const result = await chat.sendMessage(message);
-        let reply = result.response.text();
-
-        if (message.toLowerCase().includes("ток") && isOnline && !isOn) {
-            await controlDevice(true);
-            reply += "\n\n(Система: Засекох паднал предпазител и го включих дистанционно.)";
-        }
-
-        if (reply.includes('[ALERT:')) {
-            const m = reply.match(/\[ALERT:(.*?)\]/);
-            if (m) sendNotification("🚨 СПЕШНО", m[1]);
-            reply = reply.replace(/\[ALERT:.*?\]/g, '').trim();
-        }
-
-        if (!activeChats[userId]) activeChats[userId] = { lastActive: new Date(), messages: [] };
-        activeChats[userId].lastActive = new Date();
-        activeChats[userId].messages.push({ q: message, a: reply });
-
-        res.json({ reply });
-    } catch (e) { 
-        console.error("❌ ГРЕШКА В ЧАТА:", e.message); 
-        res.json({ reply: `Ико се рестартира (Техническа грешка: ${e.message})` }); 
+        } catch (e) { console.error("DB Error", e); }
     }
+
+    // --- ОБНОВЕНА ИНСТРУКЦИЯ ЗА СЕКРЕТАРЯ ---
+    let systemInstruction = `Ти си Ико - умен иконом на "Smart Stay".
+    
+    === НАРЪЧНИК ===
+    ${manualContent}
+    ================
+    
+    НОВА ВАЖНА ФУНКЦИЯ - "СЕКРЕТАР":
+    Ако клиентът иска да се свърже с хоста, да съобщи за проблем, авария или липса на нещо:
+    1. Приеми съобщението учтиво.
+    2. В отговора си включи следната тайна команда: [ALERT_HOST: Текстът на съобщението].
+    3. Кажи на клиента: "Предадох съобщението на домакина веднага."
+    
+    ПРИМЕР:
+    Клиент: "Няма топла вода!"
+    Ико: "[ALERT_HOST: Клиентът сигнализира за липса на топла вода] Съжалявам за неудобството! Веднага уведомих домакина за проблема."
+
+    ПРИОРИТЕТИ:
+    1. Файл manual.txt (За апартамента).
+    2. Обща култура (За района).
+    3. Сигурност (ПИН/Wi-Fi само за потвърдени).
+    `;
+
+    if (bookingData) {
+        systemInstruction += `\n[✅ ПОТВЪРДЕН ГОСТ: ${bookingData.guest_name} | ПИН: ${bookingData.lock_pin}]`;
+    } else {
+        systemInstruction += `\n[❌ НЕПОЗНАТ ГОСТ]`;
+    }
+
+    const modelsToTry = ["gemini-3.0-flash-exp", "gemini-2.5-flash"];
+    let finalReply = "Ико загрява. Опитайте пак.";
+
+    for (const modelName of modelsToTry) {
+        try {
+            const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
+            const chat = model.startChat({ history: history || [] });
+            const result = await chat.sendMessage(message);
+            finalReply = result.response.text();
+
+            // --- ТУК Е МАГИЯТА ЗА ИМЕЙЛА ---
+            if (finalReply.includes('[ALERT_HOST:')) {
+                // 1. Вадим текста за теб
+                const match = finalReply.match(/\[ALERT_HOST:(.*?)\]/);
+                if (match && match[1]) {
+                    const alertText = match[1].trim();
+                    // 2. Пращаме имейла
+                    sendAlertToHost(alertText, bookingData);
+                }
+                // 3. Чистим тайната команда, за да не я вижда клиента в чата
+                finalReply = finalReply.replace(/\[ALERT_HOST:.*?\]/g, '').trim();
+            }
+            // --------------------------------
+
+            break; 
+        } catch (error) { console.warn(`Retry model...`); }
+    }
+
+    res.json({ reply: finalReply });
 });
 
-app.get('/bookings', async (req, res) => {
-    try { res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`); } catch(e) { res.status(500).send("DB Error"); }
+// --- ДРУГИ ENDPOINTS (БЕЗ ПРОМЯНА) ---
+app.get('/feed.ics', async (req, res) => {
+    try {
+        const bookings = await sql`SELECT * FROM bookings`;
+        const formatDate = (d) => new Date(d).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        const now = formatDate(new Date());
+        let ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Smart Stay//Bg','CALSCALE:GREGORIAN','METHOD:PUBLISH'].join('\r\n');
+        bookings.forEach(b => {
+            ics += '\r\n' + [
+                'BEGIN:VEVENT', `UID:${b.id}@smartstay`, `DTSTAMP:${now}`,
+                `DTSTART:${formatDate(b.check_in)}`, `DTEND:${formatDate(b.check_out)}`,
+                `SUMMARY:Blocked: ${b.guest_name}`, 'STATUS:CONFIRMED', 'END:VEVENT'
+            ].join('\r\n');
+        });
+        ics += '\r\nEND:VCALENDAR';
+        res.header('Content-Type', 'text/calendar; charset=utf-8');
+        res.send(ics);
+    } catch (e) { res.status(500).send("Error"); }
 });
 
-app.get('/status', async (req, res) => {
-    const s = await getTuyaStatus();
-    res.json({ is_on: s ? s.value : false, online: s !== null, property: "D105 Aspen Valley" });
+app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`); });
+app.post('/add-booking', async (req, res) => {
+    const { guest_name, check_in, check_out, reservation_code } = req.body;
+    const pin = Math.floor(1000 + Math.random() * 9000);
+    try {
+        const r = await sql`INSERT INTO bookings (guest_name, check_in, check_out, reservation_code, lock_pin, payment_status) VALUES (${guest_name}, ${check_in}, ${check_out}, ${reservation_code}, ${pin}, 'paid') RETURNING *`;
+        res.json({ success: true, pin, booking: r[0] });
+    } catch (e) { res.status(500).json({error: e.message}); }
 });
-
-app.get('/toggle', async (req, res) => {
-    const s = await getTuyaStatus();
-    if(s) { const success = await controlDevice(!s.value); res.json({ success }); }
-    else res.status(500).json({ error: "Offline" });
-});
+app.delete('/bookings/:id', async (req, res) => { await sql`DELETE FROM bookings WHERE id = ${req.params.id}`; res.json({success: true}); });
+app.get('/status', async (req, res) => { try { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); } catch (e) { res.json({ is_on: false }); } });
+app.get('/toggle', async (req, res) => { try { const s = await getTuyaStatus(); if(s) { await controlDevice(!s.value); res.json({success:true}); } else throw new Error(); } catch(e){ res.status(500).json({error:"Fail"}); } });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Ико е на линия на порт ${PORT} (Платен план)`);
+    console.log(`🚀 Iko is live on port ${PORT}`);
     syncBookingsFromGmail();
     setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
 });
