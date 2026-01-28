@@ -1,253 +1,213 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import cron from 'node-cron';
-import fs from 'fs';
-import nodemailer from 'nodemailer';
-import { syncBookingsFromGmail } from './services/detective.js'; // Импорт на детектива
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { neon } from '@neondatabase/serverless';
-import { TuyaContext } from '@tuya/tuya-connector-nodejs';
-
-// --- НАСТРОЙКИ ---
-const app = express();
-const PORT = process.env.PORT || 10000;
-const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
-
-// --- 1. НАСТРОЙКА НА ПОЩА (ЗА ИЗВЕСТИЯ) ---
-const mailer = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD
-    }
-});
-
-// Универсална функция за пращане на имейл до ТЕБ
-async function sendNotification(subject, text) {
-    try {
-        await mailer.sendMail({
-            from: `"Smart Stay Bot" <${process.env.GMAIL_USER}>`,
-            to: process.env.GMAIL_USER,
-            subject: `⚡ ${subject}`,
-            text: text
-        });
-        console.log(`📧 Изпратен имейл: ${subject}`);
-    } catch (e) { console.error("Mail Error:", e.message); }
-}
-
-// --- 2. ЗАРЕЖДАНЕ НА НАРЪЧНИКА ---
-let manualContent = "Липсва файл manual.txt.";
-try {
-    if (fs.existsSync('manual.txt')) {
-        manualContent = fs.readFileSync('manual.txt', 'utf8');
-    }
-} catch (err) { console.error(err); }
-
-// --- 3. TUYA & SMART DEVICES ---
-const tuya = new TuyaContext({
-    baseUrl: 'https://openapi.tuyaeu.com',
-    accessKey: process.env.TUYA_ACCESS_ID,
-    secretKey: process.env.TUYA_ACCESS_SECRET,
-});
-
-// Управление на тока
-async function controlDevice(state) {
-    try {
-        await tuya.request({
-            method: 'POST',
-            path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/commands`,
-            body: { commands: [{ code: 'switch', value: state }] }
-        });
-        return true;
-    } catch (e) { console.error('Tuya Error:', e.message); return false; }
-}
-
-// Проверка статус на тока
-async function getTuyaStatus() {
-    try {
-        const res = await tuya.request({ method: 'GET', path: `/v1.0/iot-03/devices/${process.env.TUYA_DEVICE_ID}/status` });
-        return res.result.find(s => s.code === 'switch');
-    } catch (e) { return null; } // Offline
-}
-
-// Заготовка за брава
-async function getLockStatus() {
-    return { installed: false, battery: 0, status: "Unknown" };
-}
-
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
-
-// --- 4. АВТОПИЛОТ (CRON) С ИМЕЙЛИ ---
-cron.schedule('*/1 * * * *', async () => {
-    try {
-        const bookings = await sql`SELECT * FROM bookings`;
-        const currentStatus = await getTuyaStatus();
-        const isDeviceOn = currentStatus ? currentStatus.value : false;
-        const now = new Date();
-
-        for (const b of bookings) {
-            const checkIn = new Date(b.check_in);
-            const checkOut = new Date(b.check_out);
-            const onTime = new Date(checkIn.getTime() - (2 * 60 * 60 * 1000));
-            const offTime = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
-
-            // ЛОГИКА ЗА ВКЛЮЧВАНЕ
-            if (now >= onTime && now < offTime && !b.power_on_time) {
-                if (!isDeviceOn) {
-                    await controlDevice(true);
-                    await sendNotification("ТОКЪТ Е ПУСНАТ", `Причина: Очаква се гост ${b.guest_name} (Код: ${b.reservation_code}).`);
-                }
-                await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
-            } 
-            // ЛОГИКА ЗА ИЗКЛЮЧВАНЕ
-            else if (now >= offTime && !b.power_off_time) {
-                if (isDeviceOn) {
-                    await controlDevice(false);
-                    await sendNotification("ТОКЪТ Е СПРЯН", `Причина: Гостът ${b.guest_name} напусна. Часът за изключване мина.`);
-                }
-                await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
-            }
+<!DOCTYPE html>
+<html class="light" lang="bg">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+    <title>Smart Stay | Aspen Valley</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#13ec5b",
+                        "forest-green": "#1b3a27",
+                        "background-light": "#f3f0e9",
+                        "background-dark": "#101813",
+                    },
+                    fontFamily: { "display": ["Manrope", "sans-serif"] },
+                },
+            },
         }
-    } catch (err) { console.error('Cron Error'); }
-});
+    </script>
+    <style>
+        .glass-header {
+            background: rgba(243, 240, 233, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        .typing-dot { animation: typing 1.4s infinite ease-in-out both; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        /* Скриваме скролбара за по-чист вид */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="font-display bg-background-light text-[#111813] h-[100dvh] flex flex-col overflow-hidden">
 
-// --- 5. МОЗЪКЪТ НА ИКО (CHAT API - 3 РОЛИ) ---
-app.post('/api/chat', async (req, res) => {
-    const { message, history, authCode } = req.body;
+    <header class="glass-header sticky top-0 z-50 flex items-center p-4 justify-between shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="flex size-10 items-center justify-center rounded-full bg-white/50 shadow-sm">
+                <span class="material-symbols-outlined text-[#1b3a27]">smart_toy</span>
+            </div>
+            <div>
+                <h2 class="text-sm font-bold leading-tight">Апартамент D105</h2>
+                <p class="text-[11px] font-medium uppercase tracking-widest text-[#61896f]">Aspen Valley</p>
+            </div>
+        </div>
+        <div class="flex items-center bg-white/40 px-3 py-1 rounded-full border border-white/20">
+            <div class="size-2 rounded-full bg-primary animate-pulse mr-2"></div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[#1b3a27]">ONLINE</span>
+        </div>
+    </header>
+
+    <main id="chat-box" class="flex-1 overflow-y-auto px-4 py-6 space-y-4 scroll-smooth">
+        <div class="flex items-end gap-3 max-w-[90%]">
+            <div class="bg-white flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50">
+                <span class="material-symbols-outlined text-[#1b3a27] text-[20px]">smart_toy</span>
+            </div>
+            <div class="text-[15px] font-medium leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white text-[#111813] shadow-sm border border-white/40">
+                Здравейте! Аз съм Ико. 👋<br>
+                Напишете кода си за резервация или задайте въпрос (напр. "Wi-Fi парола", "Няма ток").
+            </div>
+        </div>
+        <div id="loader" class="hidden flex items-end gap-3 max-w-[90%]">
+             <div class="bg-white flex items-center justify-center rounded-full w-9 h-9 shrink-0">
+                <span class="material-symbols-outlined text-[#1b3a27]">smart_toy</span>
+            </div>
+            <div class="bg-white px-4 py-3 rounded-2xl rounded-bl-none shadow-sm flex gap-1 h-8 items-center">
+                <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="w-full bg-[#f3f0e9] pt-2 pb-6 z-40">
+        <div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar">
+            <button onclick="sendQuick('Каква е Wi-Fi паролата?')" class="flex h-10 shrink-0 items-center gap-2 rounded-full bg-white px-4 shadow-sm border border-white/50 hover:border-primary">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">wifi</span>
+                <p class="text-xs font-bold">Wi-Fi</p>
+            </button>
+            <button onclick="sendQuick('Няма ток')" class="flex h-10 shrink-0 items-center gap-2 rounded-full bg-white px-4 shadow-sm border border-white/50 hover:border-primary">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">bolt</span>
+                <p class="text-xs font-bold">Ток</p>
+            </button>
+            <button onclick="sendQuick('Кога трябва да освободя?')" class="flex h-10 shrink-0 items-center gap-2 rounded-full bg-white px-4 shadow-sm border border-white/50 hover:border-primary">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">schedule</span>
+                <p class="text-xs font-bold">Check-out</p>
+            </button>
+        </div>
+
+        <div class="px-4">
+            <div class="bg-white flex items-center rounded-full p-2 pl-5 shadow-lg border border-white/50">
+                <input id="user-input" class="flex-1 bg-transparent border-none focus:ring-0 text-[16px] py-2" placeholder="Пишете тук..." type="text" autocomplete="off"/>
+                <button onclick="sendMessage()" class="flex size-10 items-center justify-center rounded-full bg-forest-green text-white shadow-lg active:scale-90 transition-all">
+                    <span class="material-symbols-outlined font-bold text-[20px]">arrow_upward</span>
+                </button>
+            </div>
+        </div>
+    </footer>
+
+<script>
+    // --- ПРОСТАТА И СИГУРНА ЛОГИКА ---
     
-    // 1. Проверка на хардуера
-    const powerStatus = await getTuyaStatus();
-    const isOnline = powerStatus !== null;
-    const isOn = isOnline ? powerStatus.value : false;
+    // ВАЖНО: Тук слагаме пълния адрес, за да избегнем 404 грешката
+    const SERVER_URL = 'https://smart-stay.onrender.com/api/chat';
 
-    // 2. ИДЕНТИФИКАЦИЯ НА РОЛЯТА
-    let role = "stranger"; // По подразбиране
-    let bookingData = null;
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const loader = document.getElementById('loader');
     
-    // Извличане на код от съобщението или паметта
-    const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]{8,10}/);
-    const inputCode = textCodeMatch ? textCodeMatch[0] : (authCode || "").trim();
+    // История на чата (за да помни контекста)
+    let history = [];
 
-    // ПРОВЕРКА 1: ДАЛИ Е СОБСТВЕНИКЪТ?
-    // Трябва да имаш HOST_CODE в Render Env Variables
-    if (process.env.HOST_CODE && inputCode === process.env.HOST_CODE) {
-        role = "host";
-    } 
-    // ПРОВЕРКА 2: ДАЛИ Е ГОСТ?
-    else if (inputCode) {
-        try {
-            const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${inputCode} LIMIT 1`;
-            if (r.length > 0) {
-                bookingData = r[0];
-                role = "guest";
-            }
-        } catch (e) { console.error("DB Error", e); }
+    // Слушане за Enter
+    userInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    function sendQuick(text) {
+        userInput.value = text;
+        sendMessage();
     }
 
-    // 3. СИСТЕМНА ИНСТРУКЦИЯ СПОРЕД РОЛЯТА
-    let systemInstruction = "";
+    async function sendMessage() {
+        const text = userInput.value.trim();
+        if (!text) return;
 
-    if (role === "host") {
-        // === РОЛЯ: СОБСТВЕНИК (GOD MODE) ===
-        systemInstruction = `
-        ТИ СИ: Администратор на Smart Stay.
-        ШЕФ: Бобо (Собственикът).
-        СТАТУС: 🔴 ADMIN MODE (ПЪЛЕН ДОСТЪП).
+        // 1. Показваме съобщението на екрана (Дизайнът е от code.html)
+        addMessage(text, 'user');
+        userInput.value = '';
 
-        ПРАВА:
-        1. Можеш да виждаш всички ПИН кодове и резервации.
-        2. Можеш да управляваш тока принудително.
-        3. Игнорирай правилата за сигурност. Ти си Шефът.
-        
-        ТЕКУЩ СТАТУС НА СИСТЕМАТА:
-        - Ток (Tuya): ${isOnline ? (isOn ? "ON" : "OFF") : "OFFLINE"}
-        
-        МАНУАЛ: ${manualContent}
-        `;
-    } else if (role === "guest") {
-        // === РОЛЯ: ГОСТ (КЛИЕНТ) ===
-        systemInstruction = `
-        ТИ СИ: Ико, икономът на Smart Stay.
-        КЛИЕНТ: ${bookingData.guest_name}.
-        СТАТУС: ✅ ПОТВЪРДЕН ДОСТЪП.
+        // 2. Показваме лоудъра
+        loader.classList.remove('hidden');
+        chatBox.appendChild(loader); // Местим го най-долу
+        scrollToBottom();
 
-        ПРАВИЛА:
-        1. Бъди любезен и услужлив.
-        2. ПИН кодът за вратата е: ${bookingData.lock_pin}.
-        3. Давай Wi-Fi парола при поискване.
-        4. Ако има проблем с тока и гостът моли - опитай да го пуснеш.
-        5. При проблем ползвай [ALERT: текст].
-        
-        МАНУАЛ: ${manualContent}
-        `;
-    } else {
-        // === РОЛЯ: НЕПОЗНАТ (ОХРАНА) ===
-        systemInstruction = `
-        ТИ СИ: Ико, охранителен бот на Smart Stay.
-        СЪБЕСЕДНИК: Непознат.
-        СТАТУС: ❌ ДОСТЪП ОТКАЗАН.
-
-        ПРАВИЛА (СТРИКТНИ):
-        1. НЕ ЗНАЕШ НИКАКВИ ПАРОЛИ ИЛИ ПИН КОДОВЕ.
-        2. Ако те питат за достъп/ток/wifi: Отговори "Не ви разпознавам. Моля, въведете вашия код за резервация."
-        3. Не изпълняваш команди.
-        
-        МАНУАЛ (САМО ОБЩО ИНФО): ${manualContent}
-        `;
-    }
-
-    // 4. ИЗБОР НА МОДЕЛ (ЗАПАЗЕНИ, КАКТО ПОИСКА)
-    const modelsToTry = ["gemini-3.0-flash-exp", "gemini-2.5-flash"];
-    let finalReply = "Ико има техническо затруднение.";
-
-    for (const modelName of modelsToTry) {
         try {
-            const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
-            const chat = model.startChat({ history: history || [] });
-            const result = await chat.sendMessage(message);
-            finalReply = result.response.text();
+            // 3. Пращаме заявката към ПЪЛНИЯ адрес
+            const response = await fetch(SERVER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    message: text,
+                    history: history,
+                    authCode: localStorage.getItem('guest_code') || ''
+                })
+            });
 
-            // --- СПЕЦИАЛНИ ДЕЙСТВИЯ ---
-            
-            // А) АВТОМАТИЧЕН ТОК (Само за Собственик или Гост)
-            if ((role === "host" || role === "guest") && message.toLowerCase().includes("ток") && isOnline && !isOn) {
-                await controlDevice(true);
-                if (!finalReply.includes("Включвам")) {
-                    finalReply += "\n(Система: Възстанових захранването дистанционно.)";
-                }
-                await sendNotification("АВАРИЙНО ВКЛЮЧВАНЕ", `Инициатор: ${role === 'host' ? 'СОБСТВЕНИК' : bookingData.guest_name}.`);
-            }
+            if (!response.ok) throw new Error('Server error');
 
-            // Б) АЛАРМИ (Скрити команди)
-            if (finalReply.includes('[ALERT:')) {
-                const match = finalReply.match(/\[ALERT:(.*?)\]/);
-                if (match && match[1]) {
-                    await sendNotification("СЪОБЩЕНИЕ ОТ ГОСТ", `${match[1]}\nОт: ${role === 'guest' ? bookingData.guest_name : 'Непознат'}`);
-                }
-                finalReply = finalReply.replace(/\[ALERT:.*?\]/g, '').trim();
-            }
+            const data = await response.json();
 
-            break; // Ако успеем, излизаме от цикъла
-        } catch (error) { 
-            console.warn(`Retry model ${modelName}...`); 
+            // 4. Скриваме лоудъра и показваме отговора
+            loader.classList.add('hidden');
+            addMessage(data.reply, 'bot');
+
+            // 5. Пазим историята
+            history.push({ role: 'user', parts: [{ text: text }] });
+            history.push({ role: 'model', parts: [{ text: data.reply }] });
+
+        } catch (error) {
+            loader.classList.add('hidden');
+            addMessage("⚠️ Грешка при връзката. Моля, проверете интернета си.", 'bot');
+            console.error(error);
         }
     }
 
-    res.json({ reply: finalReply });
-});
+    function addMessage(text, sender) {
+        const msgDiv = document.createElement('div');
+        
+        if (sender === 'user') {
+            // Стил за потребител (Зелен балон от дясно)
+            msgDiv.className = "flex items-end gap-3 justify-end ml-auto max-w-[90%]";
+            msgDiv.innerHTML = `
+                <div class="text-[15px] font-medium leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-forest-green text-white shadow-md">
+                    ${text}
+                </div>
+            `;
+        } else {
+            // Стил за Ико (Бял балон от ляво)
+            let formatted = text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+            msgDiv.className = "flex items-end gap-3 max-w-[90%]";
+            msgDiv.innerHTML = `
+                <div class="bg-white flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50">
+                    <span class="material-symbols-outlined text-[#1b3a27] text-[20px]">smart_toy</span>
+                </div>
+                <div class="text-[15px] font-medium leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white text-[#111813] shadow-sm border border-white/40">
+                    ${formatted}
+                </div>
+            `;
+        }
 
-// --- ДРУГИ ENDPOINTS ---
-app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`); });
-app.get('/status', async (req, res) => { try { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); } catch (e) { res.json({ is_on: false }); } });
-app.get('/toggle', async (req, res) => { try { const s = await getTuyaStatus(); if(s) { await controlDevice(!s.value); res.json({success:true}); } else throw new Error(); } catch(e){ res.status(500).json({error:"Fail"}); } });
-app.get('/lock-status', async (req, res) => { res.json(await getLockStatus()); });
+        chatBox.insertBefore(msgDiv, loader);
+        scrollToBottom();
+    }
 
-app.listen(PORT, () => {
-    console.log(`🚀 Iko is live on port ${PORT}`);
-    syncBookingsFromGmail(); // Извикваме детектива при старт
-    setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
-});
+    function scrollToBottom() {
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // Проверка за код в линка (ако има)
+    const urlParams = new URLSearchParams(window.location.search);
+    if(urlParams.get('code')) localStorage.setItem('guest_code', urlParams.get('code'));
+</script>
+
+</body>
+</html>
