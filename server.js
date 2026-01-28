@@ -139,7 +139,7 @@ app.post('/api/chat', async (req, res) => {
     `;
 
     // --- ТУК СА ТВОИТЕ МОДЕЛИ ---
-    const modelsToTry = ["gemini-3.0-flash-exp", "gemini-2.5-flash"];
+    const modelsToTry = ["gemini-3.0-flash-preview", "gemini-flash-latest"];
     let finalReply = "Ико има техническо затруднение.";
 
     for (const modelName of modelsToTry) {
