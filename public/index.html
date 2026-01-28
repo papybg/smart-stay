@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
-    <title>Iko AI | Aspen Valley D105</title>
+    <title>Iko AI | Aspen Valley</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -16,63 +16,39 @@
                     colors: {
                         "primary": "#13ec5b",
                         "forest-green": "#1b3a27",
-                        "oatmeal": "#f3f0e9",
                         "background-light": "#f3f0e9",
                         "background-dark": "#101813",
                     },
-                    fontFamily: {
-                        "display": ["Manrope", "sans-serif"]
-                    },
-                    borderRadius: {
-                        "DEFAULT": "1rem",
-                        "lg": "2rem",
-                        "xl": "3rem",
-                        "full": "9999px"
-                    },
+                    fontFamily: { "display": ["Manrope", "sans-serif"] },
+                    borderRadius: { "DEFAULT": "1rem", "lg": "2rem", "xl": "3rem" },
                 },
             },
         }
     </script>
     <style>
+        /* Специфични стилове от твоя дизайн */
         .glass-header {
             background: rgba(243, 240, 233, 0.85);
             backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(0, 0, 0, 0.05);
         }
         .dark .glass-header {
             background: rgba(16, 24, 19, 0.85);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
-        .organic-texture {
-            background-color: #f3f0e9; /* Fallback */
-        }
+        .organic-texture { background-color: #f3f0e9; }
         .glass-input {
             background: rgba(255, 255, 255, 0.9);
             backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
         }
-        .dark .glass-input {
-            background: rgba(30, 45, 36, 0.9);
-        }
-        .ios-safe-area {
-            padding-bottom: env(safe-area-inset-bottom);
-        }
-        /* Скриване на скролбара за чист вид */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
-        /* Анимация за зареждане (точките) */
-        .typing-dot {
-            animation: typing 1.4s infinite ease-in-out both;
-        }
+        /* Анимация за точките (когато Ико пише) */
+        .typing-dot { animation: typing 1.4s infinite ease-in-out both; }
         .typing-dot:nth-child(1) { animation-delay: -0.32s; }
         .typing-dot:nth-child(2) { animation-delay: -0.16s; }
-        
-        @keyframes typing {
-            0%, 80%, 100% { transform: scale(0); }
-            40% { transform: scale(1); }
-        }
+        @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
     </style>
 </head>
 <body class="font-display bg-background-light dark:bg-background-dark text-[#111813] dark:text-white transition-colors duration-300">
@@ -82,7 +58,7 @@
     <header class="glass-header sticky top-0 z-50 flex items-center p-4 pb-3 justify-between shadow-sm">
         <div class="flex items-center gap-3">
             <div class="flex size-10 items-center justify-center rounded-full bg-white/50 dark:bg-white/10 shadow-sm">
-                <span class="material-symbols-outlined text-[#1b3a27] dark:text-primary">home_app_logo</span>
+                <span class="material-symbols-outlined text-[#1b3a27] dark:text-primary">smart_toy</span>
             </div>
             <div>
                 <h2 class="text-sm font-bold leading-tight tracking-tight">Апартамент D105</h2>
@@ -91,7 +67,7 @@
         </div>
         <div class="flex items-center bg-white/40 dark:bg-black/20 px-3 py-1 rounded-full border border-white/20">
             <div class="size-2 rounded-full bg-primary animate-pulse mr-2"></div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[#1b3a27] dark:text-white">Iko AI</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[#1b3a27] dark:text-white">ONLINE</span>
         </div>
     </header>
 
@@ -107,38 +83,34 @@
             <div class="flex flex-col gap-1 items-start">
                 <p class="text-[#61896f] text-[10px] font-bold uppercase tracking-wider ml-2">Iko AI</p>
                 <div class="text-[15px] font-medium leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
-                    Здравейте! Аз съм Ико, вашият дигитален иконом в Aspen Valley. 🌲<br><br>
-                    Мога да управлявам тока, да ви дам паролата за Wi-Fi или да ви препоръчам ресторант. Как мога да помогна?
+                    Здравейте! Аз съм Ико. 👋<br>
+                    Мога да ви помогна с настаняването, Wi-Fi паролата или да пусна отоплението. Само ми кажете кода си за резервация.
                 </div>
             </div>
         </div>
     </main>
 
-    <footer class="ios-safe-area w-full bg-gradient-to-t from-background-light dark:from-background-dark via-background-light/95 dark:via-background-dark/95 to-transparent pt-4 z-40">
+    <footer class="w-full bg-gradient-to-t from-background-light dark:from-background-dark via-background-light/95 dark:via-background-dark/95 to-transparent pt-4 z-40 pb-safe">
         
-        <div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar" id="quick-replies">
-            <button onclick="sendQuickReply('Каква е паролата за Wi-Fi?')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary hover:bg-gray-50 transition-all active:scale-95">
+        <div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar">
+            <button onclick="sendQuickReply('Каква е Wi-Fi паролата?')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary active:scale-95 transition-all">
                 <span class="material-symbols-outlined text-[18px] text-[#61896f]">wifi</span>
                 <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Wi-Fi</p>
             </button>
-            <button onclick="sendQuickReply('Няма ток')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary hover:bg-gray-50 transition-all active:scale-95">
+            <button onclick="sendQuickReply('Няма ток')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary active:scale-95 transition-all">
                 <span class="material-symbols-outlined text-[18px] text-[#61896f]">bolt</span>
-                <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Проблем с тока</p>
+                <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Ток</p>
             </button>
-            <button onclick="sendQuickReply('Кога трябва да освободя?')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary hover:bg-gray-50 transition-all active:scale-95">
+            <button onclick="sendQuickReply('Кога трябва да освободя?')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary active:scale-95 transition-all">
                 <span class="material-symbols-outlined text-[18px] text-[#61896f]">schedule</span>
                 <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Check-out</p>
-            </button>
-             <button onclick="sendQuickReply('Препоръчай ресторант')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary hover:bg-gray-50 transition-all active:scale-95">
-                <span class="material-symbols-outlined text-[18px] text-[#61896f]">restaurant</span>
-                <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Ресторанти</p>
             </button>
         </div>
 
         <div class="px-4 pb-6">
             <div class="glass-input flex items-center rounded-full p-2 pr-2 pl-5 shadow-xl border border-white/50 ring-1 ring-black/5">
-                <input id="user-input" class="flex-1 bg-transparent border-none focus:ring-0 text-[16px] placeholder-[#61896f]/60 text-[#111813] dark:text-white py-2" placeholder="Попитайте Ико..." type="text" autocomplete="off"/>
-                <button id="send-btn" class="flex size-10 items-center justify-center rounded-full bg-forest-green text-white shadow-lg hover:bg-opacity-90 transition-transform active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed">
+                <input id="user-input" class="flex-1 bg-transparent border-none focus:ring-0 text-[16px] placeholder-[#61896f]/60 text-[#111813] dark:text-white py-2" placeholder="Пишете тук..." type="text" autocomplete="off"/>
+                <button id="send-btn" class="flex size-10 items-center justify-center rounded-full bg-forest-green text-white shadow-lg hover:scale-105 active:scale-90 transition-all">
                     <span class="material-symbols-outlined font-bold text-[20px]">arrow_upward</span>
                 </button>
             </div>
@@ -147,40 +119,35 @@
 </div>
 
 <script>
+    // --- JAVASCRIPT ЛОГИКА (Връзката със сървъра) ---
     const chatContainer = document.getElementById('chat-container');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
     let chatHistory = [];
 
-    // Функция за скролване най-долу
+    // Скрол до долу
     function scrollToBottom() {
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    // Функция за добавяне на съобщение в UI
+    // Добавяне на балонче в чата
     function appendMessage(sender, text, isTyping = false) {
         const isUser = sender === 'user';
         const msgDiv = document.createElement('div');
         
-        // Класове за позициониране
         msgDiv.className = isUser 
-            ? "flex items-end gap-3 justify-end ml-auto max-w-[90%] fade-in-up" 
-            : "flex items-end gap-3 max-w-[90%] fade-in-up";
+            ? "flex items-end gap-3 justify-end ml-auto max-w-[90%]" 
+            : "flex items-end gap-3 max-w-[90%]";
 
         if (isUser) {
-            // HTML за потребителя (Гост)
             msgDiv.innerHTML = `
                 <div class="flex flex-col gap-1 items-end">
                     <div class="text-[15px] font-medium leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-forest-green text-white shadow-md">
                         ${text}
                     </div>
                 </div>
-                <div class="bg-gray-200 flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border-2 border-white overflow-hidden">
-                     <span class="material-symbols-outlined text-gray-500 text-[20px]">person</span>
-                </div>
             `;
         } else {
-            // HTML за Ико
             let content = text;
             if (isTyping) {
                 content = `
@@ -190,9 +157,7 @@
                     <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
                 </div>`;
             } else {
-                // Форматиране на Bold текст (ако AI върне markdown stars)
-                content = content.replace(/\*\*(.*?)\*\*/g, '<span class="font-bold">$1</span>');
-                content = content.replace(/\n/g, '<br>');
+                content = content.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
             }
 
             msgDiv.innerHTML = `
@@ -213,50 +178,41 @@
         return msgDiv;
     }
 
-    // Функция за бързи отговори
-    function sendQuickReply(text) {
-        userInput.value = text;
-        handleSend();
-    }
-
-    // Основна функция за пращане
+    // Изпращане на съобщение
     async function handleSend() {
         const text = userInput.value.trim();
         if (!text) return;
 
-        // 1. Показваме съобщението на потребителя
         appendMessage('user', text);
         userInput.value = '';
         sendBtn.disabled = true;
 
-        // 2. Показваме индикатор "Ико пише..."
         const typingIndicator = appendMessage('iko', '', true);
 
         try {
-            // 3. Пращаме към сървъра
+            // ТУК Е ВРЪЗКАТА СЪС СЪРВЪРА
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     message: text,
                     history: chatHistory,
-                    authCode: localStorage.getItem('guest_code') || '' // Ако искаш да пазиш кода
+                    authCode: localStorage.getItem('guest_code') || '' 
                 })
             });
 
-            const data = await response.json();
+            if (!response.ok) throw new Error('Server error');
 
-            // 4. Махаме индикатора и показваме отговора
+            const data = await response.json();
             typingIndicator.remove();
             appendMessage('iko', data.reply);
 
-            // 5. Обновяваме историята
             chatHistory.push({ role: 'user', parts: [{ text: text }] });
             chatHistory.push({ role: 'model', parts: [{ text: data.reply }] });
 
         } catch (error) {
             typingIndicator.remove();
-            appendMessage('iko', 'Опа, загубих връзка. Моля, опитайте пак.');
+            appendMessage('iko', '⚠️ Загубих връзка със сървъра. Моля, проверете интернета си и опитайте пак.');
             console.error(error);
         } finally {
             sendBtn.disabled = false;
@@ -264,29 +220,20 @@
         }
     }
 
-    // Слушатели за събития (Events)
-    sendBtn.addEventListener('click', handleSend);
-    userInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleSend();
-    });
-
-    // Опит за извличане на код от URL (ако госта отвори link.com?code=HM123)
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlCode = urlParams.get('code');
-    if (urlCode) {
-        localStorage.setItem('guest_code', urlCode);
+    // Бързи отговори
+    function sendQuickReply(text) {
+        userInput.value = text;
+        handleSend();
     }
+
+    // Слушатели
+    sendBtn.addEventListener('click', handleSend);
+    userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
+
+    // Запазване на код от линка
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('code')) localStorage.setItem('guest_code', urlParams.get('code'));
 </script>
 
-<style>
-    /* Анимация за появяване на съобщенията */
-    .fade-in-up {
-        animation: fadeInUp 0.3s ease-out forwards;
-    }
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-</style>
 </body>
 </html>
