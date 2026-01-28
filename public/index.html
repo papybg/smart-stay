@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-
-<html class="light" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Iko AI Concierge - Guest Chat V1</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
+<html class="light" lang="bg">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+    <title>Iko AI | Aspen Valley D105</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script>
         tailwind.config = {
             darkMode: "class",
             theme: {
@@ -33,143 +33,260 @@
             },
         }
     </script>
-<style>.glass-header {
-    background: rgba(243, 240, 233, 0.7);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05)
-    }
-.dark .glass-header {
-    background: rgba(16, 24, 19, 0.7);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1)
-    }
-.organic-texture {
-    background-image: url(https://lh3.googleusercontent.com/aida-public/AB6AXuB0iuCGuYFpT5A-M0pSMAvcZP_ZlrF13PhSaECYWI0fOTQ7_LzG4Nh2jkDmG8G1ace9W8dHNXJLtHAQqw983bA-NMM-d-SfUA7RgVRsZq5ZNXuFnFM7hEX4RJRv1ZnY3SW4bimd6OFh0sH2uGtxxFzNeJjDkFGw4zhdUdEYgW_0eTL2YA77gQ-XgN0BmHU9FW6E1rKDGyBRSky_i_Y0zO8_ks4cfPU2kFWdsCaybKtVQInu-bSKN-Juy5tuHUlH5_Yj5DRMDOvHVOQ)
-    }
-.glass-input {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px)
-    }
-.dark .glass-input {
-    background: rgba(30, 45, 36, 0.8)
-    }
-.ios-safe-area {
-    padding-bottom: env(safe-area-inset-bottom)
-    }</style>
-<style>
-    body {
-      min-height: max(884px, 100dvh);
-    }
-  </style>
-  </head>
-<body class="font-display bg-background-light dark:bg-background-dark text-[#111813] dark:text-white transition-colors duration-300">
-<div class="relative flex h-screen w-full flex-col overflow-hidden organic-texture">
-<!-- TopAppBar: Glassmorphism Header -->
-<header class="glass-header sticky top-0 z-50 flex items-center p-4 pb-3 justify-between">
-<div class="flex items-center gap-3">
-<div class="flex size-10 items-center justify-center rounded-full bg-white/50 dark:bg-white/10">
-<span class="material-symbols-outlined text-[#1b3a27] dark:text-primary">arrow_back_ios_new</span>
-</div>
-<div>
-<h2 class="text-sm font-bold leading-tight tracking-tight">Apartment D105</h2>
-<p class="text-[11px] font-medium uppercase tracking-widest text-[#61896f]">Smart Stay | Aspen Valley</p>
-</div>
-</div>
-<div class="flex items-center">
-<div class="size-2 rounded-full bg-primary animate-pulse mr-2"></div>
-<span class="text-[12px] font-semibold text-[#61896f]">Iko Online</span>
-</div>
-</header>
-<!-- Chat Content Area -->
-<main class="flex-1 overflow-y-auto px-4 py-6 space-y-6">
-<!-- Message Date Divider -->
-<div class="flex justify-center">
-<span class="text-[11px] font-bold uppercase tracking-widest text-[#a1a8a3] bg-white/30 dark:bg-white/5 px-3 py-1 rounded-full">Today</span>
-</div>
-<!-- SingleMessage: Iko AI -->
-<div class="flex items-end gap-3 max-w-[85%]">
-<div class="bg-white dark:bg-[#25362a] flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50" data-alt="minimalist mountain icon avatar">
-<span class="material-symbols-outlined text-[#1b3a27] dark:text-primary text-[20px]">terrain</span>
-</div>
-<div class="flex flex-col gap-1 items-start">
-<p class="text-[#61896f] text-[11px] font-bold uppercase tracking-wider ml-2">Iko AI</p>
-<div class="text-[15px] font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
-                        Welcome to Aspen Valley! I'm Iko, your AI concierge. How can I make your stay in Apartment D105 more comfortable today?
-                    </div>
-</div>
-</div>
-<!-- SingleMessage: Guest -->
-<div class="flex items-end gap-3 justify-end ml-auto max-w-[85%]">
-<div class="flex flex-col gap-1 items-end">
-<p class="text-[#61896f] text-[11px] font-bold uppercase tracking-wider mr-2">Guest</p>
-<div class="text-[15px] font-normal leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-forest-green text-white shadow-md">
-                        Hi Iko, what's the WiFi password here?
-                    </div>
-</div>
-<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full w-9 shrink-0 border-2 border-white shadow-sm" data-alt="profile picture of a smiling guest" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCrWxYsFAbGDkSnVJ_THm2tgjiZP43t9q9AzLNH2pEd7QyDnuX9j8Ajjc--nzkeAgBgcSem2i4maVN4IIi9pXXgmRFMEkjaucED7261w-oMgtRIRhI3rurQFxiaKZjrH66x1FpYZCuUW4GmDSqnAlhxAfhDdgjzrOXXF1a4b3FhuCR-MkXfD01qRJn3uMe7qcH2enDrwLnO4dy7p8z4LsTHOQe7olOoJU-sj1NM5NU2i1bioukhQUgaHfLkq45pXIX5O9ygkJxYDnk");'></div>
-</div>
-<!-- SingleMessage: Iko AI Response -->
-<div class="flex items-end gap-3 max-w-[85%]">
-<div class="bg-white dark:bg-[#25362a] flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50" data-alt="minimalist mountain icon avatar">
-<span class="material-symbols-outlined text-[#1b3a27] dark:text-primary text-[20px]">terrain</span>
-</div>
-<div class="flex flex-col gap-1 items-start">
-<p class="text-[#61896f] text-[11px] font-bold uppercase tracking-wider ml-2">Iko AI</p>
-<div class="text-[15px] font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
-                        The WiFi network is <span class="font-bold">Aspen_Luxury_D105</span> and the password is <span class="italic text-primary">forest-green-123</span>. 🌲
-                    </div>
-</div>
-</div>
-<!-- SingleMessage: Iko AI Tip -->
-<div class="flex items-end gap-3 max-w-[85%]">
-<div class="w-9 shrink-0"></div> <!-- Placeholder for avatar alignment -->
-<div class="flex flex-col gap-1 items-start">
-<div class="text-[15px] font-normal leading-relaxed rounded-2xl px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
-                        You can also find this in the House Rules section. Would you like me to show you the rules?
-                    </div>
-</div>
-</div>
-</main>
-<!-- Bottom Controls -->
-<footer class="ios-safe-area w-full bg-gradient-to-t from-background-light dark:from-background-dark via-background-light/95 dark:via-background-dark/95 to-transparent pt-4">
-<!-- Quick-Reply Chips -->
-<div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar">
-<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
-<span class="material-symbols-outlined text-[18px] text-[#61896f]">wifi</span>
-<p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">WiFi Password</p>
-</button>
-<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
-<span class="material-symbols-outlined text-[18px] text-[#61896f]">key</span>
-<p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Check-in</p>
-</button>
-<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
-<span class="material-symbols-outlined text-[18px] text-[#61896f]">menu_book</span>
-<p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">House Rules</p>
-</button>
-<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
-<span class="material-symbols-outlined text-[18px] text-[#61896f]">explore</span>
-<p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Local Tips</p>
-</button>
-</div>
-<!-- Pill-Shaped Input Bar -->
-<div class="px-4 pb-6">
-<div class="glass-input flex items-center rounded-full p-2 pr-2 pl-5 shadow-xl border border-white/50">
-<input class="flex-1 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#61896f]/60 text-[#111813] dark:text-white" placeholder="Ask Iko about your stay..." type="text"/>
-<button class="flex size-10 items-center justify-center rounded-full bg-primary text-forest-green shadow-lg">
-<span class="material-symbols-outlined font-bold">arrow_upward</span>
-</button>
-</div>
-</div>
-</footer>
-</div>
-<style>
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
+    <style>
+        .glass-header {
+            background: rgba(243, 240, 233, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
         }
-        .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
+        .dark .glass-header {
+            background: rgba(16, 24, 19, 0.85);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .organic-texture {
+            background-color: #f3f0e9; /* Fallback */
+        }
+        .glass-input {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .dark .glass-input {
+            background: rgba(30, 45, 36, 0.9);
+        }
+        .ios-safe-area {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        /* Скриване на скролбара за чист вид */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Анимация за зареждане (точките) */
+        .typing-dot {
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
         }
     </style>
-</body></html>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark text-[#111813] dark:text-white transition-colors duration-300">
+
+<div class="relative flex h-[100dvh] w-full flex-col overflow-hidden organic-texture">
+    
+    <header class="glass-header sticky top-0 z-50 flex items-center p-4 pb-3 justify-between shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="flex size-10 items-center justify-center rounded-full bg-white/50 dark:bg-white/10 shadow-sm">
+                <span class="material-symbols-outlined text-[#1b3a27] dark:text-primary">home_app_logo</span>
+            </div>
+            <div>
+                <h2 class="text-sm font-bold leading-tight tracking-tight">Апартамент D105</h2>
+                <p class="text-[11px] font-medium uppercase tracking-widest text-[#61896f]">Aspen Valley</p>
+            </div>
+        </div>
+        <div class="flex items-center bg-white/40 dark:bg-black/20 px-3 py-1 rounded-full border border-white/20">
+            <div class="size-2 rounded-full bg-primary animate-pulse mr-2"></div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[#1b3a27] dark:text-white">Iko AI</span>
+        </div>
+    </header>
+
+    <main id="chat-container" class="flex-1 overflow-y-auto px-4 py-6 space-y-6 scroll-smooth">
+        <div class="flex justify-center">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-[#a1a8a3] bg-black/5 dark:bg-white/5 px-3 py-1 rounded-full">Днес</span>
+        </div>
+
+        <div class="flex items-end gap-3 max-w-[90%]">
+            <div class="bg-white dark:bg-[#25362a] flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50">
+                <span class="material-symbols-outlined text-[#1b3a27] dark:text-primary text-[20px]">smart_toy</span>
+            </div>
+            <div class="flex flex-col gap-1 items-start">
+                <p class="text-[#61896f] text-[10px] font-bold uppercase tracking-wider ml-2">Iko AI</p>
+                <div class="text-[15px] font-medium leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
+                    Здравейте! Аз съм Ико, вашият дигитален иконом в Aspen Valley. 🌲<br><br>
+                    Мога да управлявам тока, да ви дам паролата за Wi-Fi или да ви препоръчам ресторант. Как мога да помогна?
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="ios-safe-area w-full bg-gradient-to-t from-background-light dark:from-background-dark via-background-light/95 dark:via-background-dark/95 to-transparent pt-4 z-40">
+        
+        <div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar" id="quick-replies">
+            <button onclick="sendQuickReply('Каква е паролата за Wi-Fi?')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary hover:bg-gray-50 transition-all active:scale-95">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">wifi</span>
+                <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Wi-Fi</p>
+            </button>
+            <button onclick="sendQuickReply('Няма ток')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary hover:bg-gray-50 transition-all active:scale-95">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">bolt</span>
+                <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Проблем с тока</p>
+            </button>
+            <button onclick="sendQuickReply('Кога трябва да освободя?')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary hover:bg-gray-50 transition-all active:scale-95">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">schedule</span>
+                <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Check-out</p>
+            </button>
+             <button onclick="sendQuickReply('Препоръчай ресторант')" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-4 shadow-sm border border-white/50 hover:border-primary hover:bg-gray-50 transition-all active:scale-95">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">restaurant</span>
+                <p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Ресторанти</p>
+            </button>
+        </div>
+
+        <div class="px-4 pb-6">
+            <div class="glass-input flex items-center rounded-full p-2 pr-2 pl-5 shadow-xl border border-white/50 ring-1 ring-black/5">
+                <input id="user-input" class="flex-1 bg-transparent border-none focus:ring-0 text-[16px] placeholder-[#61896f]/60 text-[#111813] dark:text-white py-2" placeholder="Попитайте Ико..." type="text" autocomplete="off"/>
+                <button id="send-btn" class="flex size-10 items-center justify-center rounded-full bg-forest-green text-white shadow-lg hover:bg-opacity-90 transition-transform active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="material-symbols-outlined font-bold text-[20px]">arrow_upward</span>
+                </button>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<script>
+    const chatContainer = document.getElementById('chat-container');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    let chatHistory = [];
+
+    // Функция за скролване най-долу
+    function scrollToBottom() {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // Функция за добавяне на съобщение в UI
+    function appendMessage(sender, text, isTyping = false) {
+        const isUser = sender === 'user';
+        const msgDiv = document.createElement('div');
+        
+        // Класове за позициониране
+        msgDiv.className = isUser 
+            ? "flex items-end gap-3 justify-end ml-auto max-w-[90%] fade-in-up" 
+            : "flex items-end gap-3 max-w-[90%] fade-in-up";
+
+        if (isUser) {
+            // HTML за потребителя (Гост)
+            msgDiv.innerHTML = `
+                <div class="flex flex-col gap-1 items-end">
+                    <div class="text-[15px] font-medium leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-forest-green text-white shadow-md">
+                        ${text}
+                    </div>
+                </div>
+                <div class="bg-gray-200 flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border-2 border-white overflow-hidden">
+                     <span class="material-symbols-outlined text-gray-500 text-[20px]">person</span>
+                </div>
+            `;
+        } else {
+            // HTML за Ико
+            let content = text;
+            if (isTyping) {
+                content = `
+                <div class="flex gap-1 h-6 items-center">
+                    <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                    <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                    <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                </div>`;
+            } else {
+                // Форматиране на Bold текст (ако AI върне markdown stars)
+                content = content.replace(/\*\*(.*?)\*\*/g, '<span class="font-bold">$1</span>');
+                content = content.replace(/\n/g, '<br>');
+            }
+
+            msgDiv.innerHTML = `
+                <div class="bg-white dark:bg-[#25362a] flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50">
+                    <span class="material-symbols-outlined text-[#1b3a27] dark:text-primary text-[20px]">smart_toy</span>
+                </div>
+                <div class="flex flex-col gap-1 items-start">
+                    <p class="text-[#61896f] text-[10px] font-bold uppercase tracking-wider ml-2">Iko AI</p>
+                    <div class="text-[15px] font-medium leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
+                        ${content}
+                    </div>
+                </div>
+            `;
+        }
+
+        chatContainer.appendChild(msgDiv);
+        scrollToBottom();
+        return msgDiv;
+    }
+
+    // Функция за бързи отговори
+    function sendQuickReply(text) {
+        userInput.value = text;
+        handleSend();
+    }
+
+    // Основна функция за пращане
+    async function handleSend() {
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        // 1. Показваме съобщението на потребителя
+        appendMessage('user', text);
+        userInput.value = '';
+        sendBtn.disabled = true;
+
+        // 2. Показваме индикатор "Ико пише..."
+        const typingIndicator = appendMessage('iko', '', true);
+
+        try {
+            // 3. Пращаме към сървъра
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    message: text,
+                    history: chatHistory,
+                    authCode: localStorage.getItem('guest_code') || '' // Ако искаш да пазиш кода
+                })
+            });
+
+            const data = await response.json();
+
+            // 4. Махаме индикатора и показваме отговора
+            typingIndicator.remove();
+            appendMessage('iko', data.reply);
+
+            // 5. Обновяваме историята
+            chatHistory.push({ role: 'user', parts: [{ text: text }] });
+            chatHistory.push({ role: 'model', parts: [{ text: data.reply }] });
+
+        } catch (error) {
+            typingIndicator.remove();
+            appendMessage('iko', 'Опа, загубих връзка. Моля, опитайте пак.');
+            console.error(error);
+        } finally {
+            sendBtn.disabled = false;
+            userInput.focus();
+        }
+    }
+
+    // Слушатели за събития (Events)
+    sendBtn.addEventListener('click', handleSend);
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleSend();
+    });
+
+    // Опит за извличане на код от URL (ако госта отвори link.com?code=HM123)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlCode = urlParams.get('code');
+    if (urlCode) {
+        localStorage.setItem('guest_code', urlCode);
+    }
+</script>
+
+<style>
+    /* Анимация за появяване на съобщенията */
+    .fade-in-up {
+        animation: fadeInUp 0.3s ease-out forwards;
+    }
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+</body>
+</html>
