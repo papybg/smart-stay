@@ -1,180 +1,175 @@
 <!DOCTYPE html>
-<html lang="bg">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Stay Concierge</title>
-    <style>
-        /* --- ДИЗАЙН ЗА ТЕЛЕФОН (MESSENGER STYLE) --- */
-        :root {
-            --primary-color: #0084ff;
-            --bg-color: #f0f2f5;
-            --bot-bg: #e4e6eb;
-        }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            margin: 0;
-            height: 100dvh; /* Цял екран на мобилни */
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        header {
-            background: white;
-            padding: 15px;
-            text-align: center;
-            font-weight: 600;
-            font-size: 18px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-            z-index: 10;
-        }
-
-        #chat-box {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            scroll-behavior: smooth;
-        }
-
-        .message {
-            max-width: 85%;
-            padding: 10px 14px;
-            border-radius: 18px;
-            font-size: 15px;
-            line-height: 1.4;
-            word-wrap: break-word;
-            animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-
-        .bot { background: var(--bot-bg); color: #050505; align-self: flex-start; border-bottom-left-radius: 4px; }
-        .user { background: var(--primary-color); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
-
-        .input-area {
-            background: white;
-            padding: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            border-top: 1px solid #ddd;
-            padding-bottom: env(safe-area-inset-bottom, 10px); 
-        }
-
-        input {
-            flex: 1;
-            padding: 12px 15px;
-            background: #f0f2f5;
-            border: none;
-            border-radius: 20px;
-            font-size: 16px; 
-            outline: none;
-        }
-
-        button {
-            background: none;
-            border: none;
-            color: var(--primary-color);
-            font-size: 20px;
-            padding: 5px 10px;
-            cursor: pointer;
-        }
-
-        .typing-indicator {
-            display: none;
-            align-self: flex-start;
-            background: var(--bot-bg);
-            padding: 8px 12px;
-            border-radius: 15px;
-            margin-bottom: 5px;
-            color: #666;
-            font-size: 12px;
-            font-style: italic;
-        }
-    </style>
-</head>
-<body>
-
-    <header>🤖 Smart Stay Асистент</header>
-
-    <div id="chat-box">
-        <div class="message bot">
-            Здравейте! Аз съм вашият виртуален домакин. 👋<br><br>
-            Напишете вашия <b>Код за резервация</b>, за да ви дам достъп до апартамента.
-        </div>
-        <div class="typing-indicator" id="loader">Пише...</div>
-    </div>
-
-    <div class="input-area">
-        <input type="text" id="user-input" placeholder="Съобщение..." autocomplete="off">
-        <button onclick="sendMessage()">➤</button>
-    </div>
-
-    <script>
-        const chatBox = document.getElementById('chat-box');
-        const userInput = document.getElementById('user-input');
-        const loader = document.getElementById('loader');
-
-        userInput.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') sendMessage();
-        });
-
-        async function sendMessage() {
-            const text = userInput.value.trim();
-            if (!text) return;
-
-            // 1. Показваме твоето съобщение
-            addMessage(text, 'user');
-            userInput.value = '';
-            
-            // 2. Показваме, че ботът мисли
-            loader.style.display = 'block';
-            chatBox.scrollTop = chatBox.scrollHeight;
-
-            try {
-                // 3. Пращаме към сървъра с относителен път
-                const response = await fetch('https://smart-stay.onrender.com/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-                
-                // 4. Показваме отговора
-                loader.style.display = 'none';
-                addMessage(data.reply, 'bot');
-
-            } catch (error) {
-                loader.style.display = 'none';
-                console.error('Fetch error:', error);
-                addMessage("⚠️ Грешка при свързване със сървъра. Моля, опитайте отново по-късно.", 'bot');
-            }
-        }
-
-        function addMessage(text, sender) {
-            const msgDiv = document.createElement('div');
-            msgDiv.classList.add('message', sender);
-            
-            let formatted = text
-                .replace(/\n/g, '<br>')
-                .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                .replace(/CHECK_CODE: (.*)/g, ''); 
-
-            msgDiv.innerHTML = formatted;
-            chatBox.insertBefore(msgDiv, loader);
-            chatBox.scrollTop = chatBox.scrollHeight;
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Iko AI Concierge - Guest Chat V1</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#13ec5b",
+                        "forest-green": "#1b3a27",
+                        "oatmeal": "#f3f0e9",
+                        "background-light": "#f3f0e9",
+                        "background-dark": "#101813",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                },
+            },
         }
     </script>
-</body>
-</html>
+<style>.glass-header {
+    background: rgba(243, 240, 233, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05)
+    }
+.dark .glass-header {
+    background: rgba(16, 24, 19, 0.7);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1)
+    }
+.organic-texture {
+    background-image: url(https://lh3.googleusercontent.com/aida-public/AB6AXuB0iuCGuYFpT5A-M0pSMAvcZP_ZlrF13PhSaECYWI0fOTQ7_LzG4Nh2jkDmG8G1ace9W8dHNXJLtHAQqw983bA-NMM-d-SfUA7RgVRsZq5ZNXuFnFM7hEX4RJRv1ZnY3SW4bimd6OFh0sH2uGtxxFzNeJjDkFGw4zhdUdEYgW_0eTL2YA77gQ-XgN0BmHU9FW6E1rKDGyBRSky_i_Y0zO8_ks4cfPU2kFWdsCaybKtVQInu-bSKN-Juy5tuHUlH5_Yj5DRMDOvHVOQ)
+    }
+.glass-input {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px)
+    }
+.dark .glass-input {
+    background: rgba(30, 45, 36, 0.8)
+    }
+.ios-safe-area {
+    padding-bottom: env(safe-area-inset-bottom)
+    }</style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-display bg-background-light dark:bg-background-dark text-[#111813] dark:text-white transition-colors duration-300">
+<div class="relative flex h-screen w-full flex-col overflow-hidden organic-texture">
+<!-- TopAppBar: Glassmorphism Header -->
+<header class="glass-header sticky top-0 z-50 flex items-center p-4 pb-3 justify-between">
+<div class="flex items-center gap-3">
+<div class="flex size-10 items-center justify-center rounded-full bg-white/50 dark:bg-white/10">
+<span class="material-symbols-outlined text-[#1b3a27] dark:text-primary">arrow_back_ios_new</span>
+</div>
+<div>
+<h2 class="text-sm font-bold leading-tight tracking-tight">Apartment D105</h2>
+<p class="text-[11px] font-medium uppercase tracking-widest text-[#61896f]">Smart Stay | Aspen Valley</p>
+</div>
+</div>
+<div class="flex items-center">
+<div class="size-2 rounded-full bg-primary animate-pulse mr-2"></div>
+<span class="text-[12px] font-semibold text-[#61896f]">Iko Online</span>
+</div>
+</header>
+<!-- Chat Content Area -->
+<main class="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+<!-- Message Date Divider -->
+<div class="flex justify-center">
+<span class="text-[11px] font-bold uppercase tracking-widest text-[#a1a8a3] bg-white/30 dark:bg-white/5 px-3 py-1 rounded-full">Today</span>
+</div>
+<!-- SingleMessage: Iko AI -->
+<div class="flex items-end gap-3 max-w-[85%]">
+<div class="bg-white dark:bg-[#25362a] flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50" data-alt="minimalist mountain icon avatar">
+<span class="material-symbols-outlined text-[#1b3a27] dark:text-primary text-[20px]">terrain</span>
+</div>
+<div class="flex flex-col gap-1 items-start">
+<p class="text-[#61896f] text-[11px] font-bold uppercase tracking-wider ml-2">Iko AI</p>
+<div class="text-[15px] font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
+                        Welcome to Aspen Valley! I'm Iko, your AI concierge. How can I make your stay in Apartment D105 more comfortable today?
+                    </div>
+</div>
+</div>
+<!-- SingleMessage: Guest -->
+<div class="flex items-end gap-3 justify-end ml-auto max-w-[85%]">
+<div class="flex flex-col gap-1 items-end">
+<p class="text-[#61896f] text-[11px] font-bold uppercase tracking-wider mr-2">Guest</p>
+<div class="text-[15px] font-normal leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-forest-green text-white shadow-md">
+                        Hi Iko, what's the WiFi password here?
+                    </div>
+</div>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full w-9 shrink-0 border-2 border-white shadow-sm" data-alt="profile picture of a smiling guest" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCrWxYsFAbGDkSnVJ_THm2tgjiZP43t9q9AzLNH2pEd7QyDnuX9j8Ajjc--nzkeAgBgcSem2i4maVN4IIi9pXXgmRFMEkjaucED7261w-oMgtRIRhI3rurQFxiaKZjrH66x1FpYZCuUW4GmDSqnAlhxAfhDdgjzrOXXF1a4b3FhuCR-MkXfD01qRJn3uMe7qcH2enDrwLnO4dy7p8z4LsTHOQe7olOoJU-sj1NM5NU2i1bioukhQUgaHfLkq45pXIX5O9ygkJxYDnk");'></div>
+</div>
+<!-- SingleMessage: Iko AI Response -->
+<div class="flex items-end gap-3 max-w-[85%]">
+<div class="bg-white dark:bg-[#25362a] flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50" data-alt="minimalist mountain icon avatar">
+<span class="material-symbols-outlined text-[#1b3a27] dark:text-primary text-[20px]">terrain</span>
+</div>
+<div class="flex flex-col gap-1 items-start">
+<p class="text-[#61896f] text-[11px] font-bold uppercase tracking-wider ml-2">Iko AI</p>
+<div class="text-[15px] font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
+                        The WiFi network is <span class="font-bold">Aspen_Luxury_D105</span> and the password is <span class="italic text-primary">forest-green-123</span>. 🌲
+                    </div>
+</div>
+</div>
+<!-- SingleMessage: Iko AI Tip -->
+<div class="flex items-end gap-3 max-w-[85%]">
+<div class="w-9 shrink-0"></div> <!-- Placeholder for avatar alignment -->
+<div class="flex flex-col gap-1 items-start">
+<div class="text-[15px] font-normal leading-relaxed rounded-2xl px-4 py-3 bg-white dark:bg-[#1e2d24] text-[#111813] dark:text-white shadow-sm border border-white/40">
+                        You can also find this in the House Rules section. Would you like me to show you the rules?
+                    </div>
+</div>
+</div>
+</main>
+<!-- Bottom Controls -->
+<footer class="ios-safe-area w-full bg-gradient-to-t from-background-light dark:from-background-dark via-background-light/95 dark:via-background-dark/95 to-transparent pt-4">
+<!-- Quick-Reply Chips -->
+<div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar">
+<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#61896f]">wifi</span>
+<p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">WiFi Password</p>
+</button>
+<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#61896f]">key</span>
+<p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Check-in</p>
+</button>
+<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#61896f]">menu_book</span>
+<p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">House Rules</p>
+</button>
+<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1e2d24] px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+<span class="material-symbols-outlined text-[18px] text-[#61896f]">explore</span>
+<p class="text-[#111813] dark:text-white text-xs font-semibold whitespace-nowrap">Local Tips</p>
+</button>
+</div>
+<!-- Pill-Shaped Input Bar -->
+<div class="px-4 pb-6">
+<div class="glass-input flex items-center rounded-full p-2 pr-2 pl-5 shadow-xl border border-white/50">
+<input class="flex-1 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#61896f]/60 text-[#111813] dark:text-white" placeholder="Ask Iko about your stay..." type="text"/>
+<button class="flex size-10 items-center justify-center rounded-full bg-primary text-forest-green shadow-lg">
+<span class="material-symbols-outlined font-bold">arrow_upward</span>
+</button>
+</div>
+</div>
+</footer>
+</div>
+<style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</body></html>
