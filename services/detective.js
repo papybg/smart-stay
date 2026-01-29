@@ -16,7 +16,7 @@ async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
 }
 
 export async function syncBookingsFromGmail() {
-    console.log('🕵️ Бобо Детектива сканира пощата за нови резервации...');
+    console.log('🕵️ Ико Детектива сканира пощата за нови резервации...');
     try {
         if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY || !process.env.GMAIL_CLIENT_ID) {
             console.error('❌ Липсват ENV променливи!');
@@ -33,7 +33,6 @@ export async function syncBookingsFromGmail() {
         oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
 
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-        
         const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена) is:unread';
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
@@ -43,6 +42,7 @@ export async function syncBookingsFromGmail() {
         for (const msg of messages) {
             const details = await processMessage(msg.id, gmail, genAI);
             
+            // Проверка: reservation_code е критичен за записа в Neon
             if (details && details.reservation_code && details.guest_name) {
                 console.log(`📝 Подготвям запис за: ${details.guest_name}`);
                 const pin = Math.floor(1000 + Math.random() * 9000);
@@ -52,16 +52,16 @@ export async function syncBookingsFromGmail() {
                         INSERT INTO bookings (reservation_code, guest_name, check_in, check_out, source, payment_status, lock_pin)
                         VALUES (${details.reservation_code}, ${details.guest_name}, ${details.check_in}, ${details.check_out}, 'airbnb', 'paid', ${pin})
                         ON CONFLICT (reservation_code) 
-                        DO UPDATE SET payment_status = 'paid', updated_at = NOW();
+                        DO UPDATE SET guest_name = ${details.guest_name}, check_in = ${details.check_in}, check_out = ${details.check_out}, updated_at = NOW();
                     `;
                 });
                 
                 await gmail.users.messages.modify({
                     userId: 'me', id: msg.id, requestBody: { removeLabelIds: ['UNREAD'] }
                 });
-                console.log(`✅ Бобо записа резервация: ${details.guest_name} (${details.reservation_code})`);
+                console.log(`✅ Ико записа резервация: ${details.guest_name} (${details.reservation_code})`);
             } else {
-                console.warn(`⚠️ Писмо ${msg.id} беше обработено, но не бяха извлечени пълни данни.`);
+                console.warn(`⚠️ Писмо ${msg.id}: Непълен анализ. AI върна:`, details);
             }
         }
     } catch (err) { console.error('❌ Критична грешка при синхронизация:', err); }
@@ -73,6 +73,9 @@ async function processMessage(id, gmail, genAI) {
         const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
         
         const payload = res.data.payload;
+        // Извличаме темата на писмото
+        const subject = payload.headers.find(h => h.name === 'Subject')?.value || '';
+        
         const getBody = (part) => {
             if (part.body && part.body.data) return Buffer.from(part.body.data, 'base64').toString('utf-8');
             if (part.parts) return part.parts.map(getBody).join('\n');
@@ -80,13 +83,14 @@ async function processMessage(id, gmail, genAI) {
         };
         const body = getBody(payload);
 
-        // Debug лог, за да видим какво чете Бобо
-        console.log(`📄 Текст на писмо ${id}:`, body.substring(0, 200) + "...");
-
-        const prompt = `Identify the guest name, reservation code, check-in, and check-out dates from the text below. 
-        Return ONLY a JSON object: {"reservation_code": "STRING", "guest_name": "STRING", "check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD"}. 
-        If a value is missing, try to infer it from the context or return null inside the JSON.
-        Text: ${body}`;
+        // Комбинираме всичко за AI
+        const fullText = `Subject: ${subject}\n\nBody:\n${body}`;
+        
+        const prompt = `Extract Airbnb booking details. 
+        IMPORTANT: Look for the reservation code (starts with 'HM') in both Subject and Body.
+        Return ONLY JSON: {"reservation_code": "STRING", "guest_name": "STRING", "check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD"}.
+        If something is missing, use context clues or return null.
+        Text: ${fullText}`;
 
         const result = await model.generateContent(prompt);
         const text = result.response.text().replace(/```json|```/g, '').trim();
