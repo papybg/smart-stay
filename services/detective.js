@@ -33,10 +33,17 @@ export async function syncBookingsFromGmail() {
         oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
 
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-        // Търсим само непрочетени писма от Airbnb с потвърждение
-        const query = 'from:automated@airbnb.com (confirmed OR потвърдена) is:unread';
+        
+        // МОДИФИЦИРАНА ЗАЯВКА: Махаме твърдия подател за целите на теста или добавяме твоя имейл
+        // query: 'subject:(confirmed OR потвърдена OR reservation) is:unread'
+        const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена) is:unread';
+        
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
+
+        if (messages.length === 0) {
+            console.log('📭 Няма нови имейли, отговарящи на критериите.');
+        }
 
         for (const msg of messages) {
             const details = await processMessage(msg.id, gmail, genAI);
@@ -65,14 +72,20 @@ async function processMessage(id, gmail, genAI) {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
         
-        // Извличаме целия текст на имейла, не само snippet-а
         const payload = res.data.payload;
         let body = "";
-        if (payload.parts) body = Buffer.from(payload.parts[0].body.data, 'base64').toString();
-        else body = Buffer.from(payload.body.data, 'base64').toString();
 
-        const prompt = `Extract JSON from this Airbnb email. 
+        // По-стабилно извличане на тялото (рекурсивно търсене на текст)
+        const getBody = (part) => {
+            if (part.body.data) return Buffer.from(part.body.data, 'base64').toString();
+            if (part.parts) return part.parts.map(getBody).join('\n');
+            return "";
+        };
+        body = getBody(payload);
+
+        const prompt = `Extract JSON from this booking email. 
         Format: {"reservation_code": "HM...", "guest_name": "Name", "check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD"}. 
+        If the data is missing, return null.
         Text: ${body}`;
 
         const result = await model.generateContent(prompt);

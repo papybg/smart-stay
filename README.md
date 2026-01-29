@@ -12,7 +12,7 @@
 ## 🛠 Технологичен стек
 
 - **Backend**: Node.js, Express (Render)
-- **AI**: Google Gemini 2.5 Flash / 2.0 Flash
+- **AI**: gemini-3.0-pro-preview", "gemini-flash-latest", "gemini-3-flash-preview"
 - **Database**: Neon (PostgreSQL)
 - **IoT**: TuyAPI (Tuya Smart Life)
 - **Integrations**: Gmail API, Google OAuth2
