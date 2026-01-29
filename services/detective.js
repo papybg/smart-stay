@@ -16,7 +16,7 @@ async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
 }
 
 export async function syncBookingsFromGmail() {
-    console.log('🕵️ Бобо Детектива сканира пощата за нови резервации...');
+    console.log('🕵️ Ико Детектива сканира пощата за нови резервации...');
     try {
         if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY || !process.env.GMAIL_CLIENT_ID) {
             console.error('❌ Липсват ENV променливи!');
@@ -34,9 +34,7 @@ export async function syncBookingsFromGmail() {
 
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
-        // Филтърът: търсим непрочетени писма от Airbnb ИЛИ от теб, съдържащи "confirmed" или "потвърдена"
         const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена) is:unread';
-        
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
 
@@ -44,8 +42,11 @@ export async function syncBookingsFromGmail() {
 
         for (const msg of messages) {
             const details = await processMessage(msg.id, gmail, genAI);
+            
             if (details && details.reservation_code) {
+                console.log(`📝 Подготвям запис за: ${details.guest_name}`);
                 const pin = Math.floor(1000 + Math.random() * 9000);
+                
                 await executeQueryWithRetry(async () => {
                     await sql`
                         INSERT INTO bookings (reservation_code, guest_name, check_in, check_out, source, payment_status, lock_pin)
@@ -58,25 +59,26 @@ export async function syncBookingsFromGmail() {
                 await gmail.users.messages.modify({
                     userId: 'me', id: msg.id, requestBody: { removeLabelIds: ['UNREAD'] }
                 });
-                console.log(`✅ Бобо записа резервация: ${details.guest_name} (${details.reservation_code})`);
+                console.log(`✅ Ико записа резервация: ${details.guest_name} (${details.reservation_code})`);
+            } else {
+                console.warn(`⚠️ Писмо ${msg.id} не съдържаше валидни данни за резервация.`);
             }
         }
-    } catch (err) { console.error('❌ Грешка при синхронизация:', err); }
+    } catch (err) { console.error('❌ Критична грешка при синхронизация:', err); }
 }
 
 async function processMessage(id, gmail, genAI) {
     try {
+        // Използваме новата версия gemini-3-flash-preview
         const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
         const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
         
         const payload = res.data.payload;
-        
         const getBody = (part) => {
             if (part.body.data) return Buffer.from(part.body.data, 'base64').toString();
             if (part.parts) return part.parts.map(getBody).join('\n');
             return "";
         };
-        
         const body = getBody(payload);
 
         const prompt = `Extract JSON from this booking email. 
@@ -86,9 +88,17 @@ async function processMessage(id, gmail, genAI) {
 
         const result = await model.generateContent(prompt);
         const text = result.response.text().replace(/```json|```/g, '').trim();
-        return JSON.parse(text);
+        
+        console.log(`🤖 AI отговор за ${id}:`, text);
+
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            console.error('❌ Грешка при парсване на JSON от AI:', text);
+            return null;
+        }
     } catch (err) {
-        console.error(`❌ Грешка при четене на писмо: ${id}`, err);
+        console.error(`❌ Грешка при обработка на писмо ${id}:`, err);
         return null;
     }
 }
