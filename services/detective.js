@@ -24,6 +24,7 @@ export async function syncBookingsFromGmail() {
         }
 
         const sql = neon(process.env.DATABASE_URL);
+        // Превключваме на стабилния 2.5 Flash
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const oauth2Client = new google.auth.OAuth2(
             process.env.GMAIL_CLIENT_ID,
@@ -33,7 +34,11 @@ export async function syncBookingsFromGmail() {
         oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
 
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-        const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена) is:unread';
+        
+        // 1. ПОДОБРЕН ФИЛТЪР: Добавяме всички форми на "потвърдено" и "резервация"
+        // Също така търсим и "Code" или "Код", което често се среща в темите
+        const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена OR потвърдено OR резервация OR reservation OR code OR код) is:unread';
+        
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
 
@@ -63,7 +68,7 @@ export async function syncBookingsFromGmail() {
                 });
                 console.log(`✅ Ико записа резервация: ${details.guest_name} (${details.reservation_code})`);
             } else {
-                console.warn(`⚠️ Писмо ${msg.id}: Неуспешно извличане на данни.`);
+                console.warn(`⚠️ Писмо ${msg.id}: Данните не са пълни или AI не ги разпозна.`, details);
             }
         }
     } catch (err) { console.error('❌ Критична грешка при синхронизация:', err); }
@@ -71,7 +76,7 @@ export async function syncBookingsFromGmail() {
 
 async function processMessage(id, gmail, genAI) {
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
         
         const payload = res.data.payload;
@@ -86,10 +91,23 @@ async function processMessage(id, gmail, genAI) {
 
         const fullText = `Subject: ${subject}\n\nBody:\n${body}`;
         
-        const prompt = `Extract Airbnb booking details. 
-        IMPORTANT: Look for the reservation code (starts with 'HM') in both Subject and Body.
-        Return ONLY JSON: {"reservation_code": "STRING", "guest_name": "STRING", "check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD"}.
-        Text: ${fullText}`;
+        // 2. ПОДОБРЕН ПРОМПТ (Инструкция): Учим го на български думи
+        const prompt = `
+        Analyze this email (could be in English or Bulgarian) and extract booking details.
+        
+        Target Data Points:
+        1. Reservation Code: Starts usually with 'HM'. Look in Subject and Body.
+        2. Guest Name: Look after "Guest", "Guest name", "Гост", "Име".
+        3. Check-in Date: Look after "Check-in", "Starts", "Настаняване", "Пристигане", "Дата".
+        4. Check-out Date: Look after "Check-out", "Ends", "Освобождаване", "Напускане".
+
+        FORMAT RULES:
+        - Convert all dates to "YYYY-MM-DD" format.
+        - Return ONLY valid JSON.
+        - JSON Structure: {"reservation_code": "STRING", "guest_name": "STRING", "check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD"}
+        
+        Email Text:
+        ${fullText}`;
 
         const result = await model.generateContent(prompt);
         const text = result.response.text().replace(/```json|```/g, '').trim();
