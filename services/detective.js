@@ -51,7 +51,10 @@ export async function syncBookingsFromGmail() {
                         INSERT INTO bookings (reservation_code, guest_name, check_in, check_out, source, payment_status, lock_pin)
                         VALUES (${details.reservation_code}, ${details.guest_name}, ${details.check_in}, ${details.check_out}, 'airbnb', 'paid', ${pin})
                         ON CONFLICT (reservation_code) 
-                        DO UPDATE SET guest_name = ${details.guest_name}, check_in = ${details.check_in}, check_out = ${details.check_out};
+                        DO UPDATE SET 
+                            guest_name = EXCLUDED.guest_name, 
+                            check_in = EXCLUDED.check_in, 
+                            check_out = EXCLUDED.check_out;
                     `;
                 });
                 
@@ -60,7 +63,7 @@ export async function syncBookingsFromGmail() {
                 });
                 console.log(`✅ Ико записа резервация: ${details.guest_name} (${details.reservation_code})`);
             } else {
-                console.warn(`⚠️ Писмо ${msg.id}: Непълен анализ.`, details);
+                console.warn(`⚠️ Писмо ${msg.id}: Неуспешно извличане на данни.`);
             }
         }
     } catch (err) { console.error('❌ Критична грешка при синхронизация:', err); }
@@ -96,7 +99,7 @@ async function processMessage(id, gmail, genAI) {
         try {
             return JSON.parse(text);
         } catch (e) {
-            console.error('❌ Грешка при парсване на JSON:', text);
+            console.error('❌ JSON Error:', text);
             return null;
         }
     } catch (err) {
