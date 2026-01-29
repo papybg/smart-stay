@@ -7,8 +7,15 @@
     <style>
         body { font-family: -apple-system, system-ui, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }
         .container { max-width: 1000px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #eee; padding-bottom: 15px; }
         
+        .header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
+        h1 { color: #333; margin: 0; }
+        
+        /* Бутон за синхронизация */
+        .sync-btn { background: #6f42c1; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; display: flex; align-items: center; gap: 8px; transition: background 0.2s; }
+        .sync-btn:hover { background: #59359a; }
+        .sync-btn:disabled { background: #ccc; cursor: not-allowed; }
+
         /* Форма */
         .form-group { margin-bottom: 15px; display: grid; gap: 5px; }
         label { font-weight: 600; font-size: 14px; color: #555; }
@@ -31,6 +38,7 @@
         
         /* За мобилни устройства */
         @media (max-width: 600px) {
+            .header-row { flex-direction: column; gap: 10px; align-items: flex-start; }
             td, th { display: block; width: 100%; box-sizing: border-box; }
             tr { display: block; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
             td { border-bottom: none; padding: 5px 0; }
@@ -40,7 +48,12 @@
 <body>
 
 <div class="container">
-    <h1>📅 Управление & Ток</h1>
+    <div class="header-row">
+        <h1>📅 Управление & Ток</h1>
+        <button class="sync-btn" onclick="manualSync()" id="syncBtn">
+            🕵️ Провери Пощата Сега
+        </button>
+    </div>
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
         <div class="form-group">
@@ -94,6 +107,29 @@
 
 <script>
     let currentBookings = [];
+
+    // НОВА ФУНКЦИЯ: Ръчно извикване на Детектива
+    async function manualSync() {
+        const btn = document.getElementById('syncBtn');
+        const originalText = btn.innerHTML;
+        
+        // Слагаме индикация за зареждане
+        btn.innerHTML = '⏳ Проверявам...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/sync');
+            const msg = await res.text();
+            alert(msg); // Показваме съобщението от сървъра
+            loadBookings(); // Обновяваме таблицата, за да видим новия запис
+        } catch (err) {
+            alert('❌ Грешка при връзка със сървъра: ' + err.message);
+        } finally {
+            // Връщаме бутона в начално състояние
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
 
     // Форматиране на дата за БГ стандарт
     function formatBG(dateStr) {
