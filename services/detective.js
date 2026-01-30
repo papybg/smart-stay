@@ -16,7 +16,7 @@ async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
 }
 
 export async function syncBookingsFromGmail() {
-    console.log('🕵️ Ико Детектива проверява за нови резервации или анулации...');
+    console.log('🕵️ Ико Детектива проверява за нови резервации...');
     try {
         if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY || !process.env.GMAIL_CLIENT_ID) {
             console.error('❌ Липсват ENV променливи!');
@@ -34,7 +34,7 @@ export async function syncBookingsFromGmail() {
 
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
-        // ФИЛТЪР: Търсим всичко важно
+        // ФИЛТЪР
         const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена OR потвърдено OR резервация OR reservation OR cancelled OR canceled OR анулирана OR анулиране OR code OR код) is:unread';
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
@@ -53,35 +53,48 @@ export async function syncBookingsFromGmail() {
                     await executeQueryWithRetry(async () => {
                         await sql`
                             UPDATE bookings 
-                            SET payment_status = 'cancelled', lock_pin = NULL, updated_at = NOW()
+                            SET payment_status = 'cancelled', lock_pin = NULL, updated_at = NOW(),
+                            power_on_time = NULL, power_off_time = NULL
                             WHERE reservation_code = ${details.reservation_code}
                         `;
                     });
-                    console.log(`🗑️ Резервация ${details.reservation_code} е маркира като анулирана.`);
+                    console.log(`🗑️ Резервация ${details.reservation_code} е маркирана като анулирана.`);
                 } 
                 
                 // --- НОВА / ОБНОВЕНА ---
                 else {
-                    console.log(`📝 Обработка на: ${details.guest_name} (Настаняване: ${details.check_in})`);
+                    // ТУК Е ПРОМЯНАТА: ИЗЧИСЛЯВАМЕ ТОКА
+                    const checkInDate = new Date(details.check_in);
+                    const checkOutDate = new Date(details.check_out);
+
+                    // Ток Вкл: 2 часа преди настаняване
+                    const powerOn = new Date(checkInDate.getTime() - (2 * 60 * 60 * 1000));
+                    
+                    // Ток Изкл: 1 час след напускане
+                    const powerOff = new Date(checkOutDate.getTime() + (1 * 60 * 60 * 1000));
+
+                    console.log(`📝 Ток график: ВКЛ ${powerOn.toISOString()} | ИЗКЛ ${powerOff.toISOString()}`);
+
                     const pin = Math.floor(1000 + Math.random() * 9000);
                     
                     await executeQueryWithRetry(async () => {
                         await sql`
-                            INSERT INTO bookings (reservation_code, guest_name, check_in, check_out, source, payment_status, lock_pin)
-                            VALUES (${details.reservation_code}, ${details.guest_name}, ${details.check_in}, ${details.check_out}, 'airbnb', 'paid', ${pin})
+                            INSERT INTO bookings (reservation_code, guest_name, check_in, check_out, power_on_time, power_off_time, source, payment_status, lock_pin)
+                            VALUES (${details.reservation_code}, ${details.guest_name}, ${details.check_in}, ${details.check_out}, ${powerOn.toISOString()}, ${powerOff.toISOString()}, 'airbnb', 'paid', ${pin})
                             ON CONFLICT (reservation_code) 
                             DO UPDATE SET 
                                 guest_name = EXCLUDED.guest_name, 
                                 check_in = EXCLUDED.check_in, 
                                 check_out = EXCLUDED.check_out,
+                                power_on_time = EXCLUDED.power_on_time, -- Обновяваме и тока
+                                power_off_time = EXCLUDED.power_off_time,
                                 payment_status = 'paid',
                                 lock_pin = bookings.lock_pin;
                         `;
                     });
-                    console.log(`✅ Успешен запис с точни часове!`);
+                    console.log(`✅ Успешен запис с график за тока!`);
                 }
                 
-                // Маркираме като прочетено
                 await gmail.users.messages.modify({
                     userId: 'me', id: msg.id, requestBody: { removeLabelIds: ['UNREAD'] }
                 });
@@ -109,7 +122,6 @@ async function processMessage(id, gmail, genAI) {
         const body = getBody(payload);
         const fullText = `Subject: ${subject}\n\nBody:\n${body}`;
         
-        // --- ТУК Е МАГИЯТА ЗА ЧАСОВЕТЕ ---
         const prompt = `
         Analyze this Airbnb email (English or Bulgarian).
         
