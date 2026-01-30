@@ -16,7 +16,7 @@ async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
 }
 
 export async function syncBookingsFromGmail() {
-    console.log('🕵️ Ико Детектива сканира пощата за нови резервации...');
+    console.log('🕵️ Ико Детектива проверява за нови резервации или анулации...');
     try {
         if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY || !process.env.GMAIL_CLIENT_ID) {
             console.error('❌ Липсват ENV променливи!');
@@ -24,7 +24,6 @@ export async function syncBookingsFromGmail() {
         }
 
         const sql = neon(process.env.DATABASE_URL);
-        // Превключваме на стабилния 2.5 Flash
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const oauth2Client = new google.auth.OAuth2(
             process.env.GMAIL_CLIENT_ID,
@@ -35,43 +34,63 @@ export async function syncBookingsFromGmail() {
 
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
-        // 1. ПОДОБРЕН ФИЛТЪР: Добавяме всички форми на "потвърдено" и "резервация"
-        // Също така търсим и "Code" или "Код", което често се среща в темите
-        const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена OR потвърдено OR резервация OR reservation OR code OR код) is:unread';
+        // ФИЛТЪР: Търсим всичко важно
+        const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена OR потвърдено OR резервация OR reservation OR cancelled OR canceled OR анулирана OR анулиране OR code OR код) is:unread';
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
 
-        console.log(`🔎 Намерени писма за обработка: ${messages.length}`);
+        console.log(`🔎 Намерени писма: ${messages.length}`);
 
         for (const msg of messages) {
             const details = await processMessage(msg.id, gmail, genAI);
             
-            if (details && details.reservation_code && details.guest_name) {
-                console.log(`📝 Подготвям запис за: ${details.guest_name}`);
-                const pin = Math.floor(1000 + Math.random() * 9000);
+            if (details && details.reservation_code) {
                 
-                await executeQueryWithRetry(async () => {
-                    await sql`
-                        INSERT INTO bookings (reservation_code, guest_name, check_in, check_out, source, payment_status, lock_pin)
-                        VALUES (${details.reservation_code}, ${details.guest_name}, ${details.check_in}, ${details.check_out}, 'airbnb', 'paid', ${pin})
-                        ON CONFLICT (reservation_code) 
-                        DO UPDATE SET 
-                            guest_name = EXCLUDED.guest_name, 
-                            check_in = EXCLUDED.check_in, 
-                            check_out = EXCLUDED.check_out;
-                    `;
-                });
+                // --- АНУЛАЦИЯ ---
+                if (details.status === 'cancelled') {
+                    console.log(`🚫 Анулация за: ${details.reservation_code}`);
+                    await executeQueryWithRetry(async () => {
+                        await sql`
+                            UPDATE bookings 
+                            SET payment_status = 'cancelled', lock_pin = NULL, updated_at = NOW()
+                            WHERE reservation_code = ${details.reservation_code}
+                        `;
+                    });
+                    console.log(`🗑️ Резервация ${details.reservation_code} е маркира като анулирана.`);
+                } 
                 
+                // --- НОВА / ОБНОВЕНА ---
+                else {
+                    console.log(`📝 Обработка на: ${details.guest_name} (Настаняване: ${details.check_in})`);
+                    const pin = Math.floor(1000 + Math.random() * 9000);
+                    
+                    await executeQueryWithRetry(async () => {
+                        await sql`
+                            INSERT INTO bookings (reservation_code, guest_name, check_in, check_out, source, payment_status, lock_pin)
+                            VALUES (${details.reservation_code}, ${details.guest_name}, ${details.check_in}, ${details.check_out}, 'airbnb', 'paid', ${pin})
+                            ON CONFLICT (reservation_code) 
+                            DO UPDATE SET 
+                                guest_name = EXCLUDED.guest_name, 
+                                check_in = EXCLUDED.check_in, 
+                                check_out = EXCLUDED.check_out,
+                                payment_status = 'paid',
+                                lock_pin = bookings.lock_pin;
+                        `;
+                    });
+                    console.log(`✅ Успешен запис с точни часове!`);
+                }
+                
+                // Маркираме като прочетено
                 await gmail.users.messages.modify({
                     userId: 'me', id: msg.id, requestBody: { removeLabelIds: ['UNREAD'] }
                 });
-                console.log(`✅ Ико записа резервация: ${details.guest_name} (${details.reservation_code})`);
+
             } else {
-                console.warn(`⚠️ Писмо ${msg.id}: Данните не са пълни или AI не ги разпозна.`, details);
+                console.warn(`⚠️ Писмо ${msg.id}: Неуспешен анализ.`);
             }
         }
-    } catch (err) { console.error('❌ Критична грешка при синхронизация:', err); }
+    } catch (err) { console.error('❌ Критична грешка:', err); }
 }
 
 async function processMessage(id, gmail, genAI) {
@@ -88,23 +107,29 @@ async function processMessage(id, gmail, genAI) {
             return "";
         };
         const body = getBody(payload);
-
         const fullText = `Subject: ${subject}\n\nBody:\n${body}`;
         
-        // 2. ПОДОБРЕН ПРОМПТ (Инструкция): Учим го на български думи
+        // --- ТУК Е МАГИЯТА ЗА ЧАСОВЕТЕ ---
         const prompt = `
-        Analyze this email (could be in English or Bulgarian) and extract booking details.
+        Analyze this Airbnb email (English or Bulgarian).
         
-        Target Data Points:
-        1. Reservation Code: Starts usually with 'HM'. Look in Subject and Body.
-        2. Guest Name: Look after "Guest", "Guest name", "Гост", "Име".
-        3. Check-in Date: Look after "Check-in", "Starts", "Настаняване", "Пристигане", "Дата".
-        4. Check-out Date: Look after "Check-out", "Ends", "Освобождаване", "Напускане".
-
-        FORMAT RULES:
-        - Convert all dates to "YYYY-MM-DD" format.
-        - Return ONLY valid JSON.
-        - JSON Structure: {"reservation_code": "STRING", "guest_name": "STRING", "check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD"}
+        TASK:
+        1. Determine STATUS: "confirmed" or "cancelled".
+        2. Extract Details including SPECIFIC TIME if available.
+        
+        TIME RULES:
+        - Look for times like "22:00", "14:00", "2 PM", "10 PM".
+        - If NO time is found in text, use defaults: Check-in = 15:00, Check-out = 11:00.
+        - Combine Date and Time into ISO format: "YYYY-MM-DD HH:mm:ss".
+        
+        FORMAT (JSON ONLY):
+        {
+            "status": "confirmed" OR "cancelled",
+            "reservation_code": "HM...",
+            "guest_name": "Name",
+            "check_in": "YYYY-MM-DD HH:mm:ss", 
+            "check_out": "YYYY-MM-DD HH:mm:ss"
+        }
         
         Email Text:
         ${fullText}`;
@@ -112,7 +137,7 @@ async function processMessage(id, gmail, genAI) {
         const result = await model.generateContent(prompt);
         const text = result.response.text().replace(/```json|```/g, '').trim();
         
-        console.log(`🤖 AI отговор за ${id}:`, text);
+        console.log(`🤖 AI Данни за ${id}:`, text);
 
         try {
             return JSON.parse(text);
@@ -121,7 +146,7 @@ async function processMessage(id, gmail, genAI) {
             return null;
         }
     } catch (err) {
-        console.error(`❌ Грешка при обработка на писмо ${id}:`, err);
+        console.error(`❌ Грешка при писмо ${id}:`, err);
         return null;
     }
 }
