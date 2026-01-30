@@ -86,26 +86,40 @@ cron.schedule('*/1 * * * *', async () => {
         const now = new Date();
 
         for (const b of bookings) {
-            const checkIn = new Date(b.check_in);
-            const checkOut = new Date(b.check_out);
-            const onTime = new Date(checkIn.getTime() - (2 * 60 * 60 * 1000));
-            const offTime = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
+            // Проверка за null стойности
+            if (!b.power_on_time || !b.power_off_time) continue;
 
-            if (now >= onTime && now < offTime && !b.power_on_time) {
+            const start = new Date(b.power_on_time);
+            const end = new Date(b.power_off_time);
+
+            // Ако сме в период на резервация
+            if (now >= start && now < end) {
                 if (!isDeviceOn) {
+                    console.log(`🟢 Включвам тока за: ${b.guest_name}`);
                     await controlDevice(true);
                     await sendNotification("ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}.`);
                 }
-                await sql`UPDATE bookings SET power_on_time = NOW() WHERE id = ${b.id}`;
-            } else if (now >= offTime && !b.power_off_time) {
+            } 
+            // Ако резервацията е приключила току-що (в рамките на последните 5 мин)
+            else if (now >= end && now < new Date(end.getTime() + 5*60000)) {
                 if (isDeviceOn) {
-                    await controlDevice(false);
-                    await sendNotification("ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name} напусна.`);
+                    // Проверяваме дали няма застъпваща резервация преди да спрем!
+                    const hasOverlap = bookings.some(other => {
+                        if (other.id === b.id) return false;
+                        const oStart = new Date(other.power_on_time);
+                        const oEnd = new Date(other.power_off_time);
+                        return now >= oStart && now < oEnd;
+                    });
+
+                    if (!hasOverlap) {
+                        console.log(`🔴 Изключвам тока след: ${b.guest_name}`);
+                        await controlDevice(false);
+                        await sendNotification("ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name} напусна.`);
+                    }
                 }
-                await sql`UPDATE bookings SET power_off_time = NOW() WHERE id = ${b.id}`;
             }
         }
-    } catch (err) { console.error('Cron Error'); }
+    } catch (err) { console.error('Cron Error', err); }
 });
 
 // --- 5. МОЗЪКЪТ НА ИКО (CHAT API) ---
@@ -116,6 +130,9 @@ app.post('/api/chat', async (req, res) => {
     const powerStatus = await getTuyaStatus();
     const isOnline = powerStatus !== null;
     const isOn = isOnline ? powerStatus.value : false;
+    
+    // ВАЖНО: АИ трябва да знае колко е часа!
+    const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
 
     // ОПРЕДЕЛЯНЕ НА РОЛЯ И ПРАВА
     let bookingData = null;
@@ -147,34 +164,27 @@ app.post('/api/chat', async (req, res) => {
     let systemInstruction = "";
     
     if (role === "host") {
-        // === ДОМАКИН РЕЖИМ: ПЪЛЕН ДОСТЪП ===
+        // === ДОМАКИН РЕЖИМ ===
         systemInstruction = `
+📅 ТЕКУЩО ВРЕМЕ: ${currentDateTime}
 🔑 РЕЖИМ: ДОМАКИН/АДМИНИСТРАТОР
 
 📊 ТОК СТАТУС:
-- Мрежа: ${isOnline ? "✅ ОНЛАЙН" : "❌ ОФЛАЙН (Няма връзка с устройството)"}
+- Мрежа: ${isOnline ? "✅ ОНЛАЙН" : "❌ ОФЛАЙН"}
 - Бушон: ${isOn ? "✅ ВКЛЮЧЕН" : "⚠️ ИЗКЛЮЧЕН"}
 
 📋 ПЪЛЕН НАРЪЧНИК:
 ${manualContent}
 
 🤖 ТВОИ ВЪЗМОЖНОСТИ:
-- Достъп до ВСЯКАКВА информация от наръчника
-- Виждаш статус на всички системи (ток, брава, сензори)
-- Можеш да получаваш технически детайли за хардуер
-- При проблем използвай [ALERT: съобщение] за нотификация
-- Можеш да включваш/изключваш тока чрез команди
-
-🎯 ПОВЕДЕНИЕ:
-- Давай пълна информация без цензура
-- Бъди технически прецизен
-- При проблем с тока: ако е ОФЛАЙН → прати към https://energo-pro.bg/bg/novini/avarii-i-profilaktika
-- Отговаряй на български
+- Пълен достъп до информация и управление.
+- Отговаряй на български.
 `;
     } else if (role === "guest") {
-        // === ГОСТ РЕЖИМ: ОГРАНИЧЕН ДОСТЪП ===
+        // === ГОСТ РЕЖИМ ===
         systemInstruction = `
-🏠 ДОБРЕ ДОШЛИ В АПАРТАМЕНТ D105, ASPEN VALLEY!
+📅 ТЕКУЩО ВРЕМЕ: ${currentDateTime}
+🏠 ДОБРЕ ДОШЛИ В АПАРТАМЕНТ D105!
 
 ${guestInfo}
 
@@ -182,69 +192,46 @@ ${guestInfo}
 ${manualContent}
 
 📊 СТАТУС НА СИСТЕМИТЕ:
-- Електричество: ${isOn ? "✅ Работи нормално" : "⚠️ Има проблем"}
+- Електричество: ${isOn ? "✅ Работи" : "⚠️ Проблем"}
 
-🎯 КАКВО МОГА ДА ВИ КАЖА:
-✅ Как да стигнете до апартамента (адрес, паркинг, вход)
-✅ WiFi мрежа и парола
-✅ Вашият код за брава
-✅ Правила на къщата
-✅ Информация за района, ресторанти, забележителности
-✅ Check-in/check-out процедури
-✅ Къде са кофите за боклук, прането, греенето
-
-🚫 КАКВО НЕ МОГА ДА СПОДЕЛЯ:
-❌ Кодове на ДРУГИ гости
-❌ Технически детайли за системата
-❌ Лична информация за домакина
+🎯 ВАЖНО ЗА WIFI:
+- Мрежа: SmartStay_Guest
+- Парола: vacation_mode
+(Давай паролата само ако питат)
 
 ⚠️ ПРИ ПРОБЛЕМ:
-- Ако има авария с тока → проверете https://energo-pro.bg/bg/novini/avarii-i-profilaktika
-- При спешност използвам [ALERT: ...] за да уведомя домакина директно
+- При спешност използвам [ALERT: ...] за да уведомя домакина.
 
-💬 ТОНЪТ МИ: Приятелски, полезен, кратък и ясен. Отговарям само на български.
+💬 ТОНЪТ МИ: Приятелски, полезен. Отговарям на български.
 `;
     } else {
-        // === НЕПОЗНАТ: МИНИМАЛНА ИНФОРМАЦИЯ ===
+        // === НЕПОЗНАТ ===
         systemInstruction = `
-👋 ЗДРАВЕЙТЕ! АЗ СЪМ ИКО - AI АСИСТЕНТ НА АПАРТАМЕНТ D105.
+📅 ТЕКУЩО ВРЕМЕ: ${currentDateTime}
+👋 ЗДРАВЕЙТЕ! АЗ СЪМ ИКО.
 
-🔒 ВАШИЯТ СТАТУС: Непознат посетител
+🔒 СТАТУС: Непознат посетител.
 
-📍 ОБЩА ИНФОРМАЦИЯ (БЕЗ ИДЕНТИФИКАЦИЯ):
-- Локация: Апартамент D105, комплекс Aspen Valley
-- Тип имот: Ваканционен апартамент за краткосрочно отдаване
+ℹ️ МОГА ДА ВИ КАЖА:
+- Обща информация за комплекса и района.
+- Как да направите резервация.
 
-ℹ️ КАКВО МОГА ДА ВИ КАЖА (БЕЗ КОД):
-✅ Обща информация за района и комплекса
-✅ Как да резервирате престой
-✅ Какви удобства предлага апартамента
-✅ Забележителности в района
-✅ Информация за транспорт, време, сезон
+🚫 НЕ МОГА ДА СПОДЕЛЯ:
+- WiFi парола
+- Код за врата
+- Лична информация
 
-🚫 КАКВО НЕ МОГА ДА СПОДЕЛЯ:
-❌ WiFi парола
-❌ Код за врата
-❌ Точен адрес на апартамента
-❌ Правила на къщата (само за гости)
-❌ Лична информация
-
-🔑 ЗА ПЪЛЕН ДОСТЪП:
-Моля споделете вашия код за резервация от Airbnb/Booking (започва с HM...).
-
-Ако сте домакин, използвайте HOST кода.
-
-💬 ТОНЪТ МИ: Любезен, но предпазлив. Защитавам личната информация на гостите.
+🔑 ЗА ДОСТЪП: Моля въведете код на резервация (HM...).
 `;
     }
 
-    // --- МОДЕЛИ С ФИКСНАТИ ИМЕНА ---
+    // --- МОДЕЛИ (Това, което ти ми даде) ---
     const modelsToTry = [
-        "gemini-3-pro-preview",      // Фиксирано: без ".0"
-        "gemini-flash-latest",        // Стабилен
-        "gemini-3-flash-preview"      // Фиксирано: без ".0"
+        "gemini-3-pro-preview", 
+        "gemini-flash-latest", 
+        "gemini-3-flash-preview"
     ];
-    let finalReply = "Ико има техническо затруднение. Моля опитайте отново след малко.";
+    let finalReply = "Ико има техническо затруднение.";
 
     for (const modelName of modelsToTry) {
         try {
@@ -252,29 +239,27 @@ ${manualContent}
             const chat = model.startChat({ history: history || [] });
             const result = await chat.sendMessage(message);
             finalReply = result.response.text();
-
-            console.log(`✅ Успешен отговор от модел: ${modelName}`);
-
-            // Автоматично пускане на тока (само при ясна нужда)
+            
+            // Автоматично пускане на тока при поискване от гост
             const needsPower = /няма ток|без ток|не работи ток|изключен ток|спрян ток/i.test(message);
-            if (needsPower && isOnline && !isOn) {
+            if (needsPower && isOnline && !isOn && role === 'guest') {
                 await controlDevice(true);
                 if (!finalReply.includes("Включвам")) {
                     finalReply += "\n\n✅ (Система: Автоматично възстанових захранването.)";
                 }
-                await sendNotification("АВАРИЙНО ВКЛЮЧВАНЕ", `Клиентът поиска ток. Устройството беше изключено, но онлайн. Пуснах го автоматично.\n\nГост: ${bookingData ? bookingData.guest_name : 'Непознат'}`);
+                await sendNotification("АВАРИЙНО ВКЛЮЧВАНЕ", `Клиентът поиска ток. Пуснах го автоматично.\n\nГост: ${bookingData ? bookingData.guest_name : 'Непознат'}`);
             }
 
             // Обработка на ALERT
             if (finalReply.includes('[ALERT:')) {
                 const match = finalReply.match(/\[ALERT:(.*?)\]/);
                 if (match && match[1]) {
-                    await sendNotification("СЪОБЩЕНИЕ ОТ ГОСТ", `${match[1]}\n\nГост: ${bookingData ? bookingData.guest_name : 'Непознат'}\nРоля: ${role}`);
+                    await sendNotification("СЪОБЩЕНИЕ ОТ ГОСТ", `${match[1]}\n\nГост: ${bookingData ? bookingData.guest_name : 'Непознат'}`);
                 }
                 finalReply = finalReply.replace(/\[ALERT:.*?\]/g, '').trim();
             }
 
-            break; // Ако успеем с първия модел, спираме цикъла
+            break; 
         } catch (error) { 
             console.error(`❌ Грешка с модел ${modelName}:`, error.message); 
         }
@@ -283,14 +268,75 @@ ${manualContent}
     res.json({ reply: finalReply });
 });
 
-// --- ДРУГИ ENDPOINTS ---
+// ==========================================
+// 🚀 НОВИТЕ МАРШРУТИ ЗА ТАБЛОТО (DASHBOARD)
+// ==========================================
+
+// 1. SYNC (Лилавия бутон)
+app.get('/sync', async (req, res) => {
+    console.log('⚡ Ръчно стартиране на Детектива...');
+    try {
+        await syncBookingsFromGmail(); 
+        res.send('✅ Пощата е проверена! Рефрешни таблицата.');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('❌ Грешка при синхронизация: ' + err.message);
+    }
+});
+
+// 2. DELETE (Триене на резервация)
+app.delete('/bookings/:id', async (req, res) => {
+    try {
+        await sql`DELETE FROM bookings WHERE id = ${req.params.id}`;
+        res.json({ message: 'Deleted' });
+    } catch (err) {
+        res.status(500).json({ error: 'Error deleting' });
+    }
+});
+
+// 3. POST (Ръчно добавяне с изчисляване на тока)
+app.post('/add-booking', async (req, res) => {
+    const { guest_name, reservation_code, check_in, check_out } = req.body;
+    
+    // Изчисляване на тока: -2 часа / +1 час
+    const inDate = new Date(check_in);
+    const outDate = new Date(check_out);
+    const powerOn = new Date(inDate.getTime() - (2 * 60 * 60 * 1000));
+    const powerOff = new Date(outDate.getTime() + (1 * 60 * 60 * 1000));
+    const pin = Math.floor(1000 + Math.random() * 9000);
+
+    try {
+        await sql`
+            INSERT INTO bookings (guest_name, reservation_code, check_in, check_out, power_on_time, power_off_time, source, payment_status, lock_pin)
+            VALUES (${guest_name}, ${reservation_code}, ${check_in}, ${check_out}, ${powerOn.toISOString()}, ${powerOff.toISOString()}, 'manual', 'paid', ${pin})
+        `;
+        res.status(201).json({ message: 'Added!' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to add' });
+    }
+});
+
+// 4. CALENDAR FEED (За Airbnb)
+app.get('/feed.ics', async (req, res) => {
+    const bookings = await sql`SELECT * FROM bookings WHERE payment_status = 'paid'`;
+    let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartStay//Bansko//EN\n";
+    bookings.forEach(b => {
+        const start = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        const end = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        icsContent += "BEGIN:VEVENT\n";
+        icsContent += `SUMMARY:${b.guest_name}\n`;
+        icsContent += `DTSTART:${start}\n`;
+        icsContent += `DTEND:${end}\n`;
+        icsContent += `DESCRIPTION:Code: ${b.reservation_code}\\nPIN: ${b.lock_pin}\n`;
+        icsContent += "END:VEVENT\n";
+    });
+    icsContent += "END:VCALENDAR";
+    res.header('Content-Type', 'text/calendar');
+    res.send(icsContent);
+});
+
+// --- СТАРИ МАРШРУТИ (Запазени) ---
 app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY created_at DESC`); });
 app.get('/status', async (req, res) => { try { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); } catch (e) { res.json({ is_on: false }); } });
-app.get('/toggle', async (req, res) => { try { const s = await getTuyaStatus(); if(s) { await controlDevice(!s.value); res.json({success:true}); } else throw new Error(); } catch(e){ res.status(500).json({error:"Fail"}); } });
-app.get('/lock-status', async (req, res) => { res.json(await getLockStatus()); });
-
-app.listen(PORT, () => {
-    console.log(`🚀 Iko is live on port ${PORT}`);
-    syncBookingsFromGmail();
-    setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
-});
+app.get('/toggle', async (
