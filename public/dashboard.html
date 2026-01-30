@@ -28,6 +28,15 @@
         .nav-btn.active { background: var(--primary); color: white; }
         .nav-btn:hover:not(.active) { background: #eee; }
 
+        /* --- НОВ БУТОН ЗА СИНХРОНИЗАЦИЯ --- */
+        .sync-btn { 
+            background: #6f42c1; color: white; border: none; padding: 8px 16px; 
+            border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; 
+            display: flex; align-items: center; gap: 6px; transition: background 0.2s; 
+        }
+        .sync-btn:hover { background: #59359a; }
+        .sync-btn:disabled { background: #ccc; cursor: not-allowed; }
+
         /* --- КОНТЕЙНЕР --- */
         .main-wrapper { flex: 1; overflow-y: auto; position: relative; }
         .tab-content { display: none; height: 100%; }
@@ -123,6 +132,7 @@
 
         /* Мобилни корекции */
         @media (max-width: 600px) {
+            header { flex-wrap: wrap; gap: 10px; justify-content: center; }
             .form-grid { grid-template-columns: 1fr; }
             td, th { display: block; width: 100%; }
             tr { display: block; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
@@ -133,6 +143,11 @@
 
     <header>
         <div class="logo">🏠 Smart Stay Admin</div>
+        
+        <button class="sync-btn" onclick="manualSync()" id="syncBtn">
+            🕵️ Провери поща
+        </button>
+
         <div class="nav-tabs">
             <button class="nav-btn active" onclick="switchTab('bookings', this)">📅 Резервации</button>
             <button class="nav-btn" onclick="switchTab('remote', this)">⚡ Устройства</button>
@@ -224,12 +239,33 @@
         if(tabId === 'remote') checkPowerStatus();
     }
 
+    // --- НОВА ФУНКЦИЯ ЗА СИНХРОНИЗАЦИЯ ---
+    async function manualSync() {
+        const btn = document.getElementById('syncBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '⏳ ...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/sync');
+            const msg = await res.text();
+            alert(msg); 
+            loadBookings(); 
+        } catch (err) {
+            alert('❌ Грешка: ' + err.message);
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
     // --- BOOKING LOGIC ---
     let currentBookings = [];
     
     function formatBG(dateStr) {
         if (!dateStr) return '---';
         return new Date(dateStr).toLocaleString('bg-BG', { 
+            timeZone: 'UTC', // Добавено за коректен час
             day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
         });
     }
@@ -251,13 +287,21 @@
             tbody.innerHTML = '';
             
             currentBookings.forEach(b => {
-                const times = getPowerTimes(b.check_in, b.check_out);
+                // Използваме директно сметнатите времена от сървъра ако ги има,
+                // или ги смятаме тук за визуализация
+                let times;
+                if(b.power_on_time && b.power_off_time) {
+                     times = { on: b.power_on_time, off: b.power_off_time };
+                } else {
+                     times = getPowerTimes(b.check_in, b.check_out);
+                }
+
                 tbody.innerHTML += `
                     <tr>
                         <td>
                             <b>${b.guest_name}</b><br>
                             <span class="badge badge-res">${b.reservation_code}</span><br>
-                            <small>ПИН: ${b.lock_pin}</small>
+                            <small>ПИН: ${b.lock_pin || 'НЯМА'}</small>
                         </td>
                         <td>
                             <span class="badge badge-on">⚡ ${formatBG(times.on)}</span><br>
@@ -339,7 +383,6 @@
                 container.classList.add('system-on');
                 statusText.innerText = 'SYSTEM ON/ВКЛЮЧЕН';
             } else {
-                // ТУК БЕШЕ ГРЕШКАТА - ОПРАВЕНО Е
                 statusText.innerText = 'SYSTEM OFF/ИЗКЛЮЧЕН';
             }
         } catch(e) {
