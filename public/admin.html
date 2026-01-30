@@ -8,22 +8,21 @@
         body { font-family: -apple-system, system-ui, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }
         .container { max-width: 1000px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         
+        /* Стил за заглавието и бутона */
         .header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
         h1 { color: #333; margin: 0; }
         
-        /* Бутон за синхронизация */
+        /* СТИЛ ЗА ЛИЛАВИЯ БУТОН */
         .sync-btn { background: #6f42c1; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; display: flex; align-items: center; gap: 8px; transition: background 0.2s; }
         .sync-btn:hover { background: #59359a; }
         .sync-btn:disabled { background: #ccc; cursor: not-allowed; }
 
-        /* Форма */
         .form-group { margin-bottom: 15px; display: grid; gap: 5px; }
         label { font-weight: 600; font-size: 14px; color: #555; }
         input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; }
         button.add-btn { background: #0084ff; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-size: 16px; width: 100%; font-weight: bold; }
         button.add-btn:hover { background: #006bcf; }
 
-        /* Таблица */
         table { width: 100%; border-collapse: collapse; margin-top: 30px; }
         th { text-align: left; padding: 10px; background: #f8f9fa; color: #666; font-size: 14px; border-bottom: 2px solid #ddd; }
         td { padding: 12px 10px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: top; }
@@ -36,7 +35,6 @@
         .delete-btn { color: red; background: none; border: none; cursor: pointer; font-weight: bold; }
         .error { color: red; font-size: 14px; margin-top: 5px; display: none; }
         
-        /* За мобилни устройства */
         @media (max-width: 600px) {
             .header-row { flex-direction: column; gap: 10px; align-items: flex-start; }
             td, th { display: block; width: 100%; box-sizing: border-box; }
@@ -50,10 +48,11 @@
 <div class="container">
     <div class="header-row">
         <h1>📅 Управление & Ток</h1>
+        
         <button class="sync-btn" onclick="manualSync()" id="syncBtn">
             🕵️ Провери Пощата Сега
         </button>
-    </div>
+        </div>
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
         <div class="form-group">
@@ -87,13 +86,13 @@
 
     <hr>
 
-    <h3>График на тока</h3>
+    <h3>График на резервациите</h3>
     <table>
         <thead>
             <tr>
                 <th>Гост / Код</th>
-                <th>⚡ ВКЛЮЧВАНЕ (Check-in -2ч)</th>
-                <th>🌑 ИЗКЛЮЧВАНЕ (Check-out +1ч)</th>
+                <th>⚡ ВКЛЮЧВАНЕ</th>
+                <th>🌑 ИЗКЛЮЧВАНЕ</th>
                 <th>Действие</th>
             </tr>
         </thead>
@@ -101,57 +100,49 @@
     </table>
     
     <div style="margin-top: 20px; text-align: right;">
-        <a href="/calendar.ics" target="_blank" style="text-decoration: none; color: #0084ff;">📅 Свали календар (ICS)</a>
+        <a href="/calendar.ics" target="_blank" style="text-decoration: none; color: #0084ff;">📅 Свали календар за Airbnb (feed.ics)</a>
     </div>
 </div>
 
 <script>
     let currentBookings = [];
 
-    // НОВА ФУНКЦИЯ: Ръчно извикване на Детектива
+    // ФУНКЦИЯТА ЗА БУТОНА
     async function manualSync() {
         const btn = document.getElementById('syncBtn');
         const originalText = btn.innerHTML;
-        
-        // Слагаме индикация за зареждане
         btn.innerHTML = '⏳ Проверявам...';
         btn.disabled = true;
 
         try {
             const res = await fetch('/sync');
             const msg = await res.text();
-            alert(msg); // Показваме съобщението от сървъра
-            loadBookings(); // Обновяваме таблицата, за да видим новия запис
+            alert(msg); 
+            loadBookings(); 
         } catch (err) {
-            alert('❌ Грешка при връзка със сървъра: ' + err.message);
+            alert('❌ Грешка: ' + err.message);
         } finally {
-            // Връщаме бутона в начално състояние
             btn.innerHTML = originalText;
             btn.disabled = false;
         }
     }
 
-    // Форматиране на дата за БГ стандарт
+    // ВАЖНО: timeZone: 'UTC' оправя часовете
     function formatBG(dateStr) {
         if (!dateStr) return '---';
         const d = new Date(dateStr);
         return d.toLocaleString('bg-BG', { 
+            timeZone: 'UTC', 
             day: '2-digit', month: '2-digit', 
             hour: '2-digit', minute: '2-digit' 
         });
     }
 
-    // Изчисляване на време за ток
-    function getPowerTimes(checkInStr, checkOutStr) {
-        const checkIn = new Date(checkInStr);
-        const checkOut = new Date(checkOutStr);
-        
-        // Включване: -2 часа
-        const powerOn = new Date(checkIn.getTime() - (2 * 60 * 60 * 1000));
-        // Изключване: +1 час
-        const powerOff = new Date(checkOut.getTime() + (1 * 60 * 60 * 1000));
-
-        return { on: powerOn, off: powerOff };
+    function getPowerTimes(booking) {
+        return { 
+            on: booking.power_on_time, 
+            off: booking.power_off_time 
+        };
     }
 
     async function loadBookings() {
@@ -164,22 +155,22 @@
         const tbody = document.getElementById('bookingList');
         tbody.innerHTML = '';
         bookings.forEach(b => {
-            const times = getPowerTimes(b.check_in, b.check_out);
+            const times = getPowerTimes(b);
             
             const row = `
                 <tr>
                     <td>
                         <b>${b.guest_name}</b><br>
                         <span class="badge badge-res">${b.reservation_code}</span><br>
-                        <small>ПИН: ${b.lock_pin}</small>
+                        <small>ПИН: ${b.lock_pin || 'НЯМА'}</small>
                     </td>
                     <td>
                         <span class="badge badge-on">⚡ ${formatBG(times.on)}</span><br>
-                        <small>Настаняване: ${formatBG(b.check_in)}</small>
+                        <small>Чек-ин: ${formatBG(b.check_in)}</small>
                     </td>
                     <td>
                         <span class="badge badge-off">🌑 ${formatBG(times.off)}</span><br>
-                        <small>Напускане: ${formatBG(b.check_out)}</small>
+                        <small>Чек-аут: ${formatBG(b.check_out)}</small>
                     </td>
                     <td><button class="delete-btn" onclick="deleteBooking(${b.id})">❌</button></td>
                 </tr>
@@ -193,7 +184,6 @@
         document.getElementById('resCode').value = 'HM' + rnd;
     }
 
-    // Проверка за засичане (Overlap)
     function hasOverlap(newStart, newEnd) {
         return currentBookings.some(booking => {
             const bStart = new Date(booking.check_in);
@@ -229,7 +219,6 @@
         }
         errorEl.style.display = 'none';
 
-        // ИЗПРАЩАНЕ КЪМ СЪРВЪРА (Като ISO стринг, за да запазим часа)
         try {
             const res = await fetch('/add-booking', {
                 method: 'POST',
@@ -237,7 +226,7 @@
                 body: JSON.stringify({
                     guest_name: name,
                     reservation_code: code,
-                    check_in: start.toISOString(), // <-- ТОВА ОПРАВЯ ЧАСОВИТЕ ЗОНИ
+                    check_in: start.toISOString(),
                     check_out: end.toISOString()
                 })
             });
