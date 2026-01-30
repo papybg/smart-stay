@@ -127,7 +127,7 @@ app.post('/api/chat', async (req, res) => {
     const isOnline = powerStatus !== null;
     const isOn = isOnline ? powerStatus.value : false;
     
-    // --- ПРОМЯНА 1: ВЗИМАМЕ ДАТАТА ---
+    // Текуща дата за AI
     const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
 
     // ОПРЕДЕЛЯНЕ НА РОЛЯ И ПРАВА
@@ -135,9 +135,16 @@ app.post('/api/chat', async (req, res) => {
     let role = "stranger";
     let guestInfo = "";
     
-    const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]{8,10}/);
+    // --- ПОПРАВКА В REGEX-А ---
+    // Сега хваща HM + всякакви букви/цифри, без ограничение в дължината
+    const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]+/);
+    
     const codeToTest = textCodeMatch ? textCodeMatch[0] : authCode;
     
+    if(codeToTest) {
+        console.log(`🔎 Тествам код: ${codeToTest}`); // Лог за дебъгване
+    }
+
     if (codeToTest === process.env.HOST_CODE) {
         role = "host";
     } else if (codeToTest) {
@@ -153,16 +160,17 @@ app.post('/api/chat', async (req, res) => {
 - Check-out: ${new Date(bookingData.check_out).toLocaleString('bg-BG')}
 - Код за брава: ${bookingData.lock_pin || 'няма данни'}
 `;
+            } else {
+                console.log("❌ Кодът не е намерен в базата.");
             }
         } catch (e) { console.error("DB Error", e); }
     }
 
     let systemInstruction = "";
     
-    // --- ПРОМЯНА 2: ВКАРВАМЕ ДАТАТА В ИНСТРУКЦИИТЕ ---
     if (role === "host") {
         systemInstruction = `
-📅 ТЕКУЩО ВРЕМЕ: ${currentDateTime} (Българско време)
+📅 ДНЕС Е: ${currentDateTime} (Българско време)
 🔑 РЕЖИМ: ДОМАКИН/АДМИНИСТРАТОР
 
 📊 ТОК СТАТУС:
@@ -178,7 +186,7 @@ ${manualContent}
 `;
     } else if (role === "guest") {
         systemInstruction = `
-📅 ТЕКУЩО ВРЕМЕ: ${currentDateTime} (Българско време)
+📅 ДНЕС Е: ${currentDateTime} (Българско време)
 🏠 ДОБРЕ ДОШЛИ В АПАРТАМЕНТ D105!
 
 ${guestInfo}
@@ -201,7 +209,7 @@ ${manualContent}
 `;
     } else {
         systemInstruction = `
-📅 ТЕКУЩО ВРЕМЕ: ${currentDateTime} (Българско време)
+📅 ДНЕС Е: ${currentDateTime} (Българско време)
 👋 ЗДРАВЕЙТЕ! АЗ СЪМ ИКО.
 
 🔒 СТАТУС: Непознат посетител.
@@ -215,7 +223,7 @@ ${manualContent}
 - Код за врата
 - Лична информация
 
-🔑 ЗА ДОСТЪП: Моля въведете код на резервация (HM...).
+🔑 ЗА ДОСТЪП: Моля въведете код на резервация (HM...), за да активирам асистента.
 `;
     }
 
@@ -255,15 +263,9 @@ ${manualContent}
     res.json({ reply: finalReply });
 });
 
-// --- ДРУГИ ENDPOINTS ---
-app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY check_in ASC`); }); // Сортирани
-app.get('/status', async (req, res) => { try { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); } catch (e) { res.json({ is_on: false }); } });
-app.get('/toggle', async (req, res) => { try { const s = await getTuyaStatus(); if(s) { await controlDevice(!s.value); res.json({success:true}); } else throw new Error(); } catch(e){ res.status(500).json({error:"Fail"}); } });
-app.get('/lock-status', async (req, res) => { res.json(await getLockStatus()); });
+// --- API ЗА ТАБЛОТО (DASHBOARD) ---
 
-// --- ПРОМЯНА 3: ДОБАВЕНИ НОВИ МАРШРУТИ ЗА ТАБЛОТО ---
-
-// 1. SYNC (Детектива)
+// 1. SYNC
 app.get('/sync', async (req, res) => {
     console.log('⚡ Ръчно стартиране на Детектива...');
     try {
@@ -275,7 +277,7 @@ app.get('/sync', async (req, res) => {
     }
 });
 
-// 2. DELETE (Триене)
+// 2. DELETE
 app.delete('/bookings/:id', async (req, res) => {
     try {
         await sql`DELETE FROM bookings WHERE id = ${req.params.id}`;
@@ -285,9 +287,10 @@ app.delete('/bookings/:id', async (req, res) => {
     }
 });
 
-// 3. POST (Ръчно добавяне)
+// 3. POST
 app.post('/add-booking', async (req, res) => {
     const { guest_name, reservation_code, check_in, check_out } = req.body;
+    
     const inDate = new Date(check_in);
     const outDate = new Date(check_out);
     const powerOn = new Date(inDate.getTime() - (2 * 60 * 60 * 1000));
@@ -306,7 +309,7 @@ app.post('/add-booking', async (req, res) => {
     }
 });
 
-// 4. ICAL FEED
+// 4. ICAL
 app.get('/feed.ics', async (req, res) => {
     const bookings = await sql`SELECT * FROM bookings WHERE payment_status = 'paid'`;
     let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartStay//Bansko//EN\n";
@@ -325,10 +328,14 @@ app.get('/feed.ics', async (req, res) => {
     res.send(icsContent);
 });
 
+// --- ДРУГИ ---
+app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY check_in ASC`); });
+app.get('/status', async (req, res) => { try { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); } catch (e) { res.json({ is_on: false }); } });
+app.get('/toggle', async (req, res) => { try { const s = await getTuyaStatus(); if(s) { await controlDevice(!s.value); res.json({success:true}); } else throw new Error(); } catch(e){ res.status(500).json({error:"Fail"}); } });
+app.get('/lock-status', async (req, res) => { res.json(await getLockStatus()); });
+
 app.listen(PORT, () => {
     console.log(`🚀 Iko is live on port ${PORT}`);
-    // Първоначална синхронизация при старт
     syncBookingsFromGmail();
-    // Периодична синхронизация на всеки 15 мин
     setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
 });
