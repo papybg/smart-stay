@@ -83,23 +83,70 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
         const startTime = Math.floor(new Date(checkInDate).getTime() / 1000);
         const endTime = Math.floor(new Date(checkOutDate).getTime() / 1000);
         
-        console.log('🔍 DEBUG - Времена:', { startTime, endTime, pin: pin.toString() });
+        console.log('🔍 DEBUG - Времена:', { startTime, endTime, pin: pin.toString(), name });
 
-        const response = await tuya.request({
-            method: 'POST',
-            path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/password-ticket/ticket-create`,
-            body: {
-                password: pin.toString(),
-                password_type: "ticket",
-                ticket_id: `guest_${Date.now()}`,
-                effective_time: startTime,
-                invalid_time: endTime,
-                name: name
+        // Опитваме различни API endpoints за Lockin
+        const endpoints = [
+            {
+                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-passwords`,
+                body: {
+                    password: pin.toString(),
+                    effective_time: startTime,
+                    invalid_time: endTime,
+                    name: name
+                }
+            },
+            {
+                path: `/v1.0/smart-lock/devices/${process.env.LOCK_DEVICE_ID}/password-ticket`,
+                body: {
+                    password: pin.toString(),
+                    password_type: 2, // 2 = временна парола
+                    effective_time: startTime,
+                    invalid_time: endTime,
+                    name: name
+                }
+            },
+            {
+                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/password-free/create-password`,
+                body: {
+                    password: pin.toString(),
+                    effective_time: startTime,
+                    invalid_time: endTime,
+                    name: name,
+                    time_type: 1 // 1 = с период на валидност
+                }
             }
-        });
+        ];
+
+        let lastError = null;
         
-        console.log(`🔐 Ключалка Отговор:`, JSON.stringify(response, null, 2));
-        return response.success === true || response.result;
+        for (const endpoint of endpoints) {
+            try {
+                console.log(`🔍 Опитвам endpoint: ${endpoint.path}`);
+                const response = await tuya.request({
+                    method: 'POST',
+                    path: endpoint.path,
+                    body: endpoint.body
+                });
+                
+                console.log(`🔐 Ключалка Отговор:`, JSON.stringify(response, null, 2));
+                
+                if (response.success === true) {
+                    console.log(`✅ Успех с endpoint: ${endpoint.path}`);
+                    return true;
+                }
+            } catch (err) {
+                lastError = err;
+                console.log(`❌ Endpoint ${endpoint.path} не работи:`, err.message);
+            }
+        }
+        
+        console.error("❌ Всички endpoints пропаднаха!");
+        if (lastError && lastError.response) {
+            console.error("Последна грешка:", JSON.stringify(lastError.response.data, null, 2));
+        }
+        return false;
+        
     } catch (error) {
         console.error("❌ Грешка брава - Message:", error.message);
         console.error("❌ Грешка брава - Stack:", error.stack);
