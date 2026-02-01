@@ -85,35 +85,53 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
         
         console.log('🔍 DEBUG - Времена:', { startTime, endTime, pin: pin.toString(), name });
 
-        // Опитваме различни API endpoints за Lockin
+        // САМО endpoint за OFFLINE PASSWORD (работи на клавиатурата с цифри)
         const endpoints = [
             {
-                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-passwords`,
-                body: {
-                    password: pin.toString(),
-                    effective_time: startTime,
-                    invalid_time: endTime,
-                    name: name
-                }
-            },
-            {
-                path: `/v1.0/smart-lock/devices/${process.env.LOCK_DEVICE_ID}/password-ticket`,
-                body: {
-                    password: pin.toString(),
-                    password_type: 2, // 2 = временна парола
-                    effective_time: startTime,
-                    invalid_time: endTime,
-                    name: name
-                }
-            },
-            {
-                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/password-free/create-password`,
+                name: "Offline Password V1",
+                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password/create-password`,
                 body: {
                     password: pin.toString(),
                     effective_time: startTime,
                     invalid_time: endTime,
                     name: name,
-                    time_type: 1 // 1 = с период на валидност
+                    password_type: "once" // или "multiple" за многократно използване
+                }
+            },
+            {
+                name: "Offline Password V2",
+                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/password-free/temp-pwd`,
+                body: {
+                    password: pin.toString(),
+                    start_time: startTime,
+                    end_time: endTime,
+                    name: name,
+                    available_times: 0 // 0 = неограничено до end_time
+                }
+            },
+            {
+                name: "Offline Password V3",
+                path: `/v2.0/cloud/thing/${process.env.LOCK_DEVICE_ID}/shadow/properties/password`,
+                body: {
+                    properties: {
+                        temp_password: {
+                            password: pin.toString(),
+                            effective_time: startTime,
+                            invalid_time: endTime,
+                            name: name
+                        }
+                    }
+                }
+            },
+            {
+                name: "Dynamic Password (последна опция)",
+                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/dynamic-password`,
+                body: {
+                    password_type: "limit_time",
+                    password: pin.toString(),
+                    effective_time: startTime,
+                    invalid_time: endTime,
+                    name: name
                 }
             }
         ];
@@ -122,26 +140,30 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
         
         for (const endpoint of endpoints) {
             try {
-                console.log(`🔍 Опитвам endpoint: ${endpoint.path}`);
+                console.log(`🔍 Опитвам ${endpoint.name}: ${endpoint.path}`);
                 const response = await tuya.request({
                     method: 'POST',
                     path: endpoint.path,
                     body: endpoint.body
                 });
                 
-                console.log(`🔐 Ключалка Отговор:`, JSON.stringify(response, null, 2));
+                console.log(`🔐 Отговор от ${endpoint.name}:`, JSON.stringify(response, null, 2));
                 
                 if (response.success === true) {
-                    console.log(`✅ Успех с endpoint: ${endpoint.path}`);
+                    console.log(`✅ РАБОТИ! ${endpoint.name}`);
+                    console.log(`🎯 Код за клавиатура: ${pin}#`);
                     return true;
                 }
             } catch (err) {
                 lastError = err;
-                console.log(`❌ Endpoint ${endpoint.path} не работи:`, err.message);
+                console.log(`❌ ${endpoint.name} не работи:`, err.message);
             }
         }
         
-        console.error("❌ Всички endpoints пропаднаха!");
+        console.error("❌ Всички offline password endpoints пропаднаха!");
+        console.error("⚠️ Lockin G30 може да не поддържа offline passwords през API.");
+        console.error("💡 Алтернатива: Използвай Lockin app за ръчно създаване на временни кодове.");
+        
         if (lastError && lastError.response) {
             console.error("Последна грешка:", JSON.stringify(lastError.response.data, null, 2));
         }
@@ -383,7 +405,7 @@ app.post('/add-booking', async (req, res) => {
     const outDate = new Date(check_out);
     const powerOn = new Date(inDate.getTime() - (2 * 60 * 60 * 1000));
     const powerOff = new Date(outDate.getTime() + (1 * 60 * 60 * 1000));
-    const pin = Math.floor(1000 + Math.random() * 9000);
+    const pin = Math.floor(100000 + Math.random() * 900000); // 6-цифрен код (100000-999999)
 
     try {
         await sql`
@@ -425,9 +447,9 @@ app.get('/lock-status', async (req, res) => { res.json(await getLockStatus()); }
 app.get('/test-lock', async (req, res) => {
     const now = new Date();
     const later = new Date(now.getTime() + 30 * 60000); // Кодът ще важи 30 минути
-    const success = await createLockPin("654321", "Test_Manual", now, later);
+    const success = await createLockPin("123456", "Test_Manual", now, later); // 6 цифри
     
-    if (success) res.json({ msg: "✅ Успех! Пробвай код 654321# на вратата." });
+    if (success) res.json({ msg: "✅ Успех! Пробвай код 123456# на вратата." });
     else res.json({ msg: "❌ Грешка! Провери дали LOCK_DEVICE_ID е в Render." });
 });
 
