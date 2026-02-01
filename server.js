@@ -243,7 +243,7 @@ WIFI INFO:
         }
 
         // Извикване на AI
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro", systemInstruction });
+        const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview", "gemini-flash-latest", "gemini-3-flash-preview", systemInstruction });
         const chat = model.startChat({ history: history || [] });
         const result = await chat.sendMessage(message);
         let finalReply = result.response.text();
