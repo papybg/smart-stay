@@ -71,27 +71,41 @@ async function getTuyaStatus() {
 
 // --- ФУНКЦИЯ ЗА БРАВАТА (LOCKIN G30) ---
 async function createLockPin(pin, name, checkInDate, checkOutDate) {
+    console.log('🔍 DEBUG - LOCK_DEVICE_ID:', process.env.LOCK_DEVICE_ID);
+    
+    if (!process.env.LOCK_DEVICE_ID) {
+        console.error('❌ LOCK_DEVICE_ID липсва в environment variables!');
+        return false;
+    }
+    
     try {
-        // За Lockin през Gateway се ползват милисекунди
-        const startTime = Math.floor(new Date(checkInDate).getTime());
-        const endTime = Math.floor(new Date(checkOutDate).getTime());
+        // За Lockin през Gateway се ползват СЕКУНДИ (не милисекунди)
+        const startTime = Math.floor(new Date(checkInDate).getTime() / 1000);
+        const endTime = Math.floor(new Date(checkOutDate).getTime() / 1000);
+        
+        console.log('🔍 DEBUG - Времена:', { startTime, endTime, pin: pin.toString() });
 
         const response = await tuya.request({
             method: 'POST',
-            path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
+            path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/password-ticket/ticket-create`,
             body: {
-                name: name,
                 password: pin.toString(),
-                start_time: startTime,
-                expire_time: endTime,
-                password_type: "ticket" // Важно за Bluetooth брави
+                password_type: "ticket",
+                ticket_id: `guest_${Date.now()}`,
+                effective_time: startTime,
+                invalid_time: endTime,
+                name: name
             }
         });
         
-        console.log(`🔐 Ключалка Отговор:`, JSON.stringify(response));
-        return response.success;
+        console.log(`🔐 Ключалка Отговор:`, JSON.stringify(response, null, 2));
+        return response.success === true || response.result;
     } catch (error) {
-        console.error("❌ Грешка брава:", error.message);
+        console.error("❌ Грешка брава - Message:", error.message);
+        console.error("❌ Грешка брава - Stack:", error.stack);
+        if (error.response) {
+            console.error("❌ API Response:", JSON.stringify(error.response.data, null, 2));
+        }
         return false;
     }
 }
