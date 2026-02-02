@@ -11,19 +11,19 @@ import { TuyaContext } from '@tuya/tuya-connector-nodejs';
 import path from 'path';
 
 // ==================================================================
-// --- ГЛОБАЛНИ НАСТРОЙКИ И ИНИЦИАЛИЗАЦИЯ ---
+// --- 0. ГЛОБАЛНИ НАСТРОЙКИ И ИНИЦИАЛИЗАЦИЯ ---
 // ==================================================================
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// База данни
+// Връзка с Базата Данни (Neon/Postgres)
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
-// AI Модел (Google Gemini)
+// Връзка с AI (Google Gemini)
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
-// Middleware
+// Middleware (Настройки на Express)
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
@@ -42,6 +42,7 @@ const mailer = nodemailer.createTransport({
 
 /**
  * Изпраща известие до администратора при важни събития
+ * (напр. спрян ток, грешка в системата, нов код)
  */
 async function sendNotification(subject, text) {
     try {
@@ -61,11 +62,11 @@ async function sendNotification(subject, text) {
 // --- 2. ЗАРЕЖДАНЕ НА НАРЪЧНИКА (Manual.txt) ---
 // ==================================================================
 
-let manualContent = "Липсва файл manual.txt. Моля, създайте го.";
+let manualContent = "Липсва файл manual.txt. Моля, създайте го в главната директория.";
 try {
     if (fs.existsSync('manual.txt')) {
         manualContent = fs.readFileSync('manual.txt', 'utf8');
-        console.log("📖 [SYSTEM] Наръчникът е зареден успешно.");
+        console.log("📖 [SYSTEM] Наръчникът е зареден успешно (manual.txt).");
     } else {
         console.warn("⚠️ [SYSTEM] Файлът manual.txt не е намерен.");
     }
@@ -85,6 +86,7 @@ const tuya = new TuyaContext({
 
 /**
  * Управление на релето за тока (Power Switch)
+ * @param {boolean} state - true за Включване, false за Изключване
  */
 async function controlDevice(state) {
     console.log(`🔌 [POWER] Опит за превключване на тока: ${state ? 'ON' : 'OFF'}`);
@@ -120,7 +122,7 @@ async function getTuyaStatus() {
 }
 
 /**
- * Взима статус на батерията/състоянието на бравата (Lock Status)
+ * Взима статус на бравата (Lock Status) - Батерия, Състояние и др.
  */
 async function getLockStatus() {
     try {
@@ -128,7 +130,7 @@ async function getLockStatus() {
             method: 'GET',
             path: `/v1.0/iot-03/devices/${process.env.LOCK_DEVICE_ID}/status`
         });
-        return res.result; // Връща целия масив със статуси (батерия, заключено/отключено)
+        return res.result; // Връща целия масив със статуси
     } catch (e) {
         console.error('❌ [LOCK ERROR] Get Status:', e.message);
         return null;
@@ -136,26 +138,34 @@ async function getLockStatus() {
 }
 
 // ==================================================================
-// --- 4. УПРАВЛЕНИЕ НА БРАВАТА (3 МЕТОДА) ---
+// --- 4. УПРАВЛЕНИЕ НА БРАВАТА (FULL ARSENAL - 4 METHODS) ---
 // ==================================================================
 
-// --- СПЕЦИАЛНА ФУНКЦИЯ ЗА ПАРОЛИ (РЕДАКТИРАНА ЗА G30) ---
+/**
+ * Опитва да създаде ПИН код чрез 4 различни метода последователно.
+ * Включва "TIME FIX" - връщане на времето назад с 1 час.
+ */
 async function createLockPin(pin, name, checkInDate, checkOutDate) {
     console.log(`🔐 [LOCK SYSTEM] Стартиране на процедура за ${name} (PIN: ${pin})...`);
     
-    // Времена (Unix Seconds и Ms)
-    const startSec = Math.floor((new Date(checkInDate).getTime() - 10 * 60000) / 1000); 
-    const endSec = Math.floor(new Date(checkOutDate).getTime() / 1000);
-    const startMs = new Date(checkInDate).getTime() - 10 * 60000;
+    // --- TIME FIX ---
+    // Връщаме стартовото време с 1 час назад спрямо "Сега", 
+    // за да сме сигурни, че бравата няма да го помисли за "бъдещ код" и да го игнорира.
+    const now = new Date();
+    const startMs = now.getTime() - 60 * 60000; // Сега минус 60 минути
     const endMs = new Date(checkOutDate).getTime();
+    
+    // За endpoints, които искат секунди (Unix)
+    const startSec = Math.floor(startMs / 1000);
+    const endSec = Math.floor(endMs / 1000);
 
     let report = [];
     let success = false;
 
-    // СМЯНА НА ПРИОРИТЕТА: ПЪРВО ПРОБВАМЕ TICKET (МЕТОД 2)
-    // Това е най-надеждният метод за Bluetooth брави зад Gateway
+    // --- ОПИТ 1: TYPE 2 (Periodic Online - GATEWAY PREFERRED) ---
+    // Това е методът, който приложението ползва, когато няма Bluetooth.
     try {
-        console.log("   👉 Опит 1: Ticket API (Lockin G30 Priority)...");
+        console.log("   👉 Опит 1: Gateway Periodic (Type 2)...");
         await tuya.request({
             method: 'POST',
             path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
@@ -164,42 +174,66 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
                 password: pin.toString(), 
                 start_time: startMs, 
                 expire_time: endMs, 
-                password_type: "ticket" 
+                password_type: 2 // Периодична
             }
         });
-        report.push("✅ Метод Ticket: УСПЕХ");
+        report.push("✅ Метод 1 (Periodic): УСПЕХ");
         success = true;
     } catch (e) { 
-        console.warn(`   ⚠️ Грешка Ticket: ${e.message}`);
-        report.push(`❌ Метод Ticket: Грешка (${e.message})`); 
+        console.warn(`   ⚠️ Грешка Метод 1: ${e.message}`);
+        report.push(`❌ Метод 1 (Periodic): Грешка (${e.message})`); 
     }
 
-    // АКО TICKET НЕ СТАНЕ, ПРОБВАМЕ ОНЛАЙН (МЕТОД 1)
+    // --- ОПИТ 2: TYPE 1 (One-Time Online) ---
+    // Резервен онлайн метод (Еднократна парола).
     if (!success) {
         try {
-            console.log("   👉 Опит 2: Online Standard API...");
+            console.log("   👉 Опит 2: Gateway One-Time (Type 1)...");
             await tuya.request({
                 method: 'POST',
-                path: `/v1.0/smart-lock/devices/${process.env.LOCK_DEVICE_ID}/password/temp`,
+                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
                 body: { 
                     name: name, 
                     password: pin.toString(), 
-                    effective_time: startSec, 
-                    invalid_time: endSec, 
-                    type: 2 
+                    start_time: startMs, 
+                    expire_time: endMs, 
+                    password_type: 1 // Еднократна
                 }
             });
-            report.push("✅ Метод Online: УСПЕХ");
+            report.push("✅ Метод 2 (One-Time): УСПЕХ");
             success = true;
         } catch (e) { 
-            report.push(`❌ Метод Online: Грешка (${e.message})`); 
+            report.push(`❌ Метод 2 (One-Time): Грешка (${e.message})`); 
         }
     }
 
-    // ПОСЛЕДЕН ОПИТ: OFFLINE
+    // --- ОПИТ 3: TICKET (Specific for G30) ---
+    // Специфичен метод за G30/G40 брави.
     if (!success) {
         try {
-            console.log("   👉 Опит 3: Offline API...");
+            console.log("   👉 Опит 3: Ticket Method...");
+            await tuya.request({
+                method: 'POST',
+                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
+                body: { 
+                    name: name, 
+                    password: pin.toString(), 
+                    start_time: startMs, 
+                    expire_time: endMs, 
+                    password_type: "ticket" 
+                }
+            });
+            report.push("✅ Метод 3 (Ticket): УСПЕХ (Изисква Sync)");
+            success = true;
+        } catch (e) { 
+            report.push(`❌ Метод 3 (Ticket): Грешка (${e.message})`); 
+        }
+    }
+
+    // --- ОПИТ 4: OFFLINE (Последен шанс) ---
+    if (!success) {
+        try {
+            console.log("   👉 Опит 4: Offline Method...");
             await tuya.request({
                 method: 'POST',
                 path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
@@ -211,10 +245,10 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
                     password_type: "offline" 
                 }
             });
-            report.push("✅ Метод Offline: УСПЕХ");
+            report.push("✅ Метод 4 (Offline): УСПЕХ");
             success = true;
         } catch (e) { 
-            report.push(`❌ Метод Offline: Грешка (${e.message})`); 
+            report.push(`❌ Метод 4 (Offline): Грешка (${e.message})`); 
         }
     }
 
@@ -467,14 +501,14 @@ app.get('/test-lock', async (req, res) => {
     const now = new Date();
     const later = new Date(now.getTime() + 60 * 60000); // 1 час напред
     
-    // Пробваме с тестови код и име
-    console.log("🛠️ Ръчен тест на бравата стартиран...");
-    const result = await createLockPin("654321", "Test_Manual_Run", now, later);
+    // Пробваме с тестови код и име, но с ВРЕМЕ 1 ЧАС НАЗАД (защото така е настроена функцията)
+    console.log("🛠️ AGGRESSIVE TIME TEST START...");
+    const result = await createLockPin("654321", "Test_Minus_One_Hour", now, later);
     
     res.json({ 
         overall_success: result.success, 
         methods_report: result.report,
-        msg: result.success ? "УСПЕХ! Поне един метод сработи. Пробвай 654321#" : "Провал. Виж отчета."
+        msg: result.success ? "УСПЕХ! Паролата трябва да е активна веднага." : "Провал. Виж отчета."
     });
 });
 
