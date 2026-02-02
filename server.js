@@ -139,75 +139,64 @@ async function getLockStatus() {
 // --- 4. УПРАВЛЕНИЕ НА БРАВАТА (3 МЕТОДА) ---
 // ==================================================================
 
-/**
- * Опитва да създаде ПИН код чрез 3 различни метода последователно
- */
+// --- СПЕЦИАЛНА ФУНКЦИЯ ЗА ПАРОЛИ (РЕДАКТИРАНА ЗА G30) ---
 async function createLockPin(pin, name, checkInDate, checkOutDate) {
     console.log(`🔐 [LOCK SYSTEM] Стартиране на процедура за ${name} (PIN: ${pin})...`);
     
-    // Подготовка на времената (Важно за Tuya API)
-    // Времената трябва да са съобразени с часовата зона на устройството
-    
-    // Времена в секунди (Unix Timestamp) - за Online API
-    // Връщаме 10 мин назад (buffer), за да избегнем грешки "Future time"
+    // Времена (Unix Seconds и Ms)
     const startSec = Math.floor((new Date(checkInDate).getTime() - 10 * 60000) / 1000); 
     const endSec = Math.floor(new Date(checkOutDate).getTime() / 1000);
-    
-    // Времена в милисекунди - за Ticket/Offline API
     const startMs = new Date(checkInDate).getTime() - 10 * 60000;
     const endMs = new Date(checkOutDate).getTime();
 
     let report = [];
     let success = false;
 
-    // --- МЕТОД 1: Smart Lock Online (Gateway Standard) ---
-    // Това е официалният метод за Wi-Fi/Zigbee Gateway брави
+    // СМЯНА НА ПРИОРИТЕТА: ПЪРВО ПРОБВАМЕ TICKET (МЕТОД 2)
+    // Това е най-надеждният метод за Bluetooth брави зад Gateway
     try {
-        console.log("   👉 Опит 1: Online Password API...");
+        console.log("   👉 Опит 1: Ticket API (Lockin G30 Priority)...");
         await tuya.request({
             method: 'POST',
-            path: `/v1.0/smart-lock/devices/${process.env.LOCK_DEVICE_ID}/password/temp`,
+            path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
             body: { 
                 name: name, 
                 password: pin.toString(), 
-                effective_time: startSec, 
-                invalid_time: endSec, 
-                type: 2 // Периодична парола
+                start_time: startMs, 
+                expire_time: endMs, 
+                password_type: "ticket" 
             }
         });
-        report.push("✅ Метод 1 (Online V1): УСПЕХ");
+        report.push("✅ Метод Ticket: УСПЕХ");
         success = true;
     } catch (e) { 
-        console.warn(`   ⚠️ Грешка Метод 1: ${e.message}`);
-        report.push(`❌ Метод 1 (Online V1): Грешка (${e.message})`); 
+        console.warn(`   ⚠️ Грешка Ticket: ${e.message}`);
+        report.push(`❌ Метод Ticket: Грешка (${e.message})`); 
     }
 
-    // --- МЕТОД 2: Bluetooth Ticket (Specific for Lockin G30) ---
-    // Ако първият не стане, пробваме метода с "билети" (Ticket), специфичен за Lockin
+    // АКО TICKET НЕ СТАНЕ, ПРОБВАМЕ ОНЛАЙН (МЕТОД 1)
     if (!success) {
         try {
-            console.log("   👉 Опит 2: Ticket API...");
+            console.log("   👉 Опит 2: Online Standard API...");
             await tuya.request({
                 method: 'POST',
-                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
+                path: `/v1.0/smart-lock/devices/${process.env.LOCK_DEVICE_ID}/password/temp`,
                 body: { 
                     name: name, 
                     password: pin.toString(), 
-                    start_time: startMs, 
-                    expire_time: endMs, 
-                    password_type: "ticket" 
+                    effective_time: startSec, 
+                    invalid_time: endSec, 
+                    type: 2 
                 }
             });
-            report.push("✅ Метод 2 (Ticket): УСПЕХ");
+            report.push("✅ Метод Online: УСПЕХ");
             success = true;
         } catch (e) { 
-            console.warn(`   ⚠️ Грешка Метод 2: ${e.message}`);
-            report.push(`❌ Метод 2 (Ticket): Грешка (${e.message})`); 
+            report.push(`❌ Метод Online: Грешка (${e.message})`); 
         }
     }
 
-    // --- МЕТОД 3: Offline Algorithm (Fallback) ---
-    // Последен шанс: Опит за генериране на офлайн алгоритмичен код
+    // ПОСЛЕДЕН ОПИТ: OFFLINE
     if (!success) {
         try {
             console.log("   👉 Опит 3: Offline API...");
@@ -222,11 +211,10 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
                     password_type: "offline" 
                 }
             });
-            report.push("✅ Метод 3 (Offline): УСПЕХ");
+            report.push("✅ Метод Offline: УСПЕХ");
             success = true;
         } catch (e) { 
-            console.warn(`   ⚠️ Грешка Метод 3: ${e.message}`);
-            report.push(`❌ Метод 3 (Offline): Грешка (${e.message})`); 
+            report.push(`❌ Метод Offline: Грешка (${e.message})`); 
         }
     }
 
