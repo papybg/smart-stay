@@ -69,36 +69,57 @@ async function getTuyaStatus() {
     } catch (e) { return null; }
 }
 
-// --- ФУНКЦИЯ ЗА ОНЛАЙН ПАРОЛИ (Lockin G30 + Gateway) ---
+// --- ФУНКЦИЯ ЗА ПАРОЛИ (3 МЕТОДА) ---
 async function createLockPin(pin, name, checkInDate, checkOutDate) {
-    console.log(`🛠️ Старт създаване на ОНЛАЙН парола за ${name}...`);
+    console.log(`🛠️ Старт на процедура с 3 метода за ${name}...`);
+    
+    // Времена в секунди (Unix)
+    const startSec = Math.floor((new Date(checkInDate).getTime() - 5 * 60000) / 1000);
+    const endSec = Math.floor(new Date(checkOutDate).getTime() / 1000);
+    
+    // Времена в милисекунди (за някои endpoints)
+    const startMs = new Date(checkInDate).getTime() - 5 * 60000;
+    const endMs = new Date(checkOutDate).getTime();
+
+    let report = [];
+    let success = false;
+
+    // МЕТОД 1: Smart Lock Online (Gateway)
     try {
-        // ВАЖНО: Връщаме времето 5 минути назад, за да сме сигурни, че бравата го приема веднага.
-        // Tuya иска секунди (Unix Timestamp), не милисекунди.
-        const startTime = Math.floor((new Date(checkInDate).getTime() - 5 * 60000) / 1000);
-        const endTime = Math.floor(new Date(checkOutDate).getTime() / 1000);
-
-        console.log(`📡 Данни към Tuya: PIN=${pin}, Start=${startTime}, End=${endTime}`);
-
-        const response = await tuya.request({
+        await tuya.request({
             method: 'POST',
             path: `/v1.0/smart-lock/devices/${process.env.LOCK_DEVICE_ID}/password/temp`,
-            body: {
-                name: name,
-                password: pin.toString(),
-                effective_time: startTime,
-                invalid_time: endTime,
-                type: 2 // Тип 2 = Онлайн парола (изисква Gateway)
-            }
+            body: { name, password: pin.toString(), effective_time: startSec, invalid_time: endSec, type: 2 }
         });
-        
-        console.log(`🔐 Отговор от Tuya:`, JSON.stringify(response));
-        return response.success;
-    } catch (error) {
-        console.error("❌ ГРЕШКА ПРИ СЪЗДАВАНЕ НА ПАРОЛА:", error.message);
-        if (error.response) console.error("Детайли:", JSON.stringify(error.response.data));
-        return false;
-    }
+        report.push("✅ Метод 1 (Online): УСПЕХ");
+        success = true;
+    } catch (e) { report.push(`❌ Метод 1 (Online): Грешка (${e.message})`); }
+
+    // МЕТОД 2: Bluetooth Ticket (За G30)
+    try {
+        await tuya.request({
+            method: 'POST',
+            path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
+            body: { name, password: pin.toString(), start_time: startMs, expire_time: endMs, password_type: "ticket" }
+        });
+        report.push("✅ Метод 2 (Ticket): УСПЕХ");
+        success = true;
+    } catch (e) { report.push(`❌ Метод 2 (Ticket): Грешка (${e.message})`); }
+
+    // МЕТОД 3: Offline Algorithm (Резервен)
+    try {
+        // Опитваме създаване на офлайн парола (понякога иска друг път)
+        await tuya.request({
+            method: 'POST',
+            path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
+            body: { name, password: pin.toString(), start_time: startMs, expire_time: endMs, password_type: "offline" }
+        });
+        report.push("✅ Метод 3 (Offline): УСПЕХ");
+        success = true;
+    } catch (e) { report.push(`❌ Метод 3 (Offline): Грешка (${e.message})`); }
+
+    console.log("📝 Доклад:", report);
+    return { success, report };
 }
 
 app.use(cors());
@@ -114,116 +135,3 @@ cron.schedule('*/1 * * * *', async () => {
         const now = new Date();
 
         for (const b of bookings) {
-            if (!b.power_on_time || !b.power_off_time) continue;
-            const start = new Date(b.power_on_time);
-            const end = new Date(b.power_off_time);
-
-            if (now >= start && now < end) {
-                if (!isDeviceOn) {
-                    await controlDevice(true);
-                    await sendNotification("ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}`);
-                }
-            } 
-            else if (now >= end && now < new Date(end.getTime() + 5*60000)) {
-                if (isDeviceOn) {
-                    const hasOverlap = bookings.some(other => {
-                        if (other.id === b.id) return false;
-                        const oStart = new Date(other.power_on_time);
-                        const oEnd = new Date(other.power_off_time);
-                        return now >= oStart && now < oEnd;
-                    });
-                    if (!hasOverlap) {
-                        await controlDevice(false);
-                        await sendNotification("ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name}`);
-                    }
-                }
-            }
-        }
-    } catch (err) { console.error('Cron Error', err); }
-});
-
-// --- 5. ЧАТ (Gemini 3 Pro, 2.5 Pro, 2.5 Flash) ---
-app.post('/api/chat', async (req, res) => {
-    const { message, history, authCode } = req.body;
-    const powerStatus = await getTuyaStatus();
-    const isOn = powerStatus ? powerStatus.value : false;
-    const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
-
-    let bookingData = null;
-    let role = "stranger";
-    const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]+/);
-    const codeToTest = textCodeMatch ? textCodeMatch[0] : authCode;
-
-    if (codeToTest === process.env.HOST_CODE) role = "host";
-    else if (codeToTest) {
-        const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
-        if (r.length > 0) { bookingData = r[0]; role = "guest"; }
-    }
-
-    const systemInstruction = `Днес е ${currentDateTime}. Роля: ${role}. Наръчник: ${manualContent}`;
-    
-    // ВАЖНО: ТВОИТЕ МОДЕЛИ
-    const modelsToTry = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
-    let finalReply = "Грешка в Ико.";
-
-    for (const modelName of modelsToTry) {
-        try {
-            const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
-            const chat = model.startChat({ history: history || [] });
-            const result = await chat.sendMessage(message);
-            finalReply = result.response.text();
-            break; 
-        } catch (error) { 
-            console.error(`Проблем с ${modelName}:`, error.message); 
-        }
-    }
-    res.json({ reply: finalReply });
-});
-
-// --- 6. API ---
-app.get('/sync', async (req, res) => { await syncBookingsFromGmail(); res.send('Synced'); });
-app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY check_in ASC`); });
-app.delete('/bookings/:id', async (req, res) => { await sql`DELETE FROM bookings WHERE id = ${req.params.id}`; res.send('OK'); });
-
-app.post('/add-booking', async (req, res) => {
-    const { guest_name, reservation_code, check_in, check_out } = req.body;
-    const pin = Math.floor(100000 + Math.random() * 899999);
-    await sql`INSERT INTO bookings (guest_name, reservation_code, check_in, check_out, lock_pin) VALUES (${guest_name}, ${reservation_code}, ${check_in}, ${check_out}, ${pin})`;
-    
-    // Опит за създаване на онлайн парола веднага при резервация
-    createLockPin(pin, guest_name.split(' ')[0], check_in, check_out);
-    
-    res.send('OK');
-});
-
-app.get('/feed.ics', async (req, res) => {
-    const bookings = await sql`SELECT * FROM bookings`;
-    let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartStay//Bansko//EN\n";
-    bookings.forEach(b => {
-        const start = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-        const end = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-        icsContent += `BEGIN:VEVENT\nSUMMARY:${b.guest_name}\nDTSTART:${start}\nDTEND:${end}\nDESCRIPTION:PIN: ${b.lock_pin}\nEND:VEVENT\n`;
-    });
-    icsContent += "END:VCALENDAR";
-    res.header('Content-Type', 'text/calendar').send(icsContent);
-});
-
-app.get('/status', async (req, res) => { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); });
-app.get('/toggle', async (req, res) => { const s = await getTuyaStatus(); if(s) await controlDevice(!s.value); res.json({success:true}); });
-
-// ТЕСТ ЛИНК ЗА ОНЛАЙН ПАРОЛА
-app.get('/test-lock', async (req, res) => {
-    const now = new Date();
-    const later = new Date(now.getTime() + 60 * 60000); // 1 час напред
-    
-    // Пробваме с 654321
-    const success = await createLockPin("654321", "Test_Online", now, later);
-    
-    res.json({ success, msg: success ? "Изпратен ONLINE код: 654321" : "Грешка - виж логовете" });
-});
-
-app.listen(PORT, () => {
-    console.log(`🚀 Iko Server is running on port ${PORT}`);
-    syncBookingsFromGmail();
-    setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
-});
