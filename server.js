@@ -69,12 +69,16 @@ async function getTuyaStatus() {
     } catch (e) { return null; }
 }
 
-// --- ФУНКЦИЯ ЗА ОНЛАЙН ПАРОЛИ (Lockin + Gateway) ---
+// --- ФУНКЦИЯ ЗА ОНЛАЙН ПАРОЛИ (Lockin G30 + Gateway) ---
 async function createLockPin(pin, name, checkInDate, checkOutDate) {
+    console.log(`🛠️ Старт създаване на ОНЛАЙН парола за ${name}...`);
     try {
-        // За ОНЛАЙН пароли (през Gateway) Tuya иска времето в СЕКУНДИ
-        const startTime = Math.floor(new Date(checkInDate).getTime() / 1000);
+        // ВАЖНО: Връщаме времето 5 минути назад, за да сме сигурни, че бравата го приема веднага.
+        // Tuya иска секунди (Unix Timestamp), не милисекунди.
+        const startTime = Math.floor((new Date(checkInDate).getTime() - 5 * 60000) / 1000);
         const endTime = Math.floor(new Date(checkOutDate).getTime() / 1000);
+
+        console.log(`📡 Данни към Tuya: PIN=${pin}, Start=${startTime}, End=${endTime}`);
 
         const response = await tuya.request({
             method: 'POST',
@@ -84,14 +88,15 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
                 password: pin.toString(),
                 effective_time: startTime,
                 invalid_time: endTime,
-                type: 2 // Тип 2 = Онлайн/Периодична парола (изисква Gateway)
+                type: 2 // Тип 2 = Онлайн парола (изисква Gateway)
             }
         });
         
-        console.log(`🔐 Ключалка (Online):`, JSON.stringify(response));
+        console.log(`🔐 Отговор от Tuya:`, JSON.stringify(response));
         return response.success;
     } catch (error) {
-        console.error("❌ Грешка с Online парола:", error.message);
+        console.error("❌ ГРЕШКА ПРИ СЪЗДАВАНЕ НА ПАРОЛА:", error.message);
+        if (error.response) console.error("Детайли:", JSON.stringify(error.response.data));
         return false;
     }
 }
@@ -137,7 +142,7 @@ cron.schedule('*/1 * * * *', async () => {
     } catch (err) { console.error('Cron Error', err); }
 });
 
-// --- 5. ЧАТ (ТВОИТЕ МОДЕЛИ: 3 PRO, 2.5 PRO, 2.5 FLASH) ---
+// --- 5. ЧАТ (Gemini 3 Pro, 2.5 Pro, 2.5 Flash) ---
 app.post('/api/chat', async (req, res) => {
     const { message, history, authCode } = req.body;
     const powerStatus = await getTuyaStatus();
@@ -157,7 +162,7 @@ app.post('/api/chat', async (req, res) => {
 
     const systemInstruction = `Днес е ${currentDateTime}. Роля: ${role}. Наръчник: ${manualContent}`;
     
-    // СПИСЪКЪТ С МОДЕЛИ, КОЙТО ИСКАШЕ
+    // ВАЖНО: ТВОИТЕ МОДЕЛИ
     const modelsToTry = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
     let finalReply = "Грешка в Ико.";
 
@@ -175,7 +180,7 @@ app.post('/api/chat', async (req, res) => {
     res.json({ reply: finalReply });
 });
 
-// --- 6. DASHBOARD API ---
+// --- 6. API ---
 app.get('/sync', async (req, res) => { await syncBookingsFromGmail(); res.send('Synced'); });
 app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY check_in ASC`); });
 app.delete('/bookings/:id', async (req, res) => { await sql`DELETE FROM bookings WHERE id = ${req.params.id}`; res.send('OK'); });
@@ -184,6 +189,10 @@ app.post('/add-booking', async (req, res) => {
     const { guest_name, reservation_code, check_in, check_out } = req.body;
     const pin = Math.floor(100000 + Math.random() * 899999);
     await sql`INSERT INTO bookings (guest_name, reservation_code, check_in, check_out, lock_pin) VALUES (${guest_name}, ${reservation_code}, ${check_in}, ${check_out}, ${pin})`;
+    
+    // Опит за създаване на онлайн парола веднага при резервация
+    createLockPin(pin, guest_name.split(' ')[0], check_in, check_out);
+    
     res.send('OK');
 });
 
@@ -202,16 +211,19 @@ app.get('/feed.ics', async (req, res) => {
 app.get('/status', async (req, res) => { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); });
 app.get('/toggle', async (req, res) => { const s = await getTuyaStatus(); if(s) await controlDevice(!s.value); res.json({success:true}); });
 
-// Тест за ОНЛАЙН парола
+// ТЕСТ ЛИНК ЗА ОНЛАЙН ПАРОЛА
 app.get('/test-lock', async (req, res) => {
     const now = new Date();
-    const later = new Date(now.getTime() + 60 * 60000); // 1 час
+    const later = new Date(now.getTime() + 60 * 60000); // 1 час напред
+    
+    // Пробваме с 654321
     const success = await createLockPin("654321", "Test_Online", now, later);
-    res.json({ success, msg: success ? "Изпратен ONLINE код: 654321" : "Грешка" });
+    
+    res.json({ success, msg: success ? "Изпратен ONLINE код: 654321" : "Грешка - виж логовете" });
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Порт ${PORT}`);
+    console.log(`🚀 Iko Server is running on port ${PORT}`);
     syncBookingsFromGmail();
     setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
 });
