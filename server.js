@@ -42,7 +42,6 @@ const mailer = nodemailer.createTransport({
 
 /**
  * Изпраща известие до администратора при важни събития
- * (напр. спрян ток, грешка в системата, нов код)
  */
 async function sendNotification(subject, text) {
     try {
@@ -86,7 +85,6 @@ const tuya = new TuyaContext({
 
 /**
  * Управление на релето за тока (Power Switch)
- * @param {boolean} state - true за Включване, false за Изключване
  */
 async function controlDevice(state) {
     console.log(`🔌 [POWER] Опит за превключване на тока: ${state ? 'ON' : 'OFF'}`);
@@ -122,7 +120,7 @@ async function getTuyaStatus() {
 }
 
 /**
- * Взима статус на бравата (Lock Status) - Батерия, Състояние и др.
+ * Взима статус на бравата (Lock Status)
  */
 async function getLockStatus() {
     try {
@@ -130,7 +128,7 @@ async function getLockStatus() {
             method: 'GET',
             path: `/v1.0/iot-03/devices/${process.env.LOCK_DEVICE_ID}/status`
         });
-        return res.result; // Връща целия масив със статуси
+        return res.result; 
     } catch (e) {
         console.error('❌ [LOCK ERROR] Get Status:', e.message);
         return null;
@@ -138,34 +136,25 @@ async function getLockStatus() {
 }
 
 // ==================================================================
-// --- 4. УПРАВЛЕНИЕ НА БРАВАТА (FULL ARSENAL - 4 METHODS) ---
+// --- 4. УПРАВЛЕНИЕ НА БРАВАТА (4 МЕТОДА С TYPE 1 ПРИОРИТЕТ) ---
 // ==================================================================
 
-/**
- * Опитва да създаде ПИН код чрез 4 различни метода последователно.
- * Включва "TIME FIX" - връщане на времето назад с 1 час.
- */
 async function createLockPin(pin, name, checkInDate, checkOutDate) {
     console.log(`🔐 [LOCK SYSTEM] Стартиране на процедура за ${name} (PIN: ${pin})...`);
     
-    // --- TIME FIX ---
-    // Връщаме стартовото време с 1 час назад спрямо "Сега", 
-    // за да сме сигурни, че бравата няма да го помисли за "бъдещ код" и да го игнорира.
+    // ВРЕМЕНА:
+    // Използваме "Сега" за начало, за да е валиден веднага.
     const now = new Date();
-    const startMs = now.getTime() - 60 * 60000; // Сега минус 60 минути
+    const startMs = now.getTime(); 
     const endMs = new Date(checkOutDate).getTime();
-    
-    // За endpoints, които искат секунди (Unix)
-    const startSec = Math.floor(startMs / 1000);
-    const endSec = Math.floor(endMs / 1000);
 
     let report = [];
     let success = false;
 
-    // --- ОПИТ 1: TYPE 2 (Periodic Online - GATEWAY PREFERRED) ---
-    // Това е методът, който приложението ползва, когато няма Bluetooth.
+    // --- ОПИТ 1: TYPE 1 (Еднократна / One-Time) ---
+    // Това е най-надеждният метод за G30 през Gateway.
     try {
-        console.log("   👉 Опит 1: Gateway Periodic (Type 2)...");
+        console.log("   👉 Опит 1: Gateway One-Time (Type 1)...");
         await tuya.request({
             method: 'POST',
             path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
@@ -174,21 +163,20 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
                 password: pin.toString(), 
                 start_time: startMs, 
                 expire_time: endMs, 
-                password_type: 2 // Периодична
+                password_type: 1 // <--- ЕДНОКРАТНА
             }
         });
-        report.push("✅ Метод 1 (Periodic): УСПЕХ");
+        report.push("✅ Метод 1 (Type 1 - OneTime): УСПЕХ");
         success = true;
     } catch (e) { 
         console.warn(`   ⚠️ Грешка Метод 1: ${e.message}`);
-        report.push(`❌ Метод 1 (Periodic): Грешка (${e.message})`); 
+        report.push(`❌ Метод 1 (Type 1): Грешка (${e.message})`); 
     }
 
-    // --- ОПИТ 2: TYPE 1 (One-Time Online) ---
-    // Резервен онлайн метод (Еднократна парола).
+    // --- ОПИТ 2: TYPE 2 (Периодична / Periodic) ---
     if (!success) {
         try {
-            console.log("   👉 Опит 2: Gateway One-Time (Type 1)...");
+            console.log("   👉 Опит 2: Gateway Periodic (Type 2)...");
             await tuya.request({
                 method: 'POST',
                 path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password`,
@@ -197,18 +185,17 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
                     password: pin.toString(), 
                     start_time: startMs, 
                     expire_time: endMs, 
-                    password_type: 1 // Еднократна
+                    password_type: 2 
                 }
             });
-            report.push("✅ Метод 2 (One-Time): УСПЕХ");
+            report.push("✅ Метод 2 (Type 2 - Periodic): УСПЕХ");
             success = true;
         } catch (e) { 
-            report.push(`❌ Метод 2 (One-Time): Грешка (${e.message})`); 
+            report.push(`❌ Метод 2 (Type 2): Грешка (${e.message})`); 
         }
     }
 
-    // --- ОПИТ 3: TICKET (Specific for G30) ---
-    // Специфичен метод за G30/G40 брави.
+    // --- ОПИТ 3: TICKET (G30 Native) ---
     if (!success) {
         try {
             console.log("   👉 Опит 3: Ticket Method...");
@@ -223,14 +210,14 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
                     password_type: "ticket" 
                 }
             });
-            report.push("✅ Метод 3 (Ticket): УСПЕХ (Изисква Sync)");
+            report.push("✅ Метод 3 (Ticket): УСПЕХ");
             success = true;
         } catch (e) { 
             report.push(`❌ Метод 3 (Ticket): Грешка (${e.message})`); 
         }
     }
 
-    // --- ОПИТ 4: OFFLINE (Последен шанс) ---
+    // --- ОПИТ 4: OFFLINE ---
     if (!success) {
         try {
             console.log("   👉 Опит 4: Offline Method...");
@@ -260,9 +247,7 @@ async function createLockPin(pin, name, checkInDate, checkOutDate) {
 // --- 5. АВТОПИЛОТ (CRON ЗА ТОКА) ---
 // ==================================================================
 
-// Проверка всяка минута
 cron.schedule('*/1 * * * *', async () => {
-    // console.log("⏳ [CRON] Проверка на резервации...");
     try {
         const bookings = await sql`SELECT * FROM bookings`;
         const currentStatus = await getTuyaStatus();
@@ -270,13 +255,10 @@ cron.schedule('*/1 * * * *', async () => {
         const now = new Date();
 
         for (const b of bookings) {
-            // Пропускаме резервации без валидни времена за ток
             if (!b.power_on_time || !b.power_off_time) continue;
-
             const start = new Date(b.power_on_time);
             const end = new Date(b.power_off_time);
 
-            // СЦЕНАРИЙ 1: Време е за настаняване (Токът трябва да е ВКЛ)
             if (now >= start && now < end) {
                 if (!isDeviceOn) {
                     console.log(`✅ [AUTO] Пускане на ток за ${b.guest_name}`);
@@ -284,16 +266,12 @@ cron.schedule('*/1 * * * *', async () => {
                     await sendNotification("ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}. Настаняване.`);
                 }
             } 
-            // СЦЕНАРИЙ 2: Време е за напускане (Токът трябва да е ИЗКЛ)
-            // Добавяме 5 минути толеранс след check-out
             else if (now >= end && now < new Date(end.getTime() + 5*60000)) {
                 if (isDeviceOn) {
-                    // Критична проверка: Има ли застъпваща се резервация?
                     const hasOverlap = bookings.some(other => {
                         if (other.id === b.id) return false;
                         const oStart = new Date(other.power_on_time);
                         const oEnd = new Date(other.power_off_time);
-                        // Ако текущото време попада в друга резервация
                         return now >= oStart && now < oEnd;
                     });
                     
@@ -301,8 +279,6 @@ cron.schedule('*/1 * * * *', async () => {
                         console.log(`🛑 [AUTO] Спиране на ток след ${b.guest_name}`);
                         await controlDevice(false);
                         await sendNotification("ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name} напусна.`);
-                    } else {
-                        console.log(`⚠️ [AUTO] Токът остава пуснат заради следващ гост.`);
                     }
                 }
             }
@@ -319,7 +295,6 @@ cron.schedule('*/1 * * * *', async () => {
 app.post('/api/chat', async (req, res) => {
     const { message, history, authCode } = req.body;
     
-    // Събиране на контекст за бота
     const powerStatus = await getTuyaStatus();
     const isOnline = powerStatus !== null;
     const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
@@ -327,14 +302,12 @@ app.post('/api/chat', async (req, res) => {
     let bookingData = null;
     let role = "stranger";
     
-    // Проверка за код (HMxxxx) в съобщението или auth полето
     const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]+/);
     const codeToTest = textCodeMatch ? textCodeMatch[0] : authCode;
 
     if (codeToTest === process.env.HOST_CODE) {
         role = "host";
     } else if (codeToTest) {
-        // Търсене в базата данни
         const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
         if (r.length > 0) { 
             bookingData = r[0]; 
@@ -342,7 +315,6 @@ app.post('/api/chat', async (req, res) => {
         }
     }
 
-    // Системна инструкция
     const systemInstruction = `
     Текущо време: ${currentDateTime}.
     Роля на потребителя: ${role}.
@@ -352,31 +324,27 @@ app.post('/api/chat', async (req, res) => {
     Ти си Ико - умен иконом на апартамент в Банско.
     `;
     
-    // --- ИЗБОР НА МОДЕЛ (ТВОИТЕ СПЕЦИФИЧНИ ВЕРСИИ) ---
     const modelsToTry = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
     let finalReply = "Съжалявам, Ико има техническо затруднение в момента.";
 
     for (const modelName of modelsToTry) {
         try {
-            // console.log(`🤖 Опит с модел: ${modelName}`);
             const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
             const chat = model.startChat({ history: history || [] });
             const result = await chat.sendMessage(message);
             finalReply = result.response.text();
-            break; // Успех -> излизаме от цикъла
+            break; 
         } catch (error) { 
             console.error(`❌ Грешка с модел ${modelName}:`, error.message); 
-            // Продължаваме към следващия модел
         }
     }
     res.json({ reply: finalReply });
 });
 
 // ==================================================================
-// --- 7. API ЕНДПОЙНТИ (СЪРВЪРНИ ФУНКЦИИ) ---
+// --- 7. API ЕНДПОЙНТИ ---
 // ==================================================================
 
-// 7.1 Синхронизация с Gmail
 app.get('/sync', async (req, res) => { 
     try {
         await syncBookingsFromGmail(); 
@@ -386,7 +354,6 @@ app.get('/sync', async (req, res) => {
     }
 });
 
-// 7.2 Списък с резервации
 app.get('/bookings', async (req, res) => { 
     try {
         const list = await sql`SELECT * FROM bookings ORDER BY check_in ASC`;
@@ -396,7 +363,6 @@ app.get('/bookings', async (req, res) => {
     }
 });
 
-// 7.3 Изтриване на резервация
 app.delete('/bookings/:id', async (req, res) => { 
     try {
         await sql`DELETE FROM bookings WHERE id = ${req.params.id}`; 
@@ -406,17 +372,13 @@ app.delete('/bookings/:id', async (req, res) => {
     }
 });
 
-// 7.4 Ръчно добавяне на резервация
 app.post('/add-booking', async (req, res) => {
     try {
         const { guest_name, reservation_code, check_in, check_out } = req.body;
-        // Генериране на 6-цифрен ПИН
         const pin = Math.floor(100000 + Math.random() * 899999);
         
-        // Запис в базата
         await sql`INSERT INTO bookings (guest_name, reservation_code, check_in, check_out, lock_pin) VALUES (${guest_name}, ${reservation_code}, ${check_in}, ${check_out}, ${pin})`;
         
-        // Опит за създаване на парола веднага (фонов процес)
         createLockPin(pin, guest_name.split(' ')[0], check_in, check_out);
         
         res.send('OK');
@@ -426,17 +388,10 @@ app.post('/add-booking', async (req, res) => {
     }
 });
 
-// 7.5 iCal Feed (За Airbnb/Booking календари)
 app.get('/feed.ics', async (req, res) => {
     try {
         const bookings = await sql`SELECT * FROM bookings`;
-        
-        // Стандартен VCALENDAR хедър
-        let icsContent = "BEGIN:VCALENDAR\n";
-        icsContent += "VERSION:2.0\n";
-        icsContent += "PRODID:-//SmartStay//Bansko//EN\n";
-        icsContent += "CALSCALE:GREGORIAN\n";
-        icsContent += "METHOD:PUBLISH\n";
+        let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartStay//Bansko//EN\nCALSCALE:GREGORIAN\nMETHOD:PUBLISH\n";
         
         bookings.forEach(b => {
             const start = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -465,7 +420,6 @@ app.get('/feed.ics', async (req, res) => {
     }
 });
 
-// 7.6 Статус на тока (JSON)
 app.get('/status', async (req, res) => { 
     try {
         const s = await getTuyaStatus(); 
@@ -475,13 +429,11 @@ app.get('/status', async (req, res) => {
     }
 });
 
-// 7.7 Статус на бравата (Върната функция!)
 app.get('/lock-status', async (req, res) => {
     const status = await getLockStatus();
     res.json(status || { error: "Няма връзка с бравата" });
 });
 
-// 7.8 Ръчно превключване на тока (Toggle)
 app.get('/toggle', async (req, res) => { 
     try {
         const s = await getTuyaStatus(); 
@@ -496,20 +448,38 @@ app.get('/toggle', async (req, res) => {
     }
 });
 
-// 7.9 ТЕСТ ЛИНК: Пълна диагностика на бравата
+// --- ДИАГНОСТИЧЕН ТЕСТ (ДЕТЕКТОР НА ЛЪЖАТА) ---
 app.get('/test-lock', async (req, res) => {
     const now = new Date();
-    const later = new Date(now.getTime() + 60 * 60000); // 1 час напред
+    const later = new Date(now.getTime() + 60 * 60000); 
     
-    // Пробваме с тестови код и име, но с ВРЕМЕ 1 ЧАС НАЗАД (защото така е настроена функцията)
-    console.log("🛠️ AGGRESSIVE TIME TEST START...");
-    const result = await createLockPin("654321", "Test_Minus_One_Hour", now, later);
-    
-    res.json({ 
-        overall_success: result.success, 
-        methods_report: result.report,
-        msg: result.success ? "УСПЕХ! Паролата трябва да е активна веднага." : "Провал. Виж отчета."
-    });
+    console.log("🔍 [DIAGNOSTIC] Проверявам какво се крие зад LOCK_DEVICE_ID...");
+    try {
+        // Питаме Tuya за детайли за устройството
+        const details = await tuya.request({
+            method: 'GET',
+            path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}`
+        });
+        
+        const deviceName = details.result.name;
+        
+        console.log("========================================");
+        console.log(`📦 ИМЕ НА УСТРОЙСТВОТО: ${deviceName}`);
+        console.log(`🆔 ID: ${details.result.id}`);
+        console.log(`🔌 ОНЛАЙН ЛИ Е: ${details.result.online}`);
+        console.log("========================================");
+
+        if (deviceName.toLowerCase().includes('gateway') || deviceName.toLowerCase().includes('hub')) {
+            console.error("❌ ВНИМАНИЕ: Това ID е на Хъба! Трябва да е на бравата.");
+        } 
+
+    } catch (e) {
+        console.error("⚠️ Грешка при проверка на устройството:", e.message);
+    }
+
+    console.log("🛠️ TEST START...");
+    const result = await createLockPin("654321", "Diagnostic_Test", now, later);
+    res.json({ overall_success: result.success, report: result.report });
 });
 
 // ==================================================================
