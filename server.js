@@ -44,7 +44,7 @@ try {
     }
 } catch (err) { console.error(err); }
 
-// --- 3. TUYA & SMART DEVICES ---
+// --- 3. TUYA ВРЪЗКА ---
 const tuya = new TuyaContext({
     baseUrl: 'https://openapi.tuyaeu.com',
     accessKey: process.env.TUYA_ACCESS_ID,
@@ -69,125 +69,38 @@ async function getTuyaStatus() {
     } catch (e) { return null; }
 }
 
-// --- ФУНКЦИЯ ЗА БРАВАТА (LOCKIN G30) ---
+// --- ФУНКЦИЯ ЗА ОНЛАЙН ПАРОЛИ (Lockin + Gateway) ---
 async function createLockPin(pin, name, checkInDate, checkOutDate) {
-    console.log('🔍 DEBUG - LOCK_DEVICE_ID:', process.env.LOCK_DEVICE_ID);
-    
-    if (!process.env.LOCK_DEVICE_ID) {
-        console.error('❌ LOCK_DEVICE_ID липсва в environment variables!');
-        return false;
-    }
-    
     try {
-        // За Lockin през Gateway се ползват СЕКУНДИ (не милисекунди)
+        // За ОНЛАЙН пароли (през Gateway) Tuya иска времето в СЕКУНДИ
         const startTime = Math.floor(new Date(checkInDate).getTime() / 1000);
         const endTime = Math.floor(new Date(checkOutDate).getTime() / 1000);
-        
-        console.log('🔍 DEBUG - Времена:', { startTime, endTime, pin: pin.toString(), name });
 
-        // САМО endpoint за OFFLINE PASSWORD (работи на клавиатурата с цифри)
-        const endpoints = [
-            {
-                name: "Offline Password V1",
-                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/temp-password/create-password`,
-                body: {
-                    password: pin.toString(),
-                    effective_time: startTime,
-                    invalid_time: endTime,
-                    name: name,
-                    password_type: "once" // или "multiple" за многократно използване
-                }
-            },
-            {
-                name: "Offline Password V2",
-                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/password-free/temp-pwd`,
-                body: {
-                    password: pin.toString(),
-                    start_time: startTime,
-                    end_time: endTime,
-                    name: name,
-                    available_times: 0 // 0 = неограничено до end_time
-                }
-            },
-            {
-                name: "Offline Password V3",
-                path: `/v2.0/cloud/thing/${process.env.LOCK_DEVICE_ID}/shadow/properties/password`,
-                body: {
-                    properties: {
-                        temp_password: {
-                            password: pin.toString(),
-                            effective_time: startTime,
-                            invalid_time: endTime,
-                            name: name
-                        }
-                    }
-                }
-            },
-            {
-                name: "Dynamic Password (последна опция)",
-                path: `/v1.0/devices/${process.env.LOCK_DEVICE_ID}/door-lock/dynamic-password`,
-                body: {
-                    password_type: "limit_time",
-                    password: pin.toString(),
-                    effective_time: startTime,
-                    invalid_time: endTime,
-                    name: name
-                }
+        const response = await tuya.request({
+            method: 'POST',
+            path: `/v1.0/smart-lock/devices/${process.env.LOCK_DEVICE_ID}/password/temp`,
+            body: {
+                name: name,
+                password: pin.toString(),
+                effective_time: startTime,
+                invalid_time: endTime,
+                type: 2 // Тип 2 = Онлайн/Периодична парола (изисква Gateway)
             }
-        ];
-
-        let lastError = null;
+        });
         
-        for (const endpoint of endpoints) {
-            try {
-                console.log(`🔍 Опитвам ${endpoint.name}: ${endpoint.path}`);
-                const response = await tuya.request({
-                    method: 'POST',
-                    path: endpoint.path,
-                    body: endpoint.body
-                });
-                
-                console.log(`🔐 Отговор от ${endpoint.name}:`, JSON.stringify(response, null, 2));
-                
-                if (response.success === true) {
-                    console.log(`✅ РАБОТИ! ${endpoint.name}`);
-                    console.log(`🎯 Код за клавиатура: ${pin}#`);
-                    return true;
-                }
-            } catch (err) {
-                lastError = err;
-                console.log(`❌ ${endpoint.name} не работи:`, err.message);
-            }
-        }
-        
-        console.error("❌ Всички offline password endpoints пропаднаха!");
-        console.error("⚠️ Lockin G30 може да не поддържа offline passwords през API.");
-        console.error("💡 Алтернатива: Използвай Lockin app за ръчно създаване на временни кодове.");
-        
-        if (lastError && lastError.response) {
-            console.error("Последна грешка:", JSON.stringify(lastError.response.data, null, 2));
-        }
-        return false;
-        
+        console.log(`🔐 Ключалка (Online):`, JSON.stringify(response));
+        return response.success;
     } catch (error) {
-        console.error("❌ Грешка брава - Message:", error.message);
-        console.error("❌ Грешка брава - Stack:", error.stack);
-        if (error.response) {
-            console.error("❌ API Response:", JSON.stringify(error.response.data, null, 2));
-        }
+        console.error("❌ Грешка с Online парола:", error.message);
         return false;
     }
-}
-
-async function getLockStatus() {
-    return { installed: false, battery: 0, status: "Unknown" };
 }
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// --- 4. АВТОПИЛОТ (CRON) С ИМЕЙЛИ ---
+// --- 4. АВТОПИЛОТ (CRON) ---
 cron.schedule('*/1 * * * *', async () => {
     try {
         const bookings = await sql`SELECT * FROM bookings`;
@@ -197,15 +110,13 @@ cron.schedule('*/1 * * * *', async () => {
 
         for (const b of bookings) {
             if (!b.power_on_time || !b.power_off_time) continue;
-
             const start = new Date(b.power_on_time);
             const end = new Date(b.power_off_time);
 
             if (now >= start && now < end) {
                 if (!isDeviceOn) {
-                    console.log(`🟢 Включвам тока за: ${b.guest_name}`);
                     await controlDevice(true);
-                    await sendNotification("ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}.`);
+                    await sendNotification("ТОКЪТ Е ПУСНАТ", `Гост: ${b.guest_name}`);
                 }
             } 
             else if (now >= end && now < new Date(end.getTime() + 5*60000)) {
@@ -216,11 +127,9 @@ cron.schedule('*/1 * * * *', async () => {
                         const oEnd = new Date(other.power_off_time);
                         return now >= oStart && now < oEnd;
                     });
-
                     if (!hasOverlap) {
-                        console.log(`🔴 Изключвам тока след: ${b.guest_name}`);
                         await controlDevice(false);
-                        await sendNotification("ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name} напусна.`);
+                        await sendNotification("ТОКЪТ Е СПРЯН", `Гост: ${b.guest_name}`);
                     }
                 }
             }
@@ -228,117 +137,29 @@ cron.schedule('*/1 * * * *', async () => {
     } catch (err) { console.error('Cron Error', err); }
 });
 
-// --- 5. МОЗЪКЪТ НА ИКО (CHAT API) ---
+// --- 5. ЧАТ (ТВОИТЕ МОДЕЛИ: 3 PRO, 2.5 PRO, 2.5 FLASH) ---
 app.post('/api/chat', async (req, res) => {
     const { message, history, authCode } = req.body;
-    
-    // Проверка на хардуера
     const powerStatus = await getTuyaStatus();
-    const isOnline = powerStatus !== null;
-    const isOn = isOnline ? powerStatus.value : false;
-    
-    // Текуща дата за AI
+    const isOn = powerStatus ? powerStatus.value : false;
     const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
 
-    // ОПРЕДЕЛЯНЕ НА РОЛЯ И ПРАВА
     let bookingData = null;
     let role = "stranger";
-    let guestInfo = "";
-    
-    // --- ПОПРАВКА В REGEX-А ---
-    // Сега хваща HM + всякакви букви/цифри, без ограничение в дължината
     const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]+/);
-    
     const codeToTest = textCodeMatch ? textCodeMatch[0] : authCode;
+
+    if (codeToTest === process.env.HOST_CODE) role = "host";
+    else if (codeToTest) {
+        const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
+        if (r.length > 0) { bookingData = r[0]; role = "guest"; }
+    }
+
+    const systemInstruction = `Днес е ${currentDateTime}. Роля: ${role}. Наръчник: ${manualContent}`;
     
-    if(codeToTest) {
-        console.log(`🔎 Тествам код: ${codeToTest}`); // Лог за дебъгване
-    }
-
-    if (codeToTest === process.env.HOST_CODE) {
-        role = "host";
-    } else if (codeToTest) {
-        try {
-            const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
-            if (r.length > 0) {
-                bookingData = r[0];
-                role = "guest";
-                guestInfo = `
-👤 ВАШАТА РЕЗЕРВАЦИЯ:
-- Име: ${bookingData.guest_name}
-- Check-in: ${new Date(bookingData.check_in).toLocaleString('bg-BG')}
-- Check-out: ${new Date(bookingData.check_out).toLocaleString('bg-BG')}
-- Код за брава: ${bookingData.lock_pin || 'няма данни'}
-`;
-            } else {
-                console.log("❌ Кодът не е намерен в базата.");
-            }
-        } catch (e) { console.error("DB Error", e); }
-    }
-
-    let systemInstruction = "";
-    
-    if (role === "host") {
-        systemInstruction = `
-📅 ДНЕС Е: ${currentDateTime} (Българско време)
-🔑 РЕЖИМ: ДОМАКИН/АДМИНИСТРАТОР
-
-📊 ТОК СТАТУС:
-- Мрежа: ${isOnline ? "✅ ОНЛАЙН" : "❌ ОФЛАЙН"}
-- Бушон: ${isOn ? "✅ ВКЛЮЧЕН" : "⚠️ ИЗКЛЮЧЕН"}
-
-📋 ПЪЛЕН НАРЪЧНИК:
-${manualContent}
-
-🤖 ТВОИ ВЪЗМОЖНОСТИ:
-- Пълен достъп до информация и управление.
-- Отговаряй на български.
-`;
-    } else if (role === "guest") {
-        systemInstruction = `
-📅 ДНЕС Е: ${currentDateTime} (Българско време)
-🏠 ДОБРЕ ДОШЛИ В АПАРТАМЕНТ D105!
-
-${guestInfo}
-
-📋 ИНФОРМАЦИЯ ЗА ВАШИЯ ПРЕСТОЙ:
-${manualContent}
-
-📊 СТАТУС НА СИСТЕМИТЕ:
-- Електричество: ${isOn ? "✅ Работи" : "⚠️ Проблем"}
-
-🎯 ВАЖНО ЗА WIFI:
-- Мрежа: SmartStay_Guest
-- Парола: vacation_mode
-(Давай паролата само ако питат)
-
-⚠️ ПРИ ПРОБЛЕМ:
-- При спешност използвам [ALERT: ...] за да уведомя домакина.
-
-💬 ТОНЪТ МИ: Приятелски, полезен. Отговарям на български.
-`;
-    } else {
-        systemInstruction = `
-📅 ДНЕС Е: ${currentDateTime} (Българско време)
-👋 ЗДРАВЕЙТЕ! АЗ СЪМ ИКО.
-
-🔒 СТАТУС: Непознат посетител.
-
-ℹ️ МОГА ДА ВИ КАЖА:
-- Обща информация за комплекса и района.
-- Как да направите резервация.
-
-🚫 НЕ МОГА ДА СПОДЕЛЯ:
-- WiFi парола
-- Код за врата
-- Лична информация
-
-🔑 ЗА ДОСТЪП: Моля въведете код на резервация (HM...), за да активирам асистента.
-`;
-    }
-
-    const modelsToTry = ["gemini-3-pro-preview", "gemini-flash-latest", "gemini-3-flash-preview"];
-    let finalReply = "Ико има техническо затруднение.";
+    // СПИСЪКЪТ С МОДЕЛИ, КОЙТО ИСКАШЕ
+    const modelsToTry = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
+    let finalReply = "Грешка в Ико.";
 
     for (const modelName of modelsToTry) {
         try {
@@ -346,115 +167,51 @@ ${manualContent}
             const chat = model.startChat({ history: history || [] });
             const result = await chat.sendMessage(message);
             finalReply = result.response.text();
-            
-            const needsPower = /няма ток|без ток|не работи ток|изключен ток|спрян ток/i.test(message);
-            if (needsPower && isOnline && !isOn && role === 'guest') {
-                await controlDevice(true);
-                if (!finalReply.includes("Включвам")) {
-                    finalReply += "\n\n✅ (Система: Автоматично възстанових захранването.)";
-                }
-                await sendNotification("АВАРИЙНО ВКЛЮЧВАНЕ", `Клиентът поиска ток. Пуснах го автоматично.\n\nГост: ${bookingData ? bookingData.guest_name : 'Непознат'}`);
-            }
-
-            if (finalReply.includes('[ALERT:')) {
-                const match = finalReply.match(/\[ALERT:(.*?)\]/);
-                if (match && match[1]) {
-                    await sendNotification("СЪОБЩЕНИЕ ОТ ГОСТ", `${match[1]}\n\nГост: ${bookingData ? bookingData.guest_name : 'Непознат'}\nРоля: ${role}`);
-                }
-                finalReply = finalReply.replace(/\[ALERT:.*?\]/g, '').trim();
-            }
-
             break; 
         } catch (error) { 
-            console.error(`❌ Грешка с модел ${modelName}:`, error.message); 
+            console.error(`Проблем с ${modelName}:`, error.message); 
         }
     }
-
     res.json({ reply: finalReply });
 });
 
-// --- API ЗА ТАБЛОТО (DASHBOARD) ---
+// --- 6. DASHBOARD API ---
+app.get('/sync', async (req, res) => { await syncBookingsFromGmail(); res.send('Synced'); });
+app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY check_in ASC`); });
+app.delete('/bookings/:id', async (req, res) => { await sql`DELETE FROM bookings WHERE id = ${req.params.id}`; res.send('OK'); });
 
-// 1. SYNC
-app.get('/sync', async (req, res) => {
-    console.log('⚡ Ръчно стартиране на Детектива...');
-    try {
-        await syncBookingsFromGmail(); 
-        res.send('✅ Детективът приключи! Провери таблицата.');
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('❌ Грешка при синхронизация: ' + err.message);
-    }
-});
-
-// 2. DELETE
-app.delete('/bookings/:id', async (req, res) => {
-    try {
-        await sql`DELETE FROM bookings WHERE id = ${req.params.id}`;
-        res.json({ message: 'Deleted' });
-    } catch (err) {
-        res.status(500).json({ error: 'Error deleting' });
-    }
-});
-
-// 3. POST
 app.post('/add-booking', async (req, res) => {
     const { guest_name, reservation_code, check_in, check_out } = req.body;
-    
-    const inDate = new Date(check_in);
-    const outDate = new Date(check_out);
-    const powerOn = new Date(inDate.getTime() - (2 * 60 * 60 * 1000));
-    const powerOff = new Date(outDate.getTime() + (1 * 60 * 60 * 1000));
-    const pin = Math.floor(100000 + Math.random() * 900000); // 6-цифрен код (100000-999999)
-
-    try {
-        await sql`
-            INSERT INTO bookings (guest_name, reservation_code, check_in, check_out, power_on_time, power_off_time, source, payment_status, lock_pin)
-            VALUES (${guest_name}, ${reservation_code}, ${check_in}, ${check_out}, ${powerOn.toISOString()}, ${powerOff.toISOString()}, 'manual', 'paid', ${pin})
-        `;
-        res.status(201).json({ message: 'Added!' });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to add' });
-    }
+    const pin = Math.floor(100000 + Math.random() * 899999);
+    await sql`INSERT INTO bookings (guest_name, reservation_code, check_in, check_out, lock_pin) VALUES (${guest_name}, ${reservation_code}, ${check_in}, ${check_out}, ${pin})`;
+    res.send('OK');
 });
 
-// 4. ICAL
 app.get('/feed.ics', async (req, res) => {
-    const bookings = await sql`SELECT * FROM bookings WHERE payment_status = 'paid'`;
+    const bookings = await sql`SELECT * FROM bookings`;
     let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartStay//Bansko//EN\n";
     bookings.forEach(b => {
         const start = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
         const end = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-        icsContent += "BEGIN:VEVENT\n";
-        icsContent += `SUMMARY:${b.guest_name}\n`;
-        icsContent += `DTSTART:${start}\n`;
-        icsContent += `DTEND:${end}\n`;
-        icsContent += `DESCRIPTION:Code: ${b.reservation_code}\\nPIN: ${b.lock_pin}\n`;
-        icsContent += "END:VEVENT\n";
+        icsContent += `BEGIN:VEVENT\nSUMMARY:${b.guest_name}\nDTSTART:${start}\nDTEND:${end}\nDESCRIPTION:PIN: ${b.lock_pin}\nEND:VEVENT\n`;
     });
     icsContent += "END:VCALENDAR";
-    res.header('Content-Type', 'text/calendar');
-    res.send(icsContent);
+    res.header('Content-Type', 'text/calendar').send(icsContent);
 });
 
-// --- ДРУГИ ---
-app.get('/bookings', async (req, res) => { res.json(await sql`SELECT * FROM bookings ORDER BY check_in ASC`); });
-app.get('/status', async (req, res) => { try { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); } catch (e) { res.json({ is_on: false }); } });
-app.get('/toggle', async (req, res) => { try { const s = await getTuyaStatus(); if(s) { await controlDevice(!s.value); res.json({success:true}); } else throw new Error(); } catch(e){ res.status(500).json({error:"Fail"}); } });
-app.get('/lock-status', async (req, res) => { res.json(await getLockStatus()); });
-// Тест линк: https://smart-stay.onrender.com/test-lock
+app.get('/status', async (req, res) => { const s = await getTuyaStatus(); res.json({ is_on: s ? s.value : false }); });
+app.get('/toggle', async (req, res) => { const s = await getTuyaStatus(); if(s) await controlDevice(!s.value); res.json({success:true}); });
+
+// Тест за ОНЛАЙН парола
 app.get('/test-lock', async (req, res) => {
     const now = new Date();
-    const later = new Date(now.getTime() + 30 * 60000); // Кодът ще важи 30 минути
-    const success = await createLockPin("123456", "Test_Manual", now, later); // 6 цифри
-    
-    if (success) res.json({ msg: "✅ Успех! Пробвай код 123456# на вратата." });
-    else res.json({ msg: "❌ Грешка! Провери дали LOCK_DEVICE_ID е в Render." });
+    const later = new Date(now.getTime() + 60 * 60000); // 1 час
+    const success = await createLockPin("654321", "Test_Online", now, later);
+    res.json({ success, msg: success ? "Изпратен ONLINE код: 654321" : "Грешка" });
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Iko is live on port ${PORT}`);
+    console.log(`🚀 Порт ${PORT}`);
     syncBookingsFromGmail();
     setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
 });
