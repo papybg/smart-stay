@@ -3,7 +3,6 @@ import express from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
 import fs from 'fs';
-import axios from 'axios';
 import { syncBookingsFromGmail } from './services/detective.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
@@ -21,22 +20,25 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // ==========================================
-// 2. МОСТ КЪМ TASKER (ПРЕЗ JOIN)
+// 2. МОСТ КЪМ TASKER (ПРЕЗ JOIN И FETCH)
 // ==========================================
 async function sendToTasker(command, text) {
     const JOIN_API_KEY = process.env.JOIN_API_KEY;
     const JOIN_DEVICE_ID = process.env.JOIN_DEVICE_ID;
     
-    // Формат на съобщението, който Tasker ще разпознае
     const message = `${command}:::${text}`; 
     const url = `https://joinjoaomgcd.appspot.com/_ah/api/messaging/v1/sendPush?apikey=${JOIN_API_KEY}&deviceId=${JOIN_DEVICE_ID}&text=${encodeURIComponent(message)}`;
 
     try {
-        await axios.get(url);
-        console.log(`📲 [TASKER BRIDGE] Изпратено: ${command}`);
-        return true;
+        // Използваме вградения fetch вместо axios
+        const response = await fetch(url);
+        if (response.ok) {
+            console.log(`📲 [TASKER BRIDGE] Изпратено: ${command}`);
+            return true;
+        }
+        return false;
     } catch (e) {
-        console.error("❌ [JOIN API ERROR]:", e.message);
+        console.error("❌ [JOIN FETCH ERROR]:", e.message);
         return false;
     }
 }
@@ -68,11 +70,9 @@ cron.schedule('*/1 * * * *', async () => {
             const start = new Date(b.power_on_time);
             const end = new Date(b.power_off_time);
 
-            // Пускане на ток
             if (now >= start && now < end) {
                 await controlPower(true);
             } 
-            // Спиране на ток
             else if (now >= end && now < new Date(end.getTime() + 5*60000)) {
                 await controlPower(false);
             }
@@ -108,7 +108,6 @@ app.post('/api/chat', async (req, res) => {
 
     const systemInstruction = `Време: ${currentDateTime}. Роля: ${role}. Наръчник: ${manualContent}. Ти си Ико.`;
     
-    // ПАЗИМ МОДЕЛИТЕ ТОЧНО КАКТО СА ЗАДАДЕНИ
     const modelsToTry = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
     let finalReply = "Ико има техническо затруднение.";
 
@@ -159,7 +158,6 @@ app.post('/add-booking', async (req, res) => {
         await sql`INSERT INTO bookings (guest_name, reservation_code, check_in, check_out, lock_pin) 
                   VALUES (${guest_name}, ${reservation_code}, ${check_in}, ${check_out}, ${pin})`;
         
-        // Команда към Tasker за бравата
         await createLockPin(pin, guest_name.split(' ')[0]);
         
         res.send('OK');
@@ -180,11 +178,9 @@ app.get('/feed.ics', async (req, res) => {
     } catch(e) { res.status(500).send("Error"); }
 });
 
-// --- ТЕСТОВИ ЕНДПОЙНТИ ЗА МОТОРОЛАТА ---
-
 app.get('/test-lock', async (req, res) => {
     const ok = await sendToTasker("SET_LOCK_PIN", "123456|TestGuest");
-    res.json({ success: ok, target: "Motorola G40", message: "Провери телефона за известие!" });
+    res.json({ success: ok, target: "Motorola G40", message: "Провери телефона!" });
 });
 
 app.get('/test-power', async (req, res) => {
