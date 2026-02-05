@@ -6,412 +6,470 @@
     <title>Smart Stay - Команден Център</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 
     <style>
         /* --- ОСНОВНИ НАСТРОЙКИ --- */
         :root { 
             --primary: #0084ff; 
-            --neon-cyan: hsl(190, 80%, 55%);
-            --bg-light: #f4f6f8; 
-            --bg-dark: #111827;
+            --primary-dark: #006bcf;
+            --secondary: #6f42c1;
+            --success: #10b981;
+            --danger: #ef4444;
+            --bg-light: #f3f4f6; 
+            --card-bg: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
         }
         
-        body { font-family: -apple-system, 'Inter', sans-serif; margin: 0; padding: 0; background: var(--bg-light); height: 100vh; display: flex; flex-direction: column; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background: var(--bg-light); color: var(--text-main); }
         
-        /* --- НАВИГАЦИЯ (HEADER) --- */
-        header { background: white; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; z-index: 100; }
-        .logo { font-weight: 800; font-size: 20px; color: #333; }
-        
-        .nav-tabs { display: flex; gap: 10px; }
-        .nav-btn { background: none; border: none; padding: 10px 20px; cursor: pointer; font-size: 15px; font-weight: 600; color: #666; border-radius: 8px; transition: 0.2s; }
-        .nav-btn.active { background: var(--primary); color: white; }
-        .nav-btn:hover:not(.active) { background: #eee; }
-
-        /* --- НОВ БУТОН ЗА СИНХРОНИЗАЦИЯ --- */
-        .sync-btn { 
-            background: #6f42c1; color: white; border: none; padding: 8px 16px; 
-            border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; 
-            display: flex; align-items: center; gap: 6px; transition: background 0.2s; 
-        }
-        .sync-btn:hover { background: #59359a; }
-        .sync-btn:disabled { background: #ccc; cursor: not-allowed; }
-
         /* --- КОНТЕЙНЕР --- */
-        .main-wrapper { flex: 1; overflow-y: auto; position: relative; }
-        .tab-content { display: none; height: 100%; }
-        .tab-content.active { display: block; }
-
-        /* =========================================
-           ТАБ 1: РЕЗЕРВАЦИИ (ADMIN STYLE)
-           ========================================= */
-        #bookings { padding: 20px; max-width: 1000px; margin: 0 auto; }
-        
-        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        label { font-weight: 600; font-size: 13px; color: #555; display: block; margin-bottom: 5px; }
-        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 15px; }
-        
-        button.action-btn { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
-        button.action-btn:hover { background: #006bcf; }
-
-        /* Таблица */
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { text-align: left; padding: 12px; background: #f8f9fa; color: #666; font-size: 14px; border-bottom: 2px solid #ddd; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: top; }
-        
-        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 4px; }
-        .badge-res { background: #e1f0ff; color: #0084ff; }
-        .badge-on { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .badge-off { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .delete-btn { color: red; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 16px; }
-
-        /* Линк за календар */
-        .ics-link-container { text-align: right; margin-top: 10px; }
-        .ics-link { color: var(--primary); text-decoration: none; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 5px; }
-        .ics-link:hover { text-decoration: underline; }
-
-        /* =========================================
-           ТАБ 2: УСТРОЙСТВА (REMOTE NEON STYLE)
-           ========================================= */
-        #remote { 
-            background-color: var(--bg-dark); 
-            color: white; 
-            display: none; 
-            height: 100%;
-            display: flex; 
-            align-items: center; 
-            justify-content: center;
-            flex-direction: column;
-        }
-        #remote.active { display: flex !important; }
-
-        .neon-container { position: relative; display: flex; flex-direction: column; align-items: center; }
-        
-        .glow-effect {
-            position: absolute; width: 16rem; height: 16rem;
-            background: var(--neon-cyan); opacity: 0;
-            border-radius: 50%; filter: blur(40px);
-            transition: opacity 1s ease-in-out;
-            top: 50%; left: 50%; transform: translate(-50%, -50%);
-            z-index: 0;
+        .main-container {
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 0 20px;
+            display: grid;
+            gap: 24px;
         }
 
-        .main-btn {
-            position: relative; z-index: 10;
-            width: 12rem; height: 12rem;
-            border-radius: 50%;
-            background: rgba(31, 41, 55, 0.4);
-            backdrop-filter: blur(4px);
-            border: 8px solid #374151;
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; outline: none; transition: all 0.3s ease;
+        /* --- КАРТИ (PANELS) --- */
+        .card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            transition: transform 0.2s;
         }
         
-        .main-btn span { font-size: 80px !important; color: #4b5563; transition: color 0.3s; }
-
-        /* СЪСТОЯНИЕ: ВКЛЮЧЕНО (ON) */
-        .system-on .glow-effect { opacity: 0.4; animation: pulse-glow 4s infinite ease-in-out; }
-        .system-on .main-btn {
-            border-color: var(--neon-cyan);
-            box-shadow: 0 0 12px var(--neon-cyan), 0 0 25px var(--neon-cyan);
+        h2 { margin-top: 0; font-size: 1.25rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 10px; }
+        
+        /* --- БУТОНИ --- */
+        .btn {
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95rem;
         }
-        .system-on .main-btn span { color: var(--neon-cyan); }
-        .system-on #status-text { color: white; text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+        .btn-primary { background: var(--primary); color: white; width: 100%; justify-content: center; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        
+        .btn-sync { background: var(--secondary); color: white; }
+        .btn-sync:hover { filter: brightness(1.1); }
 
-        /* СЪСТОЯНИЕ: ГРЕШКА */
-        .system-error .main-btn { border-color: #ef4444; }
-        .system-error .main-btn span { color: #ef4444; }
-        .system-error #status-text { color: #ef4444; }
+        .btn-icon { background: none; color: var(--text-muted); padding: 5px; }
+        .btn-icon:hover { color: var(--danger); background: #fee2e2; }
 
-        @keyframes pulse-glow { 50% { transform: translate(-50%, -50%) scale(1.1); } }
+        /* --- INPUTS --- */
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        
+        label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+        input {
+            padding: 10px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 132, 255, 0.1); }
 
-        .remote-text { text-align: center; margin-top: 2rem; position: relative; z-index: 10; }
-        .remote-text h2 { font-size: 1.25rem; font-weight: bold; letter-spacing: 0.05em; margin: 0; }
-        .remote-text p { color: #9ca3af; font-size: 0.875rem; margin-top: 0.5rem; }
+        /* --- REMOTE CONTROL (VISUAL ONLY) --- */
+        .remote-status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+        }
+        .status-badge {
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+            text-transform: uppercase;
+        }
+        .status-auto { background: #dbeafe; color: #1e40af; }
 
-        /* Мобилни корекции */
-        @media (max-width: 600px) {
-            header { flex-wrap: wrap; gap: 10px; justify-content: center; }
+        /* --- PIN DEPOT STYLES --- */
+        .pin-stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .count-bubble {
+            background: var(--bg-light);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+        .count-low { background: #fecaca; color: #991b1b; }
+        .count-ok { background: #d1fae5; color: #065f46; }
+
+        .pin-list-container {
+            margin-top: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #f3f4f6;
+            border-radius: 8px;
+        }
+        .pin-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 0.9rem;
+        }
+        .pin-item:last-child { border-bottom: none; }
+        .pin-used { text-decoration: line-through; color: #9ca3af; }
+        .pin-code { font-family: monospace; font-weight: 700; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+
+        /* --- TABLE --- */
+        .table-responsive { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 12px; border-bottom: 2px solid #e5e7eb; }
+        td { padding: 12px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+        
+        .badge { padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
+        .badge-res { background: #eff6ff; color: var(--primary); }
+        
+        /* Mobile */
+        @media (max-width: 768px) {
             .form-grid { grid-template-columns: 1fr; }
-            td, th { display: block; width: 100%; }
-            tr { display: block; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
         }
     </style>
 </head>
 <body>
 
-    <header>
-        <div class="logo">🏠 Smart Stay Admin</div>
-        
-        <button class="sync-btn" onclick="manualSync()" id="syncBtn">
-            🕵️ Провери поща
-        </button>
-
-        <div class="nav-tabs">
-            <button class="nav-btn active" onclick="switchTab('bookings', this)">📅 Резервации</button>
-            <button class="nav-btn" onclick="switchTab('remote', this)">⚡ Устройства</button>
+    <header style="background: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="material-symbols-outlined" style="color: var(--primary); font-size: 32px;">smart_toy</span>
+            <span style="font-weight: 700; font-size: 1.2rem;">Smart Stay</span>
         </div>
+        <button class="btn btn-sync" onclick="manualSync()" id="syncBtn">
+            <span class="material-symbols-outlined">sync</span>
+            Sync
+        </button>
     </header>
 
-    <div class="main-wrapper">
-        
-        <div id="bookings" class="tab-content active">
-            <div class="card">
-                <h3>Нова Резервация</h3>
-                <div class="form-grid">
-                    <div>
-                        <label>Име на госта</label>
-                        <input type="text" id="guestName" placeholder="Иван Иванов">
-                    </div>
-                    <div>
-                        <label>Код (HM...)</label>
-                        <div style="display:flex; gap:5px;">
-                            <input type="text" id="resCode">
-                            <button onclick="generateCode()" class="action-btn" style="width:50px; margin:0;">🎲</button>
-                        </div>
-                    </div>
-                    <div>
-                        <label>Настаняване (Check-in)</label>
-                        <input type="datetime-local" id="checkIn">
-                        <small style="color:#155724">⚡ Токът тръгва 2 часа по-рано</small>
-                    </div>
-                    <div>
-                        <label>Напускане (Check-out)</label>
-                        <input type="datetime-local" id="checkOut">
-                        <small style="color:#721c24">🌑 Токът спира 1 час по-късно</small>
-                    </div>
+    <div class="main-container">
+
+        <div class="card">
+            <h2><span class="material-symbols-outlined">bolt</span> Статус на Електромера</h2>
+            <div class="remote-status">
+                <div>
+                    <span style="display: block; font-weight: 600; margin-bottom: 4px;">Автоматичен режим</span>
+                    <small style="color: var(--text-muted);">Управлява се от Tasker & Сцени</small>
                 </div>
-                <div id="errorMsg" style="color:red; margin-top:10px; display:none;">⚠️ Грешка: Засичане на дати!</div>
-                <button class="action-btn" onclick="addBooking()">➕ Добави Резервация</button>
+                <span class="status-badge status-auto">SYSTEM ACTIVE</span>
+            </div>
             </div>
 
-            <div class="card">
-                <h3>График на резервациите</h3>
+        <div class="card">
+            <h2><span class="material-symbols-outlined">lock_open</span> Склад за Пароли (PIN Depot)</h2>
+            
+            <div class="pin-stats">
+                <span style="font-size: 0.9rem; color: var(--text-muted);">Заредете пароли, които работят в Tuya</span>
+                <span id="pinCounterBadge" class="count-bubble count-low">...</span>
+            </div>
+
+            <div class="form-grid" style="margin-bottom: 0; align-items: end;">
+                <div class="form-group">
+                    <label>Име (напр. "User 5")</label>
+                    <input type="text" id="pinName" placeholder="Tuya Slot...">
+                </div>
+                <div class="form-group">
+                    <label>ПИН Код</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="pinCode" placeholder="123456" style="width: 100%;">
+                        <button class="btn" style="background: var(--success); color: white;" onclick="addPin()">
+                            <span class="material-symbols-outlined">add</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="pinList" class="pin-list-container">
+                </div>
+        </div>
+
+        <div class="card">
+            <h2><span class="material-symbols-outlined">calendar_add_on</span> Нова Резервация</h2>
+            
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Име на гост</label>
+                    <input type="text" id="guestName" placeholder="Име Фамилия">
+                </div>
+                <div class="form-group">
+                    <label>Код на резервация</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="resCode" placeholder="HM...">
+                        <button class="btn" style="background: #e5e7eb; padding: 0 10px;" onclick="generateCode()">🎲</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Настаняване (Start)</label>
+                    <input type="datetime-local" id="checkIn">
+                </div>
+                <div class="form-group">
+                    <label>Напускане (End)</label>
+                    <input type="datetime-local" id="checkOut">
+                </div>
+            </div>
+
+            <p id="errorMsg" style="color: var(--danger); font-size: 0.9rem; display: none; margin-top: 0;">⚠️ Засичане на дати!</p>
+            <button class="btn btn-primary" onclick="addBooking()">Запиши Резервация</button>
+        </div>
+
+        <div class="card">
+            <h2><span class="material-symbols-outlined">list_alt</span> Активни Гости</h2>
+            <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
-                            <th>Гост / Код</th>
-                            <th>⚡ ВКЛЮЧВАНЕ</th>
-                            <th>🌑 ИЗКЛЮЧВАНЕ</th>
+                            <th>Гост</th>
+                            <th>Период</th>
+                            <th>ПИН</th>
                             <th>Действие</th>
                         </tr>
                     </thead>
-                    <tbody id="bookingList"></tbody>
+                    <tbody id="bookingList">
+                        </tbody>
                 </table>
-                
-                <div class="ics-link-container">
-                    <a href="/feed.ics" class="ics-link" target="_blank">
-                        📅 Свали календар за Airbnb (feed.ics)
-                    </a>
-                </div>
             </div>
-        </div>
-
-        <div id="remote" class="tab-content">
-            <div class="neon-container" id="remote-container">
-                <div class="glow-effect"></div>
-                <button onclick="togglePower()" class="main-btn" id="main-btn">
-                    <span class="material-symbols-outlined">power_settings_new</span>
-                </button>
-                <div class="remote-text">
-                    <h2 id="status-text">CONNECTING...</h2>
-                    <p>Ръчно управление на захранването</p>
-                </div>
+            <div style="margin-top: 15px; text-align: right;">
+                <a href="/feed.ics" target="_blank" style="color: var(--primary); text-decoration: none; font-size: 0.9rem; font-weight: 600;">
+                    📥 Свали iCal Календар
+                </a>
             </div>
         </div>
 
     </div>
 
-<script>
-    // --- UI NAVIGATION ---
-    function switchTab(tabId, btnElement) {
-        document.querySelectorAll('.tab-content').forEach(el => {
-            el.classList.remove('active');
-            if(el.id === 'remote') el.style.display = ''; 
-        });
-        document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+    <script>
+        /* =========================================
+           1. LEGACY TUYA CONTROL (COMMENTED OUT)
+           =========================================
+           Функциите за директен контрол са спрени,
+           защото вече ползваме Tasker/Backend Scenes.
+        */
         
-        const selectedTab = document.getElementById(tabId);
-        selectedTab.classList.add('active');
-        btnElement.classList.add('active');
-        
-        if(tabId === 'remote') checkPowerStatus();
-    }
+        // async function togglePower() {
+        //     console.log("Legacy Toggle pressed - Action handled by automation now.");
+        //     alert("Тази функция вече е автоматична!");
+        // }
 
-    // --- НОВА ФУНКЦИЯ ЗА СИНХРОНИЗАЦИЯ ---
-    async function manualSync() {
-        const btn = document.getElementById('syncBtn');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '⏳ ...';
-        btn.disabled = true;
+        /* =========================================
+           2. BASIC CONFIG & HELPERS
+           ========================================= */
+        let currentBookings = [];
 
-        try {
-            const res = await fetch('/sync');
-            const msg = await res.text();
-            alert(msg); 
-            loadBookings(); 
-        } catch (err) {
-            alert('❌ Грешка: ' + err.message);
-        } finally {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
+        function formatBG(dateStr) {
+            if (!dateStr) return '---';
+            return new Date(dateStr).toLocaleString('bg-BG', { 
+                timeZone: 'UTC', 
+                day: '2-digit', month: '2-digit', 
+                hour: '2-digit', minute: '2-digit' 
+            });
         }
-    }
 
-    // --- BOOKING LOGIC ---
-    let currentBookings = [];
-    
-    function formatBG(dateStr) {
-        if (!dateStr) return '---';
-        return new Date(dateStr).toLocaleString('bg-BG', { 
-            timeZone: 'UTC', // Добавено за коректен час
-            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
-        });
-    }
+        function generateCode() {
+            const rnd = Math.floor(Math.random() * 900000) + 100000;
+            document.getElementById('resCode').value = 'HM' + rnd;
+        }
 
-    function getPowerTimes(checkInStr, checkOutStr) {
-        const checkIn = new Date(checkInStr);
-        const checkOut = new Date(checkOutStr);
-        return { 
-            on: new Date(checkIn.getTime() - (2 * 60 * 60 * 1000)), 
-            off: new Date(checkOut.getTime() + (1 * 60 * 60 * 1000)) 
-        };
-    }
+        /* =========================================
+           3. BOOKING LOGIC
+           ========================================= */
+        async function loadBookings() {
+            try {
+                const res = await fetch('/bookings');
+                currentBookings = await res.json();
+                renderTable(currentBookings);
+            } catch (e) { console.error("Load error:", e); }
+        }
 
-    async function loadBookings() {
-        try {
-            const res = await fetch('/bookings');
-            currentBookings = await res.json();
+        function renderTable(bookings) {
             const tbody = document.getElementById('bookingList');
             tbody.innerHTML = '';
-            
-            currentBookings.forEach(b => {
-                // Използваме директно сметнатите времена от сървъра ако ги има,
-                // или ги смятаме тук за визуализация
-                let times;
-                if(b.power_on_time && b.power_off_time) {
-                     times = { on: b.power_on_time, off: b.power_off_time };
-                } else {
-                     times = getPowerTimes(b.check_in, b.check_out);
-                }
-
-                tbody.innerHTML += `
+            bookings.forEach(b => {
+                const row = `
                     <tr>
                         <td>
-                            <b>${b.guest_name}</b><br>
-                            <span class="badge badge-res">${b.reservation_code}</span><br>
-                            <small>ПИН: ${b.lock_pin || 'НЯМА'}</small>
+                            <div style="font-weight: 600;">${b.guest_name}</div>
+                            <span class="badge badge-res">${b.reservation_code}</span>
                         </td>
                         <td>
-                            <span class="badge badge-on">⚡ ${formatBG(times.on)}</span><br>
-                            <small>Чек-ин: ${formatBG(b.check_in)}</small>
+                            <div style="font-size: 0.85rem;">
+                                <span style="color:var(--success)">IN:</span> ${formatBG(b.check_in)}<br>
+                                <span style="color:var(--danger)">OUT:</span> ${formatBG(b.check_out)}
+                            </div>
                         </td>
                         <td>
-                            <span class="badge badge-off">🌑 ${formatBG(times.off)}</span><br>
-                            <small>Чек-аут: ${formatBG(b.check_out)}</small>
+                            <span class="pin-code">${b.lock_pin || '---'}</span>
                         </td>
-                        <td><button class="delete-btn" onclick="deleteBooking(${b.id})">❌</button></td>
-                    </tr>`;
+                        <td style="text-align: right;">
+                            <button class="btn btn-icon" onclick="deleteBooking(${b.id})">
+                                <span class="material-symbols-outlined">delete</span>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
             });
-        } catch(e) { console.error("Грешка при зареждане на резервациите"); }
-    }
-
-    async function addBooking() {
-        const name = document.getElementById('guestName').value;
-        const code = document.getElementById('resCode').value;
-        const inVal = document.getElementById('checkIn').value;
-        const outVal = document.getElementById('checkOut').value;
-        const errorEl = document.getElementById('errorMsg');
-        
-        if (!name || !code || !inVal || !outVal) return alert("Попълни всички полета!");
-        
-        const start = new Date(inVal);
-        const end = new Date(outVal);
-
-        if (start >= end) return alert("Грешка: Напускането е преди настаняването!");
-
-        const hasOverlap = currentBookings.some(b => {
-             const bStart = new Date(b.check_in);
-             const bEnd = new Date(b.check_out);
-             return start < bEnd && end > bStart;
-        });
-
-        if(hasOverlap) {
-            errorEl.style.display = 'block';
-            return;
         }
-        errorEl.style.display = 'none';
 
-        await fetch('/add-booking', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                guest_name: name, reservation_code: code,
-                check_in: start.toISOString(), check_out: end.toISOString()
-            })
-        });
-        
-        document.getElementById('guestName').value = '';
-        document.getElementById('resCode').value = '';
-        loadBookings();
-    }
-
-    function generateCode() {
-        document.getElementById('resCode').value = 'HM' + (Math.floor(Math.random()*900000)+100000);
-    }
-    
-    async function deleteBooking(id) {
-        if(confirm('Изтриване на резервацията?')) { 
-            await fetch(`/bookings/${id}`, {method:'DELETE'}); 
-            loadBookings(); 
-        }
-    }
-
-    // --- REMOTE LOGIC ---
-    async function checkPowerStatus() {
-        const container = document.getElementById('remote-container');
-        const statusText = document.getElementById('status-text');
-        
-        try {
-            const res = await fetch('/status');
-            const data = await res.json();
+        async function addBooking() {
+            const name = document.getElementById('guestName').value;
+            const code = document.getElementById('resCode').value;
+            const inVal = document.getElementById('checkIn').value;
+            const outVal = document.getElementById('checkOut').value;
             
-            container.classList.remove('system-on', 'system-error');
+            if (!name || !code || !inVal || !outVal) return alert("Моля попълнете всички полета!");
 
-            if (data.is_on) {
-                container.classList.add('system-on');
-                statusText.innerText = 'SYSTEM ON/ВКЛЮЧЕН';
-            } else {
-                statusText.innerText = 'SYSTEM OFF/ИЗКЛЮЧЕН';
+            // Валидация за застъпване
+            const start = new Date(inVal);
+            const end = new Date(outVal);
+            const hasOverlap = currentBookings.some(b => {
+                const bStart = new Date(b.check_in);
+                const bEnd = new Date(b.check_out);
+                return start < bEnd && end > bStart;
+            });
+
+            if (hasOverlap) {
+                document.getElementById('errorMsg').style.display = 'block';
+                return;
             }
-        } catch(e) {
-            container.classList.add('system-error');
-            statusText.innerText = 'CONNECTION LOST';
-        }
-    }
+            document.getElementById('errorMsg').style.display = 'none';
 
-    async function togglePower() {
-        const statusText = document.getElementById('status-text');
-        statusText.innerText = 'SENDING...';
-        
-        try {
-            const res = await fetch('/toggle');
-            if(res.ok) {
-                setTimeout(checkPowerStatus, 1000);
-            } else {
-                throw new Error("Toggle fail");
+            // Изпращане към сървъра
+            try {
+                const res = await fetch('/add-booking', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        guest_name: name,
+                        reservation_code: code,
+                        check_in: start.toISOString(),
+                        check_out: end.toISOString()
+                    })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(`Резервация успешна!\nПИН Код: ${data.pin}`);
+                    document.getElementById('guestName').value = '';
+                    document.getElementById('resCode').value = '';
+                    loadBookings();
+                    loadPins(); // Обновяваме склада
+                } else {
+                    alert("Грешка при запис!");
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function deleteBooking(id) {
+            if(confirm('Изтриване на тази резервация?')) {
+                await fetch(`/bookings/${id}`, { method: 'DELETE' });
+                loadBookings();
             }
-        } catch(e) {
-            document.getElementById('remote-container').classList.add('system-error');
-            statusText.innerText = 'COMMAND FAILED';
         }
-    }
 
-    // Init
-    loadBookings();
-    setInterval(checkPowerStatus, 15000);
+        async function manualSync() {
+            const btn = document.getElementById('syncBtn');
+            btn.innerText = 'Checking...';
+            btn.disabled = true;
+            try {
+                await fetch('/sync');
+                loadBookings();
+                loadPins();
+            } catch(e) { alert("Sync Error"); }
+            finally { 
+                btn.innerHTML = '<span class="material-symbols-outlined">sync</span> Sync';
+                btn.disabled = false;
+            }
+        }
 
-</script>
+        /* =========================================
+           4. PIN DEPOT LOGIC (NEW)
+           ========================================= */
+        async function loadPins() {
+            try {
+                const res = await fetch('/api/pins');
+                const pins = await res.json();
+                
+                const listDiv = document.getElementById('pinList');
+                const badge = document.getElementById('pinCounterBadge');
+                listDiv.innerHTML = '';
+
+                const freeCount = pins.filter(p => !p.is_used).length;
+                badge.innerText = `${freeCount} Свободни`;
+                badge.className = freeCount < 2 ? 'count-bubble count-low' : 'count-bubble count-ok';
+
+                pins.forEach(p => {
+                    const item = document.createElement('div');
+                    item.className = 'pin-item';
+                    item.innerHTML = `
+                        <div>
+                            <span class="${p.is_used ? 'pin-used' : ''}" style="font-weight:600;">${p.pin_name}</span>
+                            <span class="pin-code" style="margin-left: 8px;">${p.pin_code}</span>
+                            ${p.is_used ? '<span style="font-size:0.75rem; color:var(--text-muted); margin-left:5px;">(USED)</span>' : ''}
+                        </div>
+                        <button class="btn btn-icon" onclick="deletePin(${p.id})">
+                            <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+                        </button>
+                    `;
+                    listDiv.appendChild(item);
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        async function addPin() {
+            const name = document.getElementById('pinName').value;
+            const code = document.getElementById('pinCode').value;
+            if(!name || !code) return alert("Нужно е име и код!");
+
+            await fetch('/api/pins', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ pin_name: name, pin_code: code })
+            });
+
+            document.getElementById('pinName').value = '';
+            document.getElementById('pinCode').value = '';
+            loadPins();
+        }
+
+        async function deletePin(id) {
+            if(confirm('Изтриване на този ПИН от склада?')) {
+                await fetch(`/api/pins/${id}`, { method: 'DELETE' });
+                loadPins();
+            }
+        }
+
+        // --- INIT ---
+        loadBookings();
+        loadPins();
+
+    </script>
 </body>
 </html>
