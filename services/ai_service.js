@@ -41,8 +41,9 @@ export async function getAIResponse(userMessage, history) {
 
             // Тук сглобяваме цялата информация
             const systemInstruction = `
-            Ти си Ико - виртуалният иконом на Smart Stay. 
+            Ти си Ико - виртуалният иконом на Комплекс Aspen Walei. 
             Ето твоите основни правила и информация за имота (MANUAL):
+            Парола за WiFi (Internet) и кодове за достъп се дават само след проверка и наличност на платена резервация.
             ---
             ${houseManual}
             ---
