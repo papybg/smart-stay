@@ -1,21 +1,19 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
 
-// --- КОНСТАНТИ И МОДЕЛИ (НЕ ПРОМЕНЯЙ) ---
-const MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3-flash-preview"];
+// --- ТВОИТЕ МОДЕЛИ (ТОЧНО КАКТО ГИ ДАДЕ) ---
+const MODELS = ["gemini-3-pro-preview", "gemini-flash-latest", "gemini-3-flash-preview"];
+
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
 /**
  * Основна функция за комуникация с AI
- * @param {string} userMessage - Съобщението от клиента
- * @param {any} history - История на чата
  */
 export async function getAIResponse(userMessage, history) {
     if (!genAI) return "Error: Gemini API Key missing.";
 
-    // 1. Проверка за резервационен код в съобщението
-    // Търсим 5 до 10 символа (букви и цифри), напр. HMQWZ123
+    // 1. Проверка за резервационен код
     const possibleCodeMatch = userMessage.match(/\b[A-Z0-9]{5,10}\b/i);
     let systemContext = "";
 
@@ -26,26 +24,26 @@ export async function getAIResponse(userMessage, history) {
         if (pinData) {
             systemContext = `
             [СИСТЕМНА ИНФОРМАЦИЯ]: 
-            Потребителят предостави валиден код за резервация: ${code}.
-            Име на госта: ${pinData.guest_name}.
-            Неговият ПИН код за вратата е: ${pinData.pin}.
-            Дата на настаняване: ${pinData.check_in}.
-            Предостави му ПИН кода учтиво сега.
+            Потребителят даде код: ${code}.
+            Гост: ${pinData.guest_name}.
+            ПИН: ${pinData.pin}.
+            Настаняване: ${pinData.check_in}.
+            ДАЙ МУ ПИН КОДА СЕГА.
             `;
         }
     }
 
-    // 2. Завъртане на моделите
+    // 2. Завъртане на моделите (Fallback Logic)
     for (const modelName of MODELS) {
         try {
             const model = genAI.getGenerativeModel({ model: modelName });
 
             const systemInstruction = `
             Ти си Ико - виртуалният иконом на Smart Stay.
-            Твоята цел е да помагаш на гостите. Бъди кратък, учтив и полезен.
-            Ако те питат за ПИН код или достъп, помоли ги за техния резервационен номер (код от Airbnb).
+            Цел: Помагай на гостите кратко и учтиво.
+            Ако искат ПИН, питай за резервационен номер.
             ${systemContext}
-            ВАЖНО: Ако имаш [СИСТЕМНА ИНФОРМАЦИЯ] по-горе с ПИН код, дай го на потребителя.
+            ВАЖНО: Ако виждаш [СИСТЕМНА ИНФОРМАЦИЯ] с ПИН по-горе, дай го веднага!
             `;
 
             const chat = model.startChat({
@@ -53,21 +51,22 @@ export async function getAIResponse(userMessage, history) {
                 generationConfig: { maxOutputTokens: 600 },
             });
 
-            // Изпращаме системната инструкция като част от първото съобщение
+            // Изпращаме промпта + съобщението
             const result = await chat.sendMessage(`${systemInstruction}\nUser message: ${userMessage}`);
             return result.response.text();
 
         } catch (error) {
             console.error(`⚠️ Грешка с модел ${modelName}:`, error.message);
-            continue; // Пробвай следващия модел
+            // Тук е разковничето: вместо да спре, продължава към следващия модел в списъка!
+            continue; 
         }
     }
 
-    return "Съжалявам, имам малък технически проблем в момента. Моля опитайте пак след малко.";
+    return "Съжалявам, в момента правим профилактика на системите. Моля опитайте след 1 минута.";
 }
 
 /**
- * Вътрешна функция: Проверява резервация и вади ПИН от pin_depot
+ * Логика за ПИН-ове (pin_depot)
  */
 async function checkBookingAndGetPin(reservationCode) {
     if (!sql) return null;
@@ -83,46 +82,31 @@ async function checkBookingAndGetPin(reservationCode) {
         if (bookings.length === 0) return null;
         const booking = bookings[0];
 
-        // Б. Ако вече има ПИН, връщаме го веднага
-        if (booking.lock_pin) {
-            return { guest_name: booking.guest_name, pin: booking.lock_pin, check_in: booking.check_in };
-        }
+        // Б. Ако вече има ПИН, връщаме го
+        if (booking.lock_pin) return { guest_name: booking.guest_name, pin: booking.lock_pin, check_in: booking.check_in };
 
-        // В. Ако няма ПИН, взимаме от склада (pin_depot)
-        // Взимаме първия свободен
-        const freePins = await sql`
-            SELECT * FROM pin_depot 
-            WHERE is_used = FALSE 
-            ORDER BY id ASC 
-            LIMIT 1
-        `;
+        // В. Взимаме нов от склада
+        const freePins = await sql`SELECT * FROM pin_depot WHERE is_used = FALSE ORDER BY id ASC LIMIT 1`;
 
         if (freePins.length === 0) {
-            console.error("🚨 КРИТИЧНО: Няма свободни ПИН кодове в склада (pin_depot)!");
+            console.error("🚨 НЯМА СВОБОДНИ ПИНОВЕ!");
             return null; 
         }
 
         const pinToAssign = freePins[0];
 
-        // Г. Маркираме ПИН-а като използван в склада
+        // Г. Записваме
         await sql`UPDATE pin_depot SET is_used = TRUE WHERE id = ${pinToAssign.id}`;
-
-        // Д. Записваме ПИН-а в резервацията
         await sql`UPDATE bookings SET lock_pin = ${pinToAssign.pin_code} WHERE id = ${booking.id}`;
 
-        return { 
-            guest_name: booking.guest_name, 
-            pin: pinToAssign.pin_code, 
-            check_in: booking.check_in 
-        };
+        return { guest_name: booking.guest_name, pin: pinToAssign.pin_code, check_in: booking.check_in };
 
     } catch (e) {
-        console.error("DB Error in checkBookingAndGetPin:", e);
+        console.error("DB Error:", e);
         return null;
     }
 }
 
-// Помощна функция за форматиране на историята
 function formatHistory(history) {
     let parsed = [];
     if (typeof history === 'string') {
