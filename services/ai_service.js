@@ -68,12 +68,10 @@ const automationClient = {
  * Определяне на ролята на потребителя
  */
 export async function determineUserRole(authCode, userMessage) {
-    // 1. Проверка за HOST
-    if (authCode === HOST_CODE) {
+    if (authCode === HOST_CODE || (userMessage && userMessage.includes(HOST_CODE))) {
         return { role: 'host', data: null };
     }
 
-    // 2. Проверка за код в съобщението или authCode
     const textCodeMatch = userMessage?.trim().toUpperCase().match(/HM[A-Z0-9]+/);
     const codeToTest = textCodeMatch ? textCodeMatch[0] : authCode;
 
@@ -81,7 +79,6 @@ export async function determineUserRole(authCode, userMessage) {
         return { role: 'stranger', data: null };
     }
 
-    // 3. Проверка в базата
     if (!sql) return { role: 'stranger', data: null };
 
     try {
@@ -93,8 +90,6 @@ export async function determineUserRole(authCode, userMessage) {
 
         if (bookings.length > 0) {
             const booking = bookings[0];
-            
-            // Взимане/създаване на PIN
             let lockPin = booking.lock_pin;
             
             if (!lockPin) {
@@ -171,16 +166,11 @@ ${manual}
 
 ${guestInfo}
 
-📋 ИНФОРМАЦИЯ ЗА ВАШИЯ ПРЕСТОЙ:
+📋 ИНФОРМАЦИЯ ЗА ВАШИЯ ПРЕСТОЙ (MANUAL):
 ${manual}
 
 📊 СТАТУС НА СИСТЕМИТЕ:
 - Електричество: ${isOn ? "✅ Работи" : "⚠️ Проблем"}
-
-🎯 ВАЖНО ЗА WIFI:
-- Мрежа: SmartStay_Guest
-- Парола: vacation_mode
-(Давай паролата само ако питат)
 
 ⚠️ ПРИ ПРОБЛЕМ:
 - При спешност използвам [ALERT: ...] за да уведомя домакина.
@@ -189,7 +179,6 @@ ${manual}
 `;
     }
 
-    // Stranger - ПОПРАВКА
     return `
 📅 ДНЕС Е: ${currentDateTime} (Българско време)
 👋 ЗДРАВЕЙТЕ! АЗ СЪМ ИКО.
@@ -200,15 +189,15 @@ ${manual}
 ${manual}
 
 ℹ️ МОГА ДА ВИ КАЖА:
-- Обща информация за комплекса и района.
+- Обща информация за комплекса Aspen Valley и района.
 - Как да направите резервация.
 
-🚫 СТРОГО ЗАБРАНЕНО (Не споделяй с Непознати):
+🚫 НЕ МОГА ДА СПОДЕЛЯ (Забранено за непознати):
 - WiFi парола
 - Код за врата
-- Лични телефони на персонал и собственик
+- Лична информация за собственика
 
-🔑 ЗА ПЪЛЕН ДОСТЪП: Моля въведете код на резервация (HM...), за да активирам пълния асистент.
+🔑 ЗА ДОСТЪП: Моля въведете код на резервация (HM...), за да активирам асистента.
 `;
 }
 
@@ -262,7 +251,6 @@ export async function processAlerts(aiResponse, role, bookingData) {
         );
     }
 
-    // Премахване на [ALERT:...] таговете от отговора
     return aiResponse.replace(/\[ALERT:.*?\]/g, '').trim();
 }
 
@@ -270,7 +258,6 @@ export async function processAlerts(aiResponse, role, bookingData) {
  * Основна функция за комуникация с AI
  */
 export async function getAIResponse(userMessage, history = [], authCode = null) {
-    // Validation
     if (!userMessage || userMessage.trim() === '') {
         return "Моля напишете нещо.";
     }
@@ -279,7 +266,6 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         return "Error: Gemini API Key missing.";
     }
 
-    // 1. ЧЕТЕНЕ НА MANUAL.TXT
     let houseManual = "";
     try {
         houseManual = await fs.readFile(path.join(process.cwd(), 'manual.txt'), 'utf-8');
@@ -288,22 +274,15 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         houseManual = "Липсва manual.txt файл.";
     }
 
-    // 2. ОПРЕДЕЛЯНЕ НА РОЛЯ
     const { role, data: bookingData } = await determineUserRole(authCode, userMessage);
-    
-    console.log(`🔐 User role: ${role}`, bookingData ? `(${bookingData.guest_name})` : '');
-
-    // 3. HARDWARE STATUS
     const powerStatus = await automationClient.getPowerStatus();
 
-    // 4. ТЕКУЩА ДАТА/ЧАС
     const currentDateTime = new Date().toLocaleString('bg-BG', { 
         timeZone: 'Europe/Sofia',
         dateStyle: 'full',
         timeStyle: 'short'
     });
 
-    // 5. BUILD SYSTEM INSTRUCTION
     const systemInstruction = buildSystemInstruction(
         role, 
         bookingData, 
@@ -312,7 +291,6 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         currentDateTime
     );
 
-    // 6. AI RESPONSE (с fallback)
     let finalReply = "Съжалявам, имам технически проблем. Моля опитайте пак.";
 
     for (const modelName of MODELS) {
@@ -338,13 +316,11 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         }
     }
 
-    // 7. АВАРИЙНО УПРАВЛЕНИЕ
     const emergencyNote = await checkEmergencyPower(userMessage, role, bookingData);
     if (emergencyNote) {
         finalReply += emergencyNote;
     }
 
-    // 8. ОБРАБОТКА НА ALERTS
     finalReply = await processAlerts(finalReply, role, bookingData);
 
     return finalReply;

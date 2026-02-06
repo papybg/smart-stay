@@ -50,7 +50,6 @@ app.post('/api/chat', async (req, res) => {
 
 // --- API ЗА УПРАВЛЕНИЕ НА ТОКА (ЗА АГЕНТА И TASKER) ---
 
-// Използва се от Ико, за да види има ли ток
 app.get('/api/power-status', (req, res) => {
     res.json({
         online: true,
@@ -59,7 +58,6 @@ app.get('/api/power-status', (req, res) => {
     });
 });
 
-// Използва се от Ико, за да пусне тока аварийно
 app.post('/api/power-control', (req, res) => {
     const { state } = req.body;
     global.powerState.is_on = !!state;
@@ -68,7 +66,6 @@ app.post('/api/power-control', (req, res) => {
     res.json({ success: true, state: global.powerState.is_on });
 });
 
-// Използва се от Tasker, за да каже на сървъра реалното състояние
 app.post('/api/power/status', (req, res) => {
     const { is_on } = req.body;
     global.powerState.is_on = !!is_on;
@@ -81,7 +78,6 @@ app.post('/api/alert', (req, res) => {
     const { message, guestInfo } = req.body;
     console.log(`🚨 [ИКО АЛАРМА]: ${message}`);
     console.log(`👤 Гост данни:`, guestInfo);
-    // Тук може да се добави пращане на имейл или Telegram
     res.sendStatus(200);
 });
 
@@ -109,10 +105,9 @@ app.get('/api/pins', async (req, res) => {
     }
 });
 
-// --- ГРЕШКИ И СТАРТИРАНЕ ---
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send('Нещо се счупи!');
+// Глобално съобщение за добре дошли (Test)
+app.get('/', (req, res) => {
+    res.send('Smart Stay API is Running');
 });
 
 app.listen(PORT, () => {
