@@ -2,201 +2,125 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
-import fs from 'fs';
-import axios from 'axios';
-import { syncBookingsFromGmail } from './services/detective.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
+import { syncBookingsFromGmail } from './services/detective.js';
+import { getAIResponse } from './services/ai_service.js';
 
-// ==========================================
-// 1. ИНИЦИАЛИЗАЦИЯ И НАСТРОЙКИ
-// ==========================================
+// --- CONFIG ---
 const app = express();
 const PORT = process.env.PORT || 10000;
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+
+// Global Power Status (съхранява се в паметта)
+global.powerState = {
+    is_on: false,
+    voltage: 0,
+    power: 0,
+    last_update: new Date()
+};
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static('public')); // Обслужва dashboard.html
 
 // ==========================================
-// 2. МОСТ КЪМ TASKER (ПРЕЗ JOIN)
-// ==========================================
-async function sendToTasker(command, text) {
-    const JOIN_API_KEY = process.env.JOIN_API_KEY;
-    const JOIN_DEVICE_ID = process.env.JOIN_DEVICE_ID;
-    
-    // Формат на съобщението, който Tasker ще разпознае
-    const message = `${command}:::${text}`; 
-    const url = `https://joinjoaomgcd.appspot.com/_ah/api/messaging/v1/sendPush?apikey=${JOIN_API_KEY}&deviceId=${JOIN_DEVICE_ID}&text=${encodeURIComponent(message)}`;
-
-    try {
-        await axios.get(url);
-        console.log(`📲 [TASKER BRIDGE] Изпратено: ${command}`);
-        return true;
-    } catch (e) {
-        console.error("❌ [JOIN API ERROR]:", e.message);
-        return false;
-    }
-}
-
-// ==========================================
-// 3. ФУНКЦИИ ЗА УПРАВЛЕНИЕ (ПЛАН Б)
-// ==========================================
-
-async function createLockPin(pin, name) {
-    console.log(`🔐 [LOCK] Заявка за ПИН ${pin} към Motorola...`);
-    return await sendToTasker("SET_LOCK_PIN", `${pin}|${name}`);
-}
-
-async function controlPower(state) {
-    const cmd = state ? "POWER_ON" : "POWER_OFF";
-    console.log(`🔌 [POWER] Заявка за ток: ${cmd}`);
-    return await sendToTasker(cmd, "relay");
-}
-
-// ==========================================
-// 4. АВТОПИЛОТ (CRON ЗА ТОКА)
-// ==========================================
-cron.schedule('*/1 * * * *', async () => {
-    try {
-        const bookings = await sql`SELECT * FROM bookings`;
-        const now = new Date();
-        for (const b of bookings) {
-            if (!b.power_on_time || !b.power_off_time) continue;
-            const start = new Date(b.power_on_time);
-            const end = new Date(b.power_off_time);
-
-            // Пускане на ток
-            if (now >= start && now < end) {
-                await controlPower(true);
-            } 
-            // Спиране на ток
-            else if (now >= end && now < new Date(end.getTime() + 5*60000)) {
-                await controlPower(false);
-            }
-        }
-    } catch (err) { console.error("Cron Error:", err); }
-});
-
-// ==========================================
-// 5. ЧАТ БОТ (GEMINI МОДЕЛИ)
+// 1. AI AGENT ENDPOINT (За Vercel/Гости)
 // ==========================================
 app.post('/api/chat', async (req, res) => {
-    const { message, history, authCode } = req.body;
-    const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
-    
-    let role = (authCode === process.env.HOST_CODE) ? "host" : "stranger";
-    let bookingData = null;
-    
-    const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]+/);
-    const codeToTest = textCodeMatch ? textCodeMatch[0] : authCode;
-    
-    if (codeToTest && codeToTest !== process.env.HOST_CODE) {
-        const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
-        if (r.length > 0) { 
-            bookingData = r[0]; 
-            role = "guest"; 
-        }
+    try {
+        const { message, history } = req.body;
+        // Викаме "Черната кутия"
+        const response = await getAIResponse(message, history);
+        res.json({ response });
+    } catch (error) {
+        console.error("Chat Error:", error);
+        res.json({ response: "Моля опитайте отново по-късно." });
     }
+});
 
-    let manualContent = "Липсва manual.txt";
-    try { 
-        if (fs.existsSync('manual.txt')) manualContent = fs.readFileSync('manual.txt', 'utf8'); 
-    } catch(e) {}
+// ==========================================
+// 2. TASKER ENDPOINTS (За Тока)
+// ==========================================
 
-    const systemInstruction = `Време: ${currentDateTime}. Роля: ${role}. Наръчник: ${manualContent}. Ти си Ико.`;
+// Tasker изпраща данни тук (Webhook)
+app.post('/api/power/status', (req, res) => {
+    // Очакваме JSON: { "is_on": true, "voltage": 230, "power": 1500 }
+    const { is_on, voltage, power } = req.body;
     
-    // ПАЗИМ МОДЕЛИТЕ ТОЧНО КАКТО СА ЗАДАДЕНИ
-    const modelsToTry = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
-    let finalReply = "Ико има техническо затруднение.";
+    global.powerState = {
+        is_on: !!is_on,
+        voltage: voltage || 0,
+        power: power || 0,
+        last_update: new Date()
+    };
+    
+    console.log(`🔌 Tasker Report: ${is_on ? 'ON' : 'OFF'} (${power}W)`);
+    res.sendStatus(200);
+});
 
-    for (const modelName of modelsToTry) {
-        try {
-            const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
-            const chat = model.startChat({ history: history || [] });
-            const result = await chat.sendMessage(message);
-            finalReply = result.response.text();
-            break; 
-        } catch (error) { 
-            console.error(`❌ Грешка при ${modelName}:`, error.message); 
-        }
-    }
-    res.json({ reply: finalReply });
+// Dashboard-ът чете данните от тук
+app.get('/status', (req, res) => {
+    res.json(global.powerState);
+});
+
+// За превключване на тока (ще го доразвием в следващия етап)
+app.get('/toggle', (req, res) => {
+    console.log("⚠️ Заявено превключване (изчаква Tasker интеграция)");
+    res.json({ status: "pending", message: "Command queued for Tasker" });
 });
 
 // ==========================================
-// 6. API ЕНДПОЙНТИ
+// 3. ADMIN / DASHBOARD API
 // ==========================================
 
-app.get('/sync', async (req, res) => { 
+// Списък резервации
+app.get('/bookings', async (req, res) => {
+    if (!sql) return res.json([]);
     try {
-        await syncBookingsFromGmail(); 
-        res.send('✅ Синхронизирано успешно.'); 
-    } catch(e) { res.status(500).send(e.message); }
+        const result = await sql`SELECT * FROM bookings ORDER BY check_in ASC`;
+        res.json(result);
+    } catch (e) { console.error(e); res.json([]); }
 });
 
-app.get('/bookings', async (req, res) => { 
-    try {
-        const b = await sql`SELECT * FROM bookings ORDER BY check_in ASC`;
-        res.json(b);
-    } catch(e) { res.status(500).json([]); }
+// --- СКЛАД ЗА ПИНОВЕ (pin_depot) ---
+app.get('/api/pins', async (req, res) => {
+    if (!sql) return res.json([]);
+    // Взимаме от новата таблица pin_depot
+    const pins = await sql`SELECT * FROM pin_depot ORDER BY created_at DESC`;
+    res.json(pins);
 });
 
-app.delete('/bookings/:id', async (req, res) => { 
-    try {
-        await sql`DELETE FROM bookings WHERE id = ${req.params.id}`; 
-        res.send('OK'); 
-    } catch(e) { res.status(500).send(e.message); }
+app.post('/api/pins', async (req, res) => {
+    const { pin_name, pin_code } = req.body;
+    if (!sql) return res.sendStatus(500);
+    // Записваме в pin_depot
+    await sql`INSERT INTO pin_depot (pin_name, pin_code) VALUES (${pin_name}, ${pin_code})`;
+    res.sendStatus(201);
 });
 
-app.post('/add-booking', async (req, res) => {
-    try {
-        const { guest_name, reservation_code, check_in, check_out } = req.body;
-        const pin = Math.floor(100000 + Math.random() * 899999);
-        
-        await sql`INSERT INTO bookings (guest_name, reservation_code, check_in, check_out, lock_pin) 
-                  VALUES (${guest_name}, ${reservation_code}, ${check_in}, ${check_out}, ${pin})`;
-        
-        // Команда към Tasker за бравата
-        await createLockPin(pin, guest_name.split(' ')[0]);
-        
-        res.send('OK');
-    } catch(e) { res.status(500).send(e.message); }
-});
-
-app.get('/feed.ics', async (req, res) => {
-    try {
-        const bookings = await sql`SELECT * FROM bookings`;
-        let ics = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartStay//EN\n";
-        bookings.forEach(b => {
-            const start = new Date(b.check_in).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-            const end = new Date(b.check_out).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-            ics += `BEGIN:VEVENT\nSUMMARY:${b.guest_name}\nDTSTART:${start}\nDTEND:${end}\nDESCRIPTION:PIN: ${b.lock_pin}\nEND:VEVENT\n`;
-        });
-        ics += "END:VCALENDAR";
-        res.header('Content-Type', 'text/calendar').send(ics);
-    } catch(e) { res.status(500).send("Error"); }
-});
-
-// --- ТЕСТОВИ ЕНДПОЙНТИ ЗА МОТОРОЛАТА ---
-
-app.get('/test-lock', async (req, res) => {
-    const ok = await sendToTasker("SET_LOCK_PIN", "123456|TestGuest");
-    res.json({ success: ok, target: "Motorola G40", message: "Провери телефона за известие!" });
-});
-
-app.get('/test-power', async (req, res) => {
-    const ok = await controlPower(true);
-    res.json({ success: ok, command: "POWER_ON" });
+app.delete('/api/pins/:id', async (req, res) => {
+    const { id } = req.params;
+    if (!sql) return res.sendStatus(500);
+    // Трием от pin_depot
+    await sql`DELETE FROM pin_depot WHERE id = ${id}`;
+    res.sendStatus(200);
 });
 
 // ==========================================
-// 7. СТАРТ НА СЪРВЪРА
+// 4. CRON JOBS (Автоматизация)
+// ==========================================
+
+// Детектив (Gmail) - на 15 мин
+cron.schedule('*/15 * * * *', async () => {
+    console.log('🕵️ Детективът проверява пощата...');
+    await syncBookingsFromGmail();
+});
+
+// ==========================================
+// SERVER START
 // ==========================================
 app.listen(PORT, () => {
-    console.log(`🚀 Iko Tasker-Bridge Server running on ${PORT}`);
-    syncBookingsFromGmail();
-    setInterval(syncBookingsFromGmail, 15 * 60 * 1000);
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🧠 AI Service: Loaded`);
+    console.log(`🔌 Smart Meter API: Ready`);
 });
