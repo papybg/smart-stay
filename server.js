@@ -23,19 +23,64 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public')); // Обслужва dashboard.html
 
-// ==========================================
-// 1. AI AGENT ENDPOINT (За Vercel/Гости)
-// ==========================================
+// ==================================================================
+// --- 6. ЧАТ БОТ (GEMINI MODELS) ---
+// ==================================================================
+
 app.post('/api/chat', async (req, res) => {
-    try {
-        const { message, history } = req.body;
-        // Викаме "Черната кутия"
-        const response = await getAIResponse(message, history);
-        res.json({ response });
-    } catch (error) {
-        console.error("Chat Error:", error);
-        res.json({ response: "Моля опитайте отново по-късно." });
+    const { message, history, authCode } = req.body;
+    
+    // Събиране на контекст за бота
+    const powerStatus = await getTuyaStatus();
+    const isOnline = powerStatus !== null;
+    const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
+
+    let bookingData = null;
+    let role = "stranger";
+    
+    // Проверка за код (HMxxxx) в съобщението или auth полето
+    const textCodeMatch = message.trim().toUpperCase().match(/HM[A-Z0-9]+/);
+    const codeToTest = textCodeMatch ? textCodeMatch[0] : authCode;
+
+    if (codeToTest === process.env.HOST_CODE) {
+        role = "host";
+    } else if (codeToTest) {
+        // Търсене в базата данни
+        const r = await sql`SELECT * FROM bookings WHERE reservation_code = ${codeToTest} LIMIT 1`;
+        if (r.length > 0) { 
+            bookingData = r[0]; 
+            role = "guest"; 
+        }
     }
+
+    // Системна инструкция
+    const systemInstruction = `
+    Текущо време: ${currentDateTime}.
+    Роля на потребителя: ${role}.
+    Име на госта: ${bookingData ? bookingData.guest_name : "Неизвестен"}.
+    Статус на тока: ${isOnline ? "Онлайн" : "Офлайн"}.
+    Наръчник: ${manualContent}.
+    Ти си Ико - умен иконом на апартамент в Банско.
+    `;
+    
+    // --- ИЗБОР НА МОДЕЛ (ТВОИТЕ СПЕЦИФИЧНИ ВЕРСИИ) ---
+    const modelsToTry = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
+    let finalReply = "Съжалявам, Ико има техническо затруднение в момента.";
+
+    for (const modelName of modelsToTry) {
+        try {
+            // console.log(`🤖 Опит с модел: ${modelName}`);
+            const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
+            const chat = model.startChat({ history: history || [] });
+            const result = await chat.sendMessage(message);
+            finalReply = result.response.text();
+            break; // Успех -> излизаме от цикъла
+        } catch (error) { 
+            console.error(`❌ Грешка с модел ${modelName}:`, error.message); 
+            // Продължаваме към следващия модел
+        }
+    }
+    res.json({ reply: finalReply });
 });
 
 // ==========================================
