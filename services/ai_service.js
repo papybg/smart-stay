@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
 
 // --- КОНСТАНТИ И МОДЕЛИ (НЕ ПРОМЕНЯЙ) ---
-const MODELS = ["gemini-3-pro-preview", "gemini-flash-latest", "gemini-3-flash-preview"];
+const MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3-flash-preview"];
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
