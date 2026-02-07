@@ -811,119 +811,85 @@ function formatHistory(history) {
  * @returns {Promise<string>} Текст на отговор на AI на български
  */
 export async function getAIResponse(userMessage, history = [], authCode = null) {
-    console.log('\n╔══════════════════════════════════════════════════════════════════════╗');
-    console.log('║                 НАЧАЛО ГЕНЕРИРАНЕ НА ОТГОВОР НА AI                  ║');
-    console.log('╚══════════════════════════════════════════════════════════════════════╝\n');
-
-    // ВАЛИДАЦИЯ НА ВХОДНИ ДАННИ
-    if (!userMessage || userMessage.trim() === '') {
-        console.log('[INPUT] Предоставено е празно съобщение - отхвърлям');
-        return "Моля напишете вашата заявка.";
-    }
-
-    console.log('[INPUT] Съобщение получено:', userMessage.substring(0, 100));
-
-    // ВАЛИДАЦИЯ НА GEMINI КЛИЕНТ
+    // 1. ПРОВЕРКА НА API KEY
     if (!genAI) {
-        console.error('[GEMINI] API ключ не е конфигуриран');
-        return "❌ Грешка: Gemini API ключ не е конфигуриран.";
+        console.error('🔴 ГРЕШКА: Липсва GEMINI_API_KEY');
+        return "В момента имам техническо затруднение (API Key Error).";
     }
 
-    // ЗАРЕЖДАНЕ НА НАРЪЧНИК (със защита от защитна стена)
-    console.log('[FILES] Зарежда наръчник на имота...');
-    let houseManual = "";
-    try {
-        houseManual = await fs.readFile(path.join(process.cwd(), 'manual.txt'), 'utf-8');
-        console.log('[FILES] Наръчник зареден успешно (' + houseManual.length + ' байта)');
-    } catch (err) {
-        console.error('[FILES] Manual.txt не е намерен, използвам връщане:', err.message);
-        houseManual = "⚠️ Наръчник за апартамента е временно недостъпен.";
-    }
-
-    // ОПРЕДЕЛЯНЕ НА РОЛЯТА (със проверки на сигурност)
-    const { role, data: bookingData } = await determineUserRole(authCode, userMessage);
-    console.log('[ROLE] Определена роля на потребителя:', role);
-
-    // ЗАЩИТНА СТЕНА: Ако е непознат, замени наръчника с публична информация
-    if (role === 'stranger') {
-        console.log('[FIREWALL] Открит е непознат - замествам наръчника само с публична информация');
-        houseManual = PUBLIC_INFO_FALLBACK;
-    }
-
-    // СТАТУС НА ТОК
+    // 2. ОПРЕДЕЛЯНЕ НА РОЛЯ И ДАННИ (Поправка: добавено е ", data")
+    const { role, data } = await determineUserRole(authCode, userMessage);
+    
+    // 3. ПОЛУЧАВАНЕ НА СТАТУС НА ТОКА
     const powerStatus = await automationClient.getPowerStatus();
+    const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
 
-    // ВРЕМЕВА МАРА
-    const currentDateTime = new Date().toLocaleString('bg-BG', {
-        timeZone: 'Europe/Sofia',
-        dateStyle: 'full',
-        timeStyle: 'short'
-    });
-
-    // СИСТЕМНО УКАЗАНИЕ - SSoT архитектура
-    const systemInstruction = buildSystemInstruction(
-        role,
-        data,
-        powerStatus,
-        houseManual,
-        currentDateTime
-    );
-
-    console.log('[AI] Системно указание подготвено за ролята:', role);
-
-    // ГЕНЕРИРАНЕ НА ОТГОВОР НА AI СЪС МНОГОМОДЕЛНА ОТКАЗОВА ЛОГИКА
-    let finalReply = "❌ Съжалявам, имам технически проблем. Моля опитайте пак.";
-
-    for (let modelIndex = 0; modelIndex < MODELS.length; modelIndex++) {
-        const modelName = MODELS[modelIndex];
-        console.log(`\n[GEMINI] Опитвам модел ${modelIndex + 1}/${MODELS.length}: ${modelName}`);
-
+    // 4. ЧЕТЕНЕ НА МАНУАЛА (Поправка: търси в папка 'services')
+    let manualContent = "";
+    if (role !== 'stranger') {
         try {
-            const model = genAI.getGenerativeModel({
-                model: modelName,
-                systemInstruction
+            // ТУК Е ПРОМЯНАТА ЗА ПЪТЯ: добавихме 'services'
+            const manualPath = path.join(process.cwd(), 'services', 'manual.txt');
+            manualContent = await fs.readFile(manualPath, 'utf-8');
+            console.log('📖 Успешно прочетен manual.txt от services/');
+        } catch (error) {
+            console.error('🔴 Грешка при четене на manual.txt:', error.message);
+            // Опит да го намери в главната папка, ако първият опит не стане
+            try {
+                manualContent = await fs.readFile(path.join(process.cwd(), 'manual.txt'), 'utf-8');
+                console.log('📖 Успешно прочетен manual.txt от root');
+            } catch (e) {
+                manualContent = "Няма достъп до наръчника.";
+            }
+        }
+    } else {
+        // За непознати, използвай публична информация
+        manualContent = PUBLIC_INFO_FALLBACK;
+    }
+
+    // 5. ИНСТРУКЦИИ ЗА ИКО (Вече 'data' съществува и няма да гърми)
+    const systemInstruction = buildSystemInstruction(role, data, powerStatus, manualContent, currentDateTime);
+
+    // 6. ГЕНЕРИРАНЕ С GEMINI (С Loop през моделите)
+    let finalReply = "В момента имам техническо затруднение. Моля, опитайте след малко.";
+
+    for (const modelName of MODELS) {
+        try {
+            const model = genAI.getGenerativeModel({ 
+                model: modelName, 
+                systemInstruction: systemInstruction 
             });
 
-            console.log('[GEMINI] Модел инициализиран, стартирам сесия за чат...');
             const chat = model.startChat({
-                history: formatHistory(history)
+                history: (Array.isArray(history) ? history : []).map(msg => ({
+                    role: msg.role === 'assistant' ? 'model' : 'user',
+                    parts: [{ text: msg.content }]
+                })),
+                generationConfig: { maxOutputTokens: 1000 } // Ограничение за бързина
             });
 
-            console.log('[GEMINI] Изпращам съобщение на потребителя към модел...');
+            console.log(`🤖 Опит за генериране с модел: ${modelName}`);
             const result = await chat.sendMessage(userMessage);
             finalReply = result.response.text();
-
-            console.log(`[GEMINI] ✅ УСПЕШНО: Получен отговор от ${modelName}`);
-            console.log('[GEMINI] Дължина на отговор:', finalReply.length);
-            break;
-
-        } catch (error) {
-            console.error(`[GEMINI] ❌ Модел ${modelName} се провали:`, error.message);
-
-            if (modelIndex === MODELS.length - 1) {
-                console.error('[GEMINI] Всички отказови модели са изчерпани');
-            } else {
-                console.log(`[GEMINI] Опитвам отказов модел...`);
-                continue;
-            }
+            
+            // Ако стигнем тук, значи е успешно
+            break; 
+        } catch (modelError) {
+            console.warn(`⚠️ Модел ${modelName} отказа:`, modelError.message);
+            continue; // Пробвай следващия модел
         }
     }
 
-    // ПРОВЕРКА НА СПЕШНОСТ НА ТОК
-    console.log('[FLOW] Проверявам за спешни ситуации на ток...');
-    const emergencyNote = await checkEmergencyPower(userMessage, role, bookingData);
-    if (emergencyNote) {
-        console.log('[FLOW] Системна бележка за спешност на ток добавена към отговор');
-        finalReply += emergencyNote;
+    // 7. АВАРИЙНО УПРАВЛЕНИЕ НА ТОКА
+    // Ако е гост, няма ток и се оплаква -> пускаме го
+    if (role === 'guest' && !powerStatus.isOn && /няма ток|спря ток|токът не работи/i.test(userMessage)) {
+        console.log('🚨 АВАРИЯ: Гост докладва липса на ток. Опит за възстановяване...');
+        const success = await automationClient.controlPower(true); // Това ще прати и Telegram команда
+        if (success) {
+            await automationClient.sendAlert("Автоматично възстановяване на ток за гост", data);
+            finalReply += "\n\n✅ (Система: Засякох проблем и рестартирах захранването автоматично. Моля, изчакайте 1 минута.)";
+        }
     }
-
-    // ОБРАБОТКА НА ИЗВЕСТУВАНИЯ
-    console.log('[FLOW] Обработвам известувателни маркери...');
-    finalReply = await processAlerts(finalReply, role, bookingData);
-
-    console.log('\n╔══════════════════════════════════════════════════════════════════════╗');
-    console.log('║              ГЕНЕРИРАНЕ НА ОТГОВОР НА AI ЗАВЪРШЕНО                  ║');
-    console.log('╚══════════════════════════════════════════════════════════════════════╝\n');
 
     return finalReply;
 }
