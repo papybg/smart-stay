@@ -816,27 +816,32 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     const powerStatus = await automationClient.getPowerStatus();
     const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
 
-    // 4. ЧЕТЕНЕ НА МАНУАЛА (Поправка: търси в папка 'services')
+    // 4. ЧЕТЕНЕ НА МАНУАЛА (РАЗДЕЛЕН НА ПУБЛИЧЕН И ЧАСТЕН)
     let manualContent = "";
-    if (role !== 'stranger') {
-        try {
-            // ТУК Е ПРОМЯНАТА ЗА ПЪТЯ: добавихме 'services'
-            const manualPath = path.join(process.cwd(), 'services', 'manual.txt');
-            manualContent = await fs.readFile(manualPath, 'utf-8');
-            console.log('📖 Успешно прочетен manual.txt от services/');
-        } catch (error) {
-            console.error('🔴 Грешка при четене на manual.txt:', error.message);
-            // Опит да го намери в главната папка, ако първият опит не стане
-            try {
-                manualContent = await fs.readFile(path.join(process.cwd(), 'manual.txt'), 'utf-8');
-                console.log('📖 Успешно прочетен manual.txt от root');
-            } catch (e) {
-                manualContent = "Няма достъп до наръчника.";
-            }
+    try {
+        if (role === 'stranger') {
+            // Публична информация за непознати
+            const publicPath = path.join(process.cwd(), 'services', 'manual-public.txt');
+            manualContent = await fs.readFile(publicPath, 'utf-8');
+            console.log('📖 Прочетен manual-public.txt (публичен достъп)');
+        } else {
+            // Пълна информация за гости и домакин
+            const privatePath = path.join(process.cwd(), 'services', 'manual-private.txt');
+            manualContent = await fs.readFile(privatePath, 'utf-8');
+            console.log('📖 Прочетен manual-private.txt (частен достъп)');
         }
-    } else {
-        // За непознати, използвай публична информация
-        manualContent = PUBLIC_INFO_FALLBACK;
+    } catch (error) {
+        console.error('🔴 Грешка при четене на ръчник:', error.message);
+        // Резервни пътища
+        try {
+            if (role === 'stranger') {
+                manualContent = await fs.readFile(path.join(process.cwd(), 'manual-public.txt'), 'utf-8');
+            } else {
+                manualContent = await fs.readFile(path.join(process.cwd(), 'manual-private.txt'), 'utf-8');
+            }
+        } catch (e) {
+            manualContent = role === 'stranger' ? PUBLIC_INFO_FALLBACK : "Няма достъп до наръчника.";
+        }
     }
 
     // 5. ИНСТРУКЦИИ ЗА ИКО (Вече 'data' съществува и няма да гърми)
