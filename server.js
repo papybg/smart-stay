@@ -10,8 +10,10 @@
  * - Детайлна система за логване на всички заявки
  * - Безопасни връзки към Neon PostgreSQL база данни
  * - Статични файлове за фронтенда
+ * - TELEGRAM ИНТЕГРАЦИЯ за отправяне на команди на робот
+ * - CRON SCHEDULER за автоматизирано включване/изключване на ток
  * 
- * Поддържани модули: AI Service, Power Control, Booking Management, Alert System
+ * Поддържани модули: AI Service, Power Control, Booking Management, Alert System, Telegram Bot, Scheduler
  * Създадено: февруари 2026
  * ============================================================================
  */
@@ -22,6 +24,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
+import cron from 'node-cron';
 import { getAIResponse } from './services/ai_service.js';
 
 // ============================================================================
@@ -40,10 +43,28 @@ const PORT = process.env.PORT || 10000;
  */
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
+/**
+ * @type {string} TELEGRAM_BOT_TOKEN - Токен за Telegram бот
+ * Получава се от environment variable TELEGRAM_BOT_TOKEN
+ */
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+/**
+ * @type {string} TELEGRAM_CHAT_ID - ID на Telegram чата за команди
+ * Получава се от environment variable TELEGRAM_CHAT_ID
+ */
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
 if (!sql) {
     console.warn('⚠️ [DATABASE] DATABASE_URL не е зададена - база данни е недостъпна');
 } else {
     console.log('✅ [DATABASE] Neon PostgreSQL клиент инициализиран успешно');
+}
+
+if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.warn('⚠️ [TELEGRAM] TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не са зададени');
+} else {
+    console.log('✅ [TELEGRAM] Telegram бот интеграция активна');
 }
 
 // ============================================================================
@@ -57,7 +78,7 @@ if (!sql) {
  * 
  * @property {boolean} is_on - Дали токът е включен
  * @property {Date} last_update - Последно време на обновяване
- * @property {string} source - Източник на последната промяна (tasker/web/ai/system)
+ * @property {string} source - Източник на последната промяна (tasker/web/ai/system/scheduler)
  */
 global.powerState = {
     is_on: true,
@@ -66,6 +87,169 @@ global.powerState = {
 };
 
 console.log('✅ [SYSTEM] Глобално състояние на тока инициализирано');
+
+// ============================================================================
+// TELEGRAM BOT ИНТЕГРАЦИЯ
+// ============================================================================
+
+/**
+ * Изпраща команда към Telegram бот за управление на тока
+ * Се използва при автоматични действия от scheduler или при AI команди
+ * 
+ * @async
+ * @param {string} command - Команда за изпращане ('ВКЛ' или 'ИЗКЛ')
+ * @returns {Promise<boolean>} True ако съобщението е изпратено успешно
+ */
+async function sendTelegramCommand(command) {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+        console.warn('[TELEGRAM] ⚠️ Telegram bot е недостъпен - пропускам');
+        return false;
+    }
+
+    try {
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+        const payload = {
+            chat_id: TELEGRAM_CHAT_ID,
+            text: `🤖 Smart Stay: ${command}`,
+            parse_mode: 'HTML'
+        };
+
+        console.log(`[TELEGRAM] 📤 Изпращам команда към бот: ${command}`);
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            console.error(`[TELEGRAM] ❌ Грешка от API (${response.status}):`, response.statusText);
+            return false;
+        }
+
+        const result = await response.json();
+        if (result.ok) {
+            console.log(`[TELEGRAM] ✅ Команда изпратена успешно`);
+            return true;
+        } else {
+            console.error('[TELEGRAM] ❌ Telegram API vrзна грешка:', result.description);
+            return false;
+        }
+
+    } catch (error) {
+        console.error('[TELEGRAM] 🔴 ГРЕШКА при изпращане:', error.message);
+        return false;
+    }
+}
+
+// ============================================================================
+// SCHEDULER СИСТЕМА ЗА АВТОМАТИЗИРАНО УПРАВЛЕНИЕ НА ТОК
+// ============================================================================
+
+/**
+ * Cron job, който работи всеки 10 минути
+ * Проверява резервациите и автоматично управлява тока:
+ * - Включва ток 2 часа преди check-in
+ * - Изключва ток 1 час след check-out
+ * 
+ * Работи только ако Telegram интеграцията е активна
+ */
+function initializeScheduler() {
+    if (!sql || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+        console.warn('[SCHEDULER] ⚠️ Scheduler не е инициализиран - липсват зависимости');
+        return;
+    }
+
+    console.log('[SCHEDULER] 📅 Инициализиране на cron scheduler...');
+
+    // Работи всеки 10 минути
+    cron.schedule('*/10 * * * *', async () => {
+        try {
+            console.log(`\n[SCHEDULER] ⏰ Проверявам график... (${new Date().toISOString()})`);
+
+            // Получава текущото време
+            const now = new Date();
+            const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+            const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+
+            console.log(`[SCHEDULER] 🔍 Текущо време: ${now.toISOString()}`);
+            console.log(`[SCHEDULER] 🔍 Check-in винаги до: ${twoHoursFromNow.toISOString()}`);
+            console.log(`[SCHEDULER] 🔍 Check-out по-рано от: ${oneHourAgo.toISOString()}`);
+
+            // Запитва резервациите от базата данни
+            const bookings = await sql`
+                SELECT id, guest_name, reservation_code, check_in, check_out 
+                FROM bookings 
+                WHERE check_in <= ${twoHoursFromNow} 
+                AND check_in >= ${now}
+                AND check_out > ${now}
+                LIMIT 10
+            `;
+
+            // Проверява резервации за включване на ток
+            for (const booking of bookings) {
+                console.log(`[SCHEDULER] 📋 Намеренa резервация: ${booking.guest_name} (${booking.reservation_code})`);
+                
+                const checkInTime = new Date(booking.check_in);
+                const hoursUntilCheckIn = (checkInTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+                
+                console.log(`[SCHEDULER] ⏱️ Часове до check-in: ${hoursUntilCheckIn.toFixed(2)}`);
+
+                if (hoursUntilCheckIn <= 2 && hoursUntilCheckIn > 0 && !global.powerState.is_on) {
+                    console.log(`[SCHEDULER] 🚨 ДЕЙСТВИЕ: Включвам ток за ${booking.guest_name}`);
+                    
+                    global.powerState.is_on = true;
+                    global.powerState.last_update = new Date();
+                    global.powerState.source = 'scheduler-checkin';
+                    
+                    const success = await sendTelegramCommand('ВКЛ');
+                    if (success) {
+                        console.log(`[SCHEDULER] ✅ Ток включен за гост ${booking.guest_name}`);
+                    }
+                }
+            }
+
+            // Запитва резервации за изключване на ток
+            const checkoutBookings = await sql`
+                SELECT id, guest_name, reservation_code, check_out 
+                FROM bookings 
+                WHERE check_out <= ${now}
+                AND check_out >= ${oneHourAgo}
+                LIMIT 10
+            `;
+
+            for (const booking of checkoutBookings) {
+                console.log(`[SCHEDULER] 📋 Check-out резервация: ${booking.guest_name} (${booking.reservation_code})`);
+                
+                const checkOutTime = new Date(booking.check_out);
+                const hoursSinceCheckOut = (now.getTime() - checkOutTime.getTime()) / (1000 * 60 * 60);
+                
+                console.log(`[SCHEDULER] ⏱️ Часове след check-out: ${hoursSinceCheckOut.toFixed(2)}`);
+
+                if (hoursSinceCheckOut >= 1 && global.powerState.is_on) {
+                    console.log(`[SCHEDULER] 🚨 ДЕЙСТВИЕ: Изключвам ток след check-out на ${booking.guest_name}`);
+                    
+                    global.powerState.is_on = false;
+                    global.powerState.last_update = new Date();
+                    global.powerState.source = 'scheduler-checkout';
+                    
+                    const success = await sendTelegramCommand('ИЗКЛ');
+                    if (success) {
+                        console.log(`[SCHEDULER] ✅ Ток изключен след check-out`);
+                    }
+                }
+            }
+
+            console.log('[SCHEDULER] ✅ Проверка завършена\n');
+
+        } catch (error) {
+            console.error('[SCHEDULER] 🔴 ГРЕШКА при проверка на график:', error.message);
+            console.error('[SCHEDULER] Stack:', error.stack);
+        }
+    });
+
+    console.log('[SCHEDULER] ✅ Cron scheduler инициализиран (всеки 10 минути)');
+}
 
 // ============================================================================
 // MIDDLEWARE - КОРС И ПАРСВАНЕ НА ДАННИ
@@ -202,7 +386,7 @@ app.get('/api/power-status', (req, res) => {
 });
 
 // ============================================================================
-// ENDPOINT: /api/power-control - УПРАВЛЕНИЕ НА ТОК (ЗА AI)
+// ENDPOINT: /api/power-control - УПРАВЛЕНИЕ НА ТОК (ЗА AI И TASKER)
 // ============================================================================
 
 /**
@@ -210,12 +394,13 @@ app.get('/api/power-status', (req, res) => {
  * 
  * Управлява състоянието на тока (на/изключи)
  * Вико се от AI асистент при спешни ситуации
+ * АКТУАЛИЗИРАНО: Автоматично изпраща Telegram команда
  * 
  * @body {boolean} state - True = включи, False = изключи
  * 
  * @returns {Object} { success: boolean, state: boolean }
  */
-app.post('/api/power-control', (req, res) => {
+app.post('/api/power-control', async (req, res) => {
     try {
         const { state } = req.body;
         
@@ -230,7 +415,11 @@ app.post('/api/power-control', (req, res) => {
         
         console.log(`[POWER] 🔌 Управление на ток от AI: ${state ? 'ВКЛЮЧЕНО' : 'ИЗКЛЮЧЕНО'}`);
         
-        res.json({ success: true, state: global.powerState.is_on });
+        // Изпраща Telegram команда
+        const command = state ? 'ВКЛ' : 'ИЗКЛ';
+        const telegramSuccess = await sendTelegramCommand(command);
+        
+        res.json({ success: true, state: global.powerState.is_on, telegramSent: telegramSuccess });
         
     } catch (error) {
         console.error('[POWER] 🔴 ГРЕШКА при управление на ток:', error.message);
@@ -406,16 +595,35 @@ app.listen(PORT, () => {
     console.log(`   🧠 AI Service: ${getAIResponse ? '✅ Активен' : '❌ Неактивен'}`);
     console.log(`   🔌 Power Control: ✅ Активен (глобално состояние синхронизирано)`);
     console.log(`   📱 Tasker Integration: ✅ Активна`);
+    console.log(`   📤 Telegram Bot: ${TELEGRAM_BOT_TOKEN ? '✅ Активен' : '⚠️ Недостъпен'}`);
+    console.log(`   📅 Scheduler (Cron): ${sql ? '✅ Активен' : '⚠️ Недостъпен'}`);
     console.log(`   🗄️  Database: ${sql ? '✅ Свързана' : '⚠️ Недостъпна'}`);
     console.log(`   📁 Static Files: ✅ Сервирани от /public`);
     console.log('\n🔀 АКТИВНИ ENDPOINTS:');
     console.log('   POST /api/chat                - ЧАТ С AI АСИСТЕНТ');
     console.log('   GET  /api/power-status        - СТАТУС НА ТОКА');
-    console.log('   POST /api/power-control       - УПРАВЛЕНИЕ НА ТОК');
+    console.log('   POST /api/power-control       - УПРАВЛЕНИЕ НА ТОК (+ TELEGRAM)');
     console.log('   POST /api/power/status        - TASKER ИНТЕГРАЦИЯ');
     console.log('   POST /api/alert               - ИЗВЕСТУВАНИЯ');
     console.log('   GET  /api/bookings            - СПИСЪК НА РЕЗЕРВАЦИИ');
     console.log('   GET  /api/pins                - СПИСЪК НА PIN КОДОВЕ');
+    console.log('\n📤 TELEGRAM BOT:');
+    console.log(`   Статус: ${TELEGRAM_BOT_TOKEN ? '✅ Активен' : '⚠️ Недостъпен'}`);
+    console.log(`   Chat ID: ${TELEGRAM_CHAT_ID ? '✅ Конфигуриран' : '⚠️ Липсва'}`);
+    console.log('\n📅 SCHEDULER (CRON):');
+    console.log(`   Статус: ${sql ? '✅ Активен (всеки 10 минути)' : '⚠️ Недостъпен'}`);
+    console.log(`   Функция: Автоматично управление на ток при check-in/check-out`);
     console.log('\n⏰ СТАРТИРАН НА: ' + new Date().toISOString());
     console.log('═'.repeat(64) + '\n');
+
+    // Инициализира scheduler ако са налични необходимите зависимости
+    if (sql && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+        console.log('[SCHEDULER] 🚀 Инициализиране на scheduler...\n');
+        initializeScheduler();
+    } else {
+        console.warn('[SCHEDULER] ⚠️ Scheduler няма да работи - липсват зависимости');
+        if (!sql) console.warn('   ❌ Липсва database свързаност');
+        if (!TELEGRAM_BOT_TOKEN) console.warn('   ❌ Липсва TELEGRAM_BOT_TOKEN');
+        if (!TELEGRAM_CHAT_ID) console.warn('   ❌ Липсва TELEGRAM_CHAT_ID\n');
+    }
 });
