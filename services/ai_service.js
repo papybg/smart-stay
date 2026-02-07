@@ -932,7 +932,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
                     role: msg.role === 'assistant' ? 'model' : 'user',
                     parts: [{ text: msg.content }]
                 })),
-                generationConfig: { maxOutputTokens: 1000 } // Ограничение за бързина
+                generationConfig: { maxOutputTokens: 4000 } // ПОПРАВЕНО: увеличен лимит за пълни отговори
             });
 
             console.log(`🤖 Опит за генериране с модел: ${modelName}`);
