@@ -2,6 +2,7 @@
 import { neon } from '@neondatabase/serverless';
 import fs from 'fs/promises';
 import path from 'path';
+import { sendCommandToPhone } from './autoremote.js';
 
 /**
  * ============================================================================
@@ -120,22 +121,17 @@ const automationClient = {
      */
     async controlPower(state) {
         try {
-            console.log('[AUTOMATION] Изпращам команда за управление на тока (със Telegram):', state ? 'ВКЛЮЧИ (ВКЛ)' : 'ИЗКЛЮЧИ (ИЗКЛ)');
-            const res = await fetch(`${AUTOMATION_URL}/api/power-control`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ state })
-            });
-            const success = res.ok;
+            const command = state ? 'meter_on' : 'meter_off';
+            console.log('[AUTOMATION] 📡 Управление на тока чрез AutoRemote:', command);
+            const success = await sendCommandToPhone(command);
             if (success) {
-                const data = await res.json();
-                console.log('[AUTOMATION] Управление на ток УСПЕШНО - Telegram статус:', data.telegramSent ? '✅ Изпратено' : '⚠️ Не е изпратено');
+                console.log('[AUTOMATION] ✅ Команда успешно изпратена към Tasker');
             } else {
-                console.log('[AUTOMATION] Управление на ток НЕУДАЧНО (статус ' + res.status + ')');
+                console.warn('[AUTOMATION] ⚠️ Неудачна връзка с AutoRemote');
             }
             return success;
         } catch (e) {
-            console.error('[AUTOMATION] Управлението на тока не успя:', e.message);
+            console.error('[AUTOMATION] ❌ Управлението на тока не успя:', e.message);
             return false;
         }
     },

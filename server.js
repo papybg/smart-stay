@@ -38,6 +38,7 @@ import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
 import cron from 'node-cron';
 import { getAIResponse } from './services/ai_service.js';
+import { controlPower } from './services/autoremote.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,6 +62,37 @@ global.powerState = {
     last_update: new Date(),
     source: 'system'
 };
+
+// ============================================================================
+// ИНИЦИАЛИЗАЦИЯ НА БАЗА ДАННИ
+// ============================================================================
+
+/**
+ * 📝 Създава power_history таблица при старт на сървъра
+ */
+async function initializeDatabase() {
+    if (!sql) {
+        console.log('[DB] ⚠️ DATABASE_URL не е зададено - логване на история няма да работи');
+        return;
+    }
+    try {
+        await sql`
+            CREATE TABLE IF NOT EXISTS power_history (
+                id SERIAL PRIMARY KEY,
+                is_on BOOLEAN NOT NULL,
+                source VARCHAR(50),
+                timestamp TIMESTAMPTZ DEFAULT NOW(),
+                duration_seconds INT,
+                booking_id INT REFERENCES bookings(id),
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        `;
+        await sql`CREATE INDEX IF NOT EXISTS idx_power_history_timestamp ON power_history(timestamp DESC);`;
+        console.log('[DB] ✅ power_history таблица готова');
+    } catch (error) {
+        console.error('[DB] 🔴 Грешка при инициализация:', error.message);
+    }
+}
 
 // ============================================================================
 // MIDDLEWARE
@@ -186,19 +218,75 @@ app.post('/api/power-control', async (req, res) => {
 
 /**
  * POST /api/power/status
- * 📱 Tasker интеграция - обновление статус от умния дом
+ * 📱 Tasker интеграция - обновление статус + логване в история
  */
-app.post('/api/power/status', (req, res) => {
+app.post('/api/power/status', async (req, res) => {
     try {
-        const { is_on } = req.body;
+        const { is_on, booking_id } = req.body;
+        const prevState = global.powerState.is_on;
+        const timestamp = new Date();
+        
+        // Обновяване на глобално състояние
         global.powerState.is_on = !!is_on;
-        global.powerState.last_update = new Date();
+        global.powerState.last_update = timestamp;
         global.powerState.source = 'tasker';
-        console.log(`[TASKER] 📱 Статус: ${is_on ? 'ON' : 'OFF'}`);
+        
+        console.log(`[TASKER] 📱 Статус: ${is_on ? 'ON' : 'OFF'} (от ${prevState ? 'ON' : 'OFF'})`);
+        
+        // Логване в база данни ако има промяна на състоянието
+        if (sql && prevState !== is_on) {
+            try {
+                await sql`
+                    INSERT INTO power_history (is_on, source, timestamp, booking_id)
+                    VALUES (${is_on}, 'tasker', ${timestamp}, ${booking_id || null})
+                `;
+                console.log('[DB] ✅ power_history записан');
+            } catch (dbError) {
+                console.error('[DB] 🔴 Грешка при логване:', dbError.message);
+            }
+        }
+        
         res.status(200).send('OK');
     } catch (error) {
         console.error('[TASKER] 🔴 Грешка:', error.message);
         res.status(500).send('Error');
+    }
+});
+
+/**
+ * GET /api/power-history
+ * 📊 Извличане на история на вкл/изкл на ток за дашборд
+ */
+app.get('/api/power-history', async (req, res) => {
+    if (!sql) {
+        return res.status(503).json({ error: 'Database not available' });
+    }
+    try {
+        const { days = 30 } = req.query;
+        const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        
+        const history = await sql`
+            SELECT 
+                id,
+                is_on,
+                source,
+                timestamp,
+                booking_id,
+                created_at
+            FROM power_history
+            WHERE timestamp >= ${sinceDate}
+            ORDER BY timestamp DESC
+            LIMIT 500
+        `;
+        
+        res.json({
+            count: history.length,
+            data: history,
+            period: { since: sinceDate, until: new Date() }
+        });
+    } catch (error) {
+        console.error('[DB] 🔴 Грешка при четене:', error.message);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -263,7 +351,7 @@ function initializeScheduler() {
                     console.log(`[SCHEDULER] 🚨 CHECK-IN за ${booking.guest_name} - ВКЛ`);
                     global.powerState.is_on = true;
                     global.powerState.source = 'scheduler-checkin';
-                    await sendTelegramCommand('ВКЛ');
+                    await controlPower(true); // Праща команда към Tasker через AutoRemote
                 }
             }
 
@@ -278,7 +366,7 @@ function initializeScheduler() {
                     console.log(`[SCHEDULER] 🚨 CHECK-OUT ${booking.guest_name} - ИЗКЛ`);
                     global.powerState.is_on = false;
                     global.powerState.source = 'scheduler-checkout';
-                    await sendTelegramCommand('ИЗКЛ');
+                    await controlPower(false); // Праща команда към Tasker през AutoRemote
                 }
             }
         } catch (error) {
@@ -292,11 +380,15 @@ function initializeScheduler() {
 // СТАРТИРАНЕ НА СЪРВЪРА
 // ============================================================================
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log('\n🚀 SMART-STAY LEAN CONTROLLER STARTED');
     console.log(`   🌐 http://localhost:${PORT}`);
     console.log(`   📤 Telegram: ${TELEGRAM_BOT_TOKEN ? '✅' : '⚠️'}`);
     console.log(`   🗄️  Database: ${sql ? '✅' : '⚠️'}`);
     console.log(`   📅 Scheduler: Инициализиране...\n`);
+    
+    // Инициализирай базата и съедини power_history таблица
+    await initializeDatabase();
+    
     initializeScheduler();
 });

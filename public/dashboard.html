@@ -178,6 +178,29 @@
                 </div>
                 <span class="status-badge status-auto">SYSTEM ACTIVE</span>
             </div>
+            
+            <!-- Power History Table -->
+            <div style="margin-top: 20px;">
+                <h3 style="font-size: 1rem; margin: 0 0 15px 0; color: var(--text-main);">
+                    <span class="material-symbols-outlined" style="vertical-align: middle; margin-right: 8px; font-size: 20px;">history</span>
+                    История (последния месец)
+                </h3>
+                <div class="table-responsive">
+                    <table id="powerHistoryTable">
+                        <thead>
+                            <tr>
+                                <th>Време</th>
+                                <th>Състояние</th>
+                                <th>Източник</th>
+                                <th>Гост</th>
+                            </tr>
+                        </thead>
+                        <tbody id="powerHistoryBody">
+                            <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Зареждане...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             </div>
 
         <div class="card">
@@ -295,6 +318,51 @@
         function generateCode() {
             const rnd = Math.floor(Math.random() * 900000) + 100000;
             document.getElementById('resCode').value = 'HM' + rnd;
+        }
+
+        /* =========================================
+           2.5 POWER HISTORY LOADER
+           ========================================= */
+        async function loadPowerHistory() {
+            try {
+                const res = await fetch('/api/power-history?days=30');
+                const { data } = await res.json();
+                
+                const tbody = document.getElementById('powerHistoryBody');
+                if (!data || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Няма история</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = '';
+                data.forEach(record => {
+                    // Намери гост по booking_id
+                    let guestName = '---';
+                    if (record.booking_id && currentBookings.length > 0) {
+                        const booking = currentBookings.find(b => b.id === record.booking_id);
+                        guestName = booking ? booking.guest_name : '---';
+                    }
+                    
+                    const stateText = record.is_on ? '✅ ВКЛ' : '❌ ИЗКЛ';
+                    const sourceEmoji = record.source === 'tasker' ? '📱' : 
+                                       record.source === 'cron' ? '⏰' : 
+                                       record.source === 'guest' ? '👤' : '🔧';
+                    
+                    const row = `
+                        <tr>
+                            <td>${formatBG(record.timestamp)}</td>
+                            <td><strong>${stateText}</strong></td>
+                            <td>${sourceEmoji} ${record.source}</td>
+                            <td>${guestName}</td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += row;
+                });
+            } catch (e) {
+                console.error('[POWER HISTORY] Грешка:', e);
+                document.getElementById('powerHistoryBody').innerHTML = 
+                    '<tr><td colspan="4" style="text-align: center; color: var(--danger);">Грешка при зареждане</td></tr>';
+            }
         }
 
         /* =========================================
@@ -469,6 +537,10 @@
         // --- INIT ---
         loadBookings();
         loadPins();
+        loadPowerHistory();
+        
+        // Обновяване на историята всеки 30 секунди
+        setInterval(loadPowerHistory, 30000);
 
     </script>
 </body>
