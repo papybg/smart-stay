@@ -96,7 +96,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         message: message, 
-                        history: chatHistory 
+                        history: chatHistory,
+                        authCode: message
                     })
                 });
 
