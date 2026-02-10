@@ -215,36 +215,38 @@ app.get('/api/power-status', (req, res) => {
 // TELEGRAM CONTROL (Закомментирано - ще се активира с интеграция на бот)
 // ============================================================================
 /*
-// /**
-//  * POST /api/power-control
-//  * 🔌 Управление ток + Telegram команда
-//  */
-// app.post('/api/power-control', async (req, res) => {
-//     try {
-//         const { state } = req.body;
-//         if (typeof state !== 'boolean') {
-//             return res.status(400).json({ error: 'State е boolean' });
-//         }
-//         global.powerState.is_on = state;
-//         global.powerState.last_update = new Date();
-//         global.powerState.source = 'api';
-//         
-//         const command = state ? 'ВКЛ' : 'ИЗКЛ';
-//         const telegramSuccess = await sendTelegramCommand(command);
-//         console.log(`[POWER] 🔌 ${state ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН'}`);
-//         res.json({ success: true, state, telegramSent: telegramSuccess });
-//     } catch (error) {
-//         console.error('[POWER] 🔴 Грешка:', error.message);
-//         res.status(500).json({ error: 'Power error' });
-//     }
-// });
-*/
-
-/**
- * POST /api/power/status
- * 📱 Tasker интеграция - обновление статус + Tasker данни (status, device, battery)
- * Приема и батерия като число или Tasker переменна (например %BATT)
+ * POST /api/power-control
+ * 🔌 Управление ток + Telegram команда
+ *
+ * async function sendTelegramCommand(command) {
+ *     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+ *         console.warn('[TELEGRAM] ⚠️ Telegram не е конфигуриран');
+ *         return false;
+ *     }
+ *     try {
+ *         const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+ *         const response = await fetch(url, {
+ *             method: 'POST',
+ *             headers: { 'Content-Type': 'application/json' },
+ *             body: JSON.stringify({
+ *                 chat_id: TELEGRAM_CHAT_ID,
+ *                 text: `🤖 Smart Stay: ${command}`,
+ *                 parse_mode: 'HTML'
+ *             })
+ *         });
+ *         const success = response.ok;
+ *         console.log(`[TELEGRAM] ${success ? '✅' : '❌'} Команда: ${command}`);
+ *         return success;
+ *     } catch (e) {
+ *         console.error('[TELEGRAM] 🔴 Грешка:', e.message);
+ *         return false;
+ *     }
+ * }
  */
+
+// POST /api/power/status
+// 📱 Tasker интеграция - обновление статус + Tasker данни (status, device, battery)
+// Приема и батерия като число или Tasker переменна (например %BATT)
 app.post('/api/power/status', async (req, res) => {
     try {
         // Събери данни от Tasker
