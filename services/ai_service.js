@@ -28,7 +28,7 @@ import { sendCommandToPhone } from './autoremote.js';
  * @const {string[]} MODELS - Gemini модели в ред на отказ
  * Първичен модел, последван от каскадни отказни за надежност
  */
-const MODELS = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-3-flash-preview"];
+const MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3-flash-preview"];
 
 /**
  * @const {any} sql - Neon клиент на база данни за PostgreSQL заявки
