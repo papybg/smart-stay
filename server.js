@@ -51,8 +51,8 @@ const PORT = process.env.PORT || 10000;
 
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 // === ТЕЛЕГРАМ (Закомментирано за по-нататък) ===
-// const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-// const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || null;
 
 /**
  * 🌍 ГЛОБАЛНО СЪСТОЯНИЕ - Синхронизирано между всички компоненти
