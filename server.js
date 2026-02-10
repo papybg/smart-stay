@@ -51,8 +51,8 @@ const PORT = process.env.PORT || 10000;
 
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 // === ТЕЛЕГРАМ (Закомментирано за по-нататък) ===
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || null;
+// const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
+// const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || null;
 
 /**
  * 🌍 ГЛОБАЛНО СЪСТОЯНИЕ - Синхронизирано между всички компоненти
@@ -422,7 +422,7 @@ app.get('/api/bookings', async (req, res) => {
 // ============================================================================
 
 function initializeScheduler() {
-    if (!sql || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    if (!sql) {
         console.warn('[SCHEDULER] ⚠️ Липсват зависимости - Scheduler е ИЗКЛЮЧЕН');
         return;
     }
@@ -477,7 +477,7 @@ function initializeScheduler() {
 app.listen(PORT, async () => {
     console.log('\n🚀 SMART-STAY LEAN CONTROLLER STARTED');
     console.log(`   🌐 http://localhost:${PORT}`);
-    console.log(`   📤 Telegram: ${TELEGRAM_BOT_TOKEN ? '✅' : '⚠️'}`);
+    // console.log(`   📤 Telegram: ${TELEGRAM_BOT_TOKEN ? '✅' : '⚠️'}`);
     console.log(`   🗄️  Database: ${sql ? '✅' : '⚠️'}`);
     console.log(`   📅 Scheduler: Инициализиране...\n`);
     
