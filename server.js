@@ -50,8 +50,9 @@ const PORT = process.env.PORT || 10000;
 // ============================================================================
 
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+// === ТЕЛЕГРАМ (Закомментирано за по-нататък) ===
+// const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+// const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 /**
  * 🌍 ГЛОБАЛНО СЪСТОЯНИЕ - Синхронизирано между всички компоненти
@@ -68,7 +69,7 @@ global.powerState = {
 // ============================================================================
 
 /**
- * 📝 Създава power_history таблица при старт на сървъра
+ * 📝 Създава/актуализира power_history таблица със Tasker данни
  */
 async function initializeDatabase() {
     if (!sql) {
@@ -76,10 +77,14 @@ async function initializeDatabase() {
         return;
     }
     try {
+        // Създай таблица ако не съществува
         await sql`
             CREATE TABLE IF NOT EXISTS power_history (
                 id SERIAL PRIMARY KEY,
                 is_on BOOLEAN NOT NULL,
+                status VARCHAR(50),
+                device VARCHAR(100),
+                battery INT,
                 source VARCHAR(50),
                 timestamp TIMESTAMPTZ DEFAULT NOW(),
                 duration_seconds INT,
@@ -87,8 +92,22 @@ async function initializeDatabase() {
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
         `;
+        
+        // Добави нови колони ако не съществуват (для old databases)
+        try {
+            await sql`ALTER TABLE power_history ADD COLUMN status VARCHAR(50);`;
+        } catch (e) { /* колона вече съществува */ }
+        
+        try {
+            await sql`ALTER TABLE power_history ADD COLUMN device VARCHAR(100);`;
+        } catch (e) { /* колона вече съществува */ }
+        
+        try {
+            await sql`ALTER TABLE power_history ADD COLUMN battery INT;`;
+        } catch (e) { /* колона вече съществува */ }
+        
         await sql`CREATE INDEX IF NOT EXISTS idx_power_history_timestamp ON power_history(timestamp DESC);`;
-        console.log('[DB] ✅ power_history таблица готова');
+        console.log('[DB] ✅ power_history таблица готова (със Tasker данни)');
     } catch (error) {
         console.error('[DB] 🔴 Грешка при инициализация:', error.message);
     }
@@ -118,39 +137,40 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================================================
-// TELEGRAM ИНТЕГРАЦИЯ
+// TELEGRAM ИНТЕГРАЦИЯ (Закомментирано за по-нататък)
 // ============================================================================
-
-/**
- * 📤 Изпраща команда към Telegram бот
- * @async
- * @param {string} command - 'ВКЛ' или 'ИЗКЛ'
- * @returns {Promise<boolean>} True ако успешно
- */
-async function sendTelegramCommand(command) {
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-        console.warn('[TELEGRAM] ⚠️ Telegram не е конфигуриран');
-        return false;
-    }
-    try {
-        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: TELEGRAM_CHAT_ID,
-                text: `🤖 Smart Stay: ${command}`,
-                parse_mode: 'HTML'
-            })
-        });
-        const success = response.ok;
-        console.log(`[TELEGRAM] ${success ? '✅' : '❌'} Команда: ${command}`);
-        return success;
-    } catch (e) {
-        console.error('[TELEGRAM] 🔴 Грешка:', e.message);
-        return false;
-    }
-}
+/*
+// /**
+//  * 📤 Изпраща команда към Telegram бот
+//  * @async
+//  * @param {string} command - 'ВКЛ' или 'ИЗКЛ'
+//  * @returns {Promise<boolean>} True ако успешно
+//  */
+// async function sendTelegramCommand(command) {
+//     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+//         console.warn('[TELEGRAM] ⚠️ Telegram не е конфигуриран');
+//         return false;
+//     }
+//     try {
+//         const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+//         const response = await fetch(url, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({
+//                 chat_id: TELEGRAM_CHAT_ID,
+//                 text: `🤖 Smart Stay: ${command}`,
+//                 parse_mode: 'HTML'
+//             })
+//         });
+//         const success = response.ok;
+//         console.log(`[TELEGRAM] ${success ? '✅' : '❌'} Команда: ${command}`);
+//         return success;
+//     } catch (e) {
+//         console.error('[TELEGRAM] 🔴 Грешка:', e.message);
+//         return false;
+//     }
+// }
+*/
 
 // ============================================================================
 // ENDPOINTS
@@ -192,39 +212,55 @@ app.get('/api/power-status', (req, res) => {
     });
 });
 
-/**
- * POST /api/power-control
- * 🔌 Управление ток + Telegram команда
- */
-app.post('/api/power-control', async (req, res) => {
-    try {
-        const { state } = req.body;
-        if (typeof state !== 'boolean') {
-            return res.status(400).json({ error: 'State е boolean' });
-        }
-        global.powerState.is_on = state;
-        global.powerState.last_update = new Date();
-        global.powerState.source = 'api';
-        
-        const command = state ? 'ВКЛ' : 'ИЗКЛ';
-        const telegramSuccess = await sendTelegramCommand(command);
-        console.log(`[POWER] 🔌 ${state ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН'}`);
-        res.json({ success: true, state, telegramSent: telegramSuccess });
-    } catch (error) {
-        console.error('[POWER] 🔴 Грешка:', error.message);
-        res.status(500).json({ error: 'Power error' });
-    }
-});
+// ============================================================================
+// TELEGRAM CONTROL (Закомментирано - ще се активира с интеграция на бот)
+// ============================================================================
+/*
+// /**
+//  * POST /api/power-control
+//  * 🔌 Управление ток + Telegram команда
+//  */
+// app.post('/api/power-control', async (req, res) => {
+//     try {
+//         const { state } = req.body;
+//         if (typeof state !== 'boolean') {
+//             return res.status(400).json({ error: 'State е boolean' });
+//         }
+//         global.powerState.is_on = state;
+//         global.powerState.last_update = new Date();
+//         global.powerState.source = 'api';
+//         
+//         const command = state ? 'ВКЛ' : 'ИЗКЛ';
+//         const telegramSuccess = await sendTelegramCommand(command);
+//         console.log(`[POWER] 🔌 ${state ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН'}`);
+//         res.json({ success: true, state, telegramSent: telegramSuccess });
+//     } catch (error) {
+//         console.error('[POWER] 🔴 Грешка:', error.message);
+//         res.status(500).json({ error: 'Power error' });
+//     }
+// });
+*/
 
 /**
  * POST /api/power/status
- * 📱 Tasker интеграция - обновление статус + логване в история
+ * 📱 Tasker интеграция - обновление статус + Tasker данни (status, device, battery)
+ * Приема и батерия като число или Tasker переменна (например %BATT)
  */
 app.post('/api/power/status', async (req, res) => {
     try {
-        const { is_on, booking_id } = req.body;
+        // Събери данни от Tasker
+        let { is_on, booking_id, status, device, battery } = req.body;
         const prevState = global.powerState.is_on;
         const timestamp = new Date();
+        
+        // Валидирай и преобразувай battery (ако е строка като "%BATT", остави null)
+        let batteryValue = null;
+        if (battery && typeof battery === 'string') {
+            const parsed = parseInt(battery, 10);
+            batteryValue = isNaN(parsed) ? null : parsed; // Ако е "%BATT" или невалидно, стави null
+        } else if (typeof battery === 'number') {
+            batteryValue = battery;
+        }
         
         // Обновяване на глобално състояние
         global.powerState.is_on = !!is_on;
@@ -232,24 +268,40 @@ app.post('/api/power/status', async (req, res) => {
         global.powerState.source = 'tasker';
         
         console.log(`[TASKER] 📱 Статус: ${is_on ? 'ON' : 'OFF'} (от ${prevState ? 'ON' : 'OFF'})`);
+        if (status) console.log(`[TASKER] 📊 Status: ${status}`);
+        if (device) console.log(`[TASKER] 📱 Device: ${device}`);
+        if (batteryValue !== null) console.log(`[TASKER] 🔋 Battery: ${batteryValue}%`);
+        if (battery && batteryValue === null && battery.toString().startsWith('%')) {
+            console.log(`[TASKER] ⚠️ Battery е Tasker переменна: ${battery}`);
+        }
         
         // Логване в база данни ако има промяна на състоянието
         if (sql && prevState !== is_on) {
             try {
                 await sql`
-                    INSERT INTO power_history (is_on, source, timestamp, booking_id)
-                    VALUES (${is_on}, 'tasker', ${timestamp}, ${booking_id || null})
+                    INSERT INTO power_history (is_on, status, device, battery, source, timestamp, booking_id)
+                    VALUES (${is_on}, ${status || null}, ${device || null}, ${batteryValue}, 'tasker', ${timestamp}, ${booking_id || null})
                 `;
-                console.log('[DB] ✅ power_history записан');
+                console.log('[DB] ✅ power_history записан със Tasker данни');
             } catch (dbError) {
                 console.error('[DB] 🔴 Грешка при логване:', dbError.message);
             }
         }
         
-        res.status(200).send('OK');
+        res.status(200).json({ 
+            success: true, 
+            message: 'Статус получен и обработен',
+            received: { 
+                is_on, 
+                status, 
+                device, 
+                battery: batteryValue || battery, // Покажи оригинално ако е переменна
+                stateChanged: prevState !== is_on 
+            }
+        });
     } catch (error) {
         console.error('[TASKER] 🔴 Грешка:', error.message);
-        res.status(500).send('Error');
+        res.status(500).json({ error: error.message });
     }
 });
 

@@ -206,16 +206,33 @@ function isHostVerified(authCode, userMessage) {
     // ПРАВИЛО НА СИГУРНОСТ #1: ТОЧНО СЪОТВЕТСТВИЕ НА КОД НА ДОМАКИНА
     // НЕ използвайте .includes() - трябва да е 100% съответствие
     
+    // Проверка дали HOST_CODE е дефиниран
+    if (!HOST_CODE) {
+        console.error('[SECURITY] ❌ КРИТИЧНО: HOST_CODE не е конфигуран в Render environment');
+        return false;
+    }
+    
     console.log('[SECURITY] Верификация на домакина: проверявам authCode...');
-    if (authCode && authCode === HOST_CODE) {
-        console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: authCode съвпада точно с HOST_CODE');
-        return true;
+    // Нормализирай authCode за whitespace проблеми от JSON
+    if (authCode) {
+        const normalizedAuthCode = String(authCode).trim();
+        const normalizedHostCode = String(HOST_CODE).trim();
+        
+        console.log(`[SECURITY] DEBUG: authCode="${normalizedAuthCode}" (${normalizedAuthCode.length} знака)`);
+        console.log(`[SECURITY] DEBUG: HOST_CODE="${normalizedHostCode}" (${normalizedHostCode.length} знака)`);
+        
+        if (normalizedAuthCode === normalizedHostCode) {
+            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: authCode съвпада точно с HOST_CODE');
+            return true;
+        }
     }
 
     if (userMessage) {
         console.log('[SECURITY] Верификация на домакина: проверявам userMessage...');
         const trimmedMessage = String(userMessage).trim();
-        if (trimmedMessage === HOST_CODE) {
+        const normalizedHostCode = String(HOST_CODE).trim();
+        
+        if (trimmedMessage === normalizedHostCode) {
             console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: userMessage съвпада точно с HOST_CODE');
             return true;
         }
