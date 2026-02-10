@@ -12,8 +12,14 @@
 
 import axios from 'axios';
 
-// Твоят личен AutoRemote ключ (идентифицира телефона)
-const AR_KEY = process.env.AUTOREMOTE_KEY || "ezBgKKyplbw:APA91bFragO5EGz97gX7--T6_4hM8Ke33l_ycW_46ks3tGTUZoAyglhekPyMczmv6PBpFCvDIot1tjylhx-mgskkrVNXWRneOeu6I9JOW35qFd6jqyRpeqU";
+// Личен AutoRemote ключ - ЗАДЪЛЖИТЕЛНО В .env ФАЈЛ
+const AR_KEY = process.env.AUTOREMOTE_KEY;
+
+// Проверка дали ключа е зададен
+if (!AR_KEY) {
+    console.warn('[AUTOREMOTE] ⚠️ AUTOREMOTE_KEY не е зададен в environment variables!');
+    console.warn('[AUTOREMOTE] ⚠️ Командите към Tasker НЯМА ДА РАБОТЯТ');
+}
 
 /**
  * Изпраща команда към Tasker на телефона
@@ -23,6 +29,12 @@ const AR_KEY = process.env.AUTOREMOTE_KEY || "ezBgKKyplbw:APA91bFragO5EGz97gX7--
  * @returns {Promise<boolean>} True ако успешно изпратено
  */
 export async function sendCommandToPhone(command) {
+    // Ако ключа не е зададен, върни false
+    if (!AR_KEY) {
+        console.error('[AUTOREMOTE] ❌ Невозможно да се изпрати команда - AUTOREMOTE_KEY липсва');
+        return false;
+    }
+
     const url = 'https://autoremotejoaomgcd.appspot.com/sendmessage';
 
     try {

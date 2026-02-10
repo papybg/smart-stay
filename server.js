@@ -254,6 +254,47 @@ app.post('/api/power/status', async (req, res) => {
 });
 
 /**
+ * POST /api/meter
+ * 🔌 Управление на електромера от Tasker или админ панел
+ * Очаква: { "action": "on" } или { "action": "off" }
+ */
+app.post('/api/meter', async (req, res) => {
+    try {
+        const { action } = req.body;
+
+        // Валидирай action параметъра
+        if (action !== 'on' && action !== 'off') {
+            return res.status(400).json({ error: 'Невалидна действие. Очаква: "on" или "off"' });
+        }
+
+        // Преведи action към команда
+        const command = action === 'on' ? 'meter_on' : 'meter_off';
+        const willTurnOn = action === 'on';
+
+        console.log(`[METER API] 🎛️  Управление на ток: ${action.toUpperCase()}`);
+
+        // Изпрати команда към Tasker через AutoRemote
+        const success = await controlPower(willTurnOn);
+
+        if (success) {
+            res.status(200).json({ 
+                success: true, 
+                message: `Команда "${command}" изпратена към телефона`,
+                action: action 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                error: 'Неуспешна връзка с AutoRemote' 
+            });
+        }
+    } catch (error) {
+        console.error('[METER API] 🔴 Грешка:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
  * GET /api/power-history
  * 📊 Извличане на история на вкл/изкл на ток за дашборд
  */

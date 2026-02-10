@@ -1,46 +1,981 @@
-# Smart Stay - AI Rental Management 🏠🤖
+# 🏠 Smart Stay - AI Property Management System
 
-Интелигентна система за автоматизация на ваканционни имоти, управлявана от **Ико** – твоят виртуален иконом.
+**Интелигентна система за автоматизация на ваканционни имоти с Tasker, AutoRemote и AI асистент**
+
+---
+
+## 📋 Съдържание
+1. [Как работи](#-как-работи)
+2. [Технологичен стек](#-технологичен-стек)
+3. [Архитектура](#-архитектура)
+4. [Структура на проекта](#-структура-на-проекта)
+5. [Database Schema](#-database-schema)
+6. [API Endpoints](#-api-endpoints)
+7. [Features & Status](#-features--status)
+8. [Конфигурация](#-конфигурация)
+9. [Развиване & Deployment](#-развиване--deployment)
+
+---
 
 ## 🚀 Как работи?
 
-1. **AI Detective (Gmail Sync)**: Ико сканира Gmail на всеки 15 минути за нови потвърждения от Airbnb. Използва **Gemini 2.5 Flash**, за да извлече имената на гостите, датите и кодовете за резервация, след което ги записва в **Neon DB**.
-2. **Smart Power Control**: Системата автоматично включва тока в апартамента (през Tuya API) **2 часа преди** настаняването и го изключва **1 час след** напускането.
-3. **iCal Sync**: Генерира динамичен `/calendar.ics` файл, който се подава към Airbnb, за да предотврати грешки в синхронизацията.
-4. **Guest Chat**: Гостите могат да чатят с Ико, да получават своя ПИН за достъп и информация за престоя си в реално време.
+### Основен поток (Check-in/Check-out автоматизация)
+
+```
+1. GMAIL SYNC (Всеки 15 минути)
+   ├─ detective.js сканира Gmail за Airbnb потвърждения
+   ├─ Gemini AI извлича: име, дата check-in/out, резервационен код
+   └─ Данни се записват в Neon DB (bookings таблица)
+
+2. CRON SCHEDULER (Всеки 10 минути)
+   ├─ Проверява дали има гост за check-in (2 часа преди)
+   ├─ Ако ДА → Изпраща команда "meter_on" към Tasker
+   ├─ Проверява дали има гост за check-out (1 час след)
+   └─ Ако ДА → Изпраща команда "meter_off" към Tasker
+
+3. AUTOREMOTE → TASKER → SMART LIFE → TUYA
+   ├─ Backend (server.js) → AutoRemote (cloud service)
+   ├─ AutoRemote → Push notification към телефона
+   ├─ Tasker слуша за "meter_on"/"meter_off"
+   ├─ Tasker стартира Smart Life сцена
+   └─ Smart Life控制 Tuya Smart Switch (физично изключва/включва ток)
+
+4. FEEDBACK LOOP (Tasker → Backend)
+   ├─ Tasker изпраща POST /api/power/status със ново състояние
+   ├─ Backend обновява глобално состояние + логва в power_history
+   └─ Dashboard показва история в реално време
+
+5. GUEST SUPPORT (AI Assistant)
+   ├─ Гостите пишат чат съобщения (index.html)
+   ├─ AI (Gemini) анализира въпроса
+   ├─ Отговаря само с информация от manual.txt (SSoT)
+   └─ Може да управлява аварийни ситуации (болест, пожар, насилие)
+```
+
+---
 
 ## 🛠 Технологичен стек
 
-- **Backend**: Node.js, Express (Render)
-- **AI**: gemini-3.0-pro-preview", "gemini-flash-latest", "gemini-3-flash-preview"
-- **Database**: Neon (PostgreSQL)
-- **IoT**: TuyAPI (Tuya Smart Life)
-- **Integrations**: Gmail API, Google OAuth2
+| Компонент | Технология | Версия |
+|-----------|-----------|--------|
+| **Backend** | Node.js + Express | ^4.21.2 |
+| **Database** | PostgreSQL (Neon Cloud) | Serverless |
+| **AI** | Google Gemini Flash | Latest |
+| **Scheduling** | node-cron | ^4.2.1 |
+| **HTTP Client** | axios | ^1.13.4 |
+| **Email** | Gmail API + OAuth2 | googleapis ^144.0.0 |
+| **Push Notifications** | AutoRemote | Cloud |
+| **Phone Automation** | Tasker + AutoInput | Android |
+| **IoT Device** | Tuya Smart Switch | 220V |
+
+### Hosting Platforms
+- **Render.com** - Main Backend API
+- **Vercel** - Optional Frontend (static files)
+
+---
+
+## 🏗 Архитектура
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SMART STAY SYSTEM                             │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                    ┌───────────┼───────────┐
+                    ▼           ▼           ▼
+            ┌─────────────┐ ┌────────────┐ ┌──────────────┐
+            │ server.js   │ │ai_service  │ │autoremote.js │
+            │ (Express)   │ │(Gemini AI) │ │(Phone cmd)   │
+            └──────┬──────┘ └──────┬─────┘ └───────┬──────┘
+                   │              │               │
+        ┌──────────┴──────────┬───┴──────┬────────┴─────────┐
+        ▼                     ▼          ▼                  ▼
+    ┌────────────┐      ┌───────────┐  ┌──────────────┐ ┌──────────┐
+    │ HTTP/REST  │      │   Gmail   │  │ AutoRemote   │ │ Neon DB  │
+    │ (Guest API)│      │  (OAuth2) │  │  (Cloud)     │ │(Postgres)│
+    └──────┬─────┘      └─────┬─────┘  └──────┬───────┘ └────┬─────┘
+           │                  │               │             │
+    ┌──────▼──────┐    ┌──────▼──────┐  ┌────▼──────────┐  │
+    │ Dashboard   │    │ Detective   │  │ Tasker        │  │
+    │ (HTML/JS)   │    │ (Gmail Sync)│  │ (Android)     │  │
+    └─────────────┘    └─────────────┘  │               │  │
+                                         │  ┌──────────┐ │  │
+                                         │  │AutoInput │ │  │
+                                         │  │(UI Auto) │ │  │
+                                         │  └────┬─────┘ │  │
+                                         │       ▼       │  │
+                                         │  ┌─────────┐  │  │
+                                         └──│Smart Life  │  │
+                                            └────┬──────┘  │
+                                                 ▼         │
+                                         ┌─────────────────┘
+                                         ▼
+                                    ┌─────────────┐
+                                    │  Tuya Smart │
+                                    │   Switch    │
+                                    │  220V Power │
+                                    └─────────────┘
+```
+
+### Данни flow
+```
+Gmail (Airbnb) → detective.js → Gemini AI → DB (bookings)
+                                    ↓
+                            Cron Scheduler
+                                    ↓
+                        Check-in/Check-out?
+                             ↙            ↘
+                        ДА              НЕ
+                        ↓                ↓
+                   autoremote.js    (чакане)
+                        ↓
+                  AutoRemote API
+                        ↓
+                  Tasker (phone)
+                        ↓
+                  Smart Life (UI)
+                        ↓
+                  Tuya Device ← ↘
+                        ↓        ↓
+                  Power ON/OFF  AutoInput (tap automation)
+                        ↓
+                   POST /api/power/status
+                        ↓
+                   power_history (DB logging)
+                        ↓
+                   Dashboard (live visualization)
+```
+
+---
 
 ## 📂 Структура на проекта
 
-- `server.js`: Основен сървър, API маршрути и автоматизация на тока.
-- `services/detective.js`: AI логика за сканиране на имейли и извличане на данни.
-- `public/index.html`: Чат интерфейс за гостите.
-- `public/admin.html`: Админ панел за управление на резервациите.
-- `public/remote.html`: Дистанционно управление на тока.
+```
+smart-stay/
+├── server.js                    # Express API мост + Cron scheduler
+├── package.json                 # Dependencies
+├── .env                         # Environment variables (local)
+│
+├── services/
+│   ├── ai_service.js           # Gemini AI + Manual базирана система
+│   ├── detective.js            # Gmail sync + Airbnb detection
+│   ├── autoremote.js           # AutoRemote → Tasker комуникация
+│   ├── manual-private.txt      # Property info (за гостите)
+│   └── manual-public.txt       # General knowledge (за всички)
+│
+├── public/
+│   ├── index.html              # Guest chat interface (Ико асистент)
+│   ├── dashboard.html          # Admin panel + Power history
+│   ├── remote.html             # Manual power control interface
+│   ├── aaadmin.html            # Legacy admin panel
+│   └── dddesign.html           # UI design reference
+│
+├── README.md                    # Original README
+├── README_CURRENT.md           # This file (detailed current state)
+└── [cache files]
 
-## ⚙️ Маршрути (Endpoints)
+```
 
-- `POST /api/chat` - Комуникация с Ико.
-- `GET /bookings` - Списък с резервации (Admin).
-- `POST /add-booking` - Ръчно добавяне на гост (Admin).
-- `GET /status` - Проверка на състоянието на тока (Remote).
-- `GET /toggle` - Ръчно превключване на тока (Remote).
-- `GET /calendar.ics` - iCal календар за Airbnb.
+### Ключови файлове
 
-## 🔑 Environment Variables (Render)
+#### `server.js` (394 lines)
+- Express API мост
+- Глобално управление на ток статус
+- Cron scheduler за check-in/check-out
+- Endpoints за API
 
-Добавете следните ключове в настройките на Render:
+#### `services/ai_service.js` (1000+ lines) - **НЕЗАВИСИМ МОДУЛ**
+- ⚡ **ВАЖНО:** AI логиката е напълно отделена от сървъра!
+- Gemini Flash AI интеграция
+- Intelligent mode: различни отговори за property vs general knowledge
+- Medical emergency detection (болест, травма, пожар, насилие)
+- Manual-based single source of truth (SSoT)
+- Character management (Ико персонаж)
+- Работи асинхронно (await getAIResponse) - не блокира сървъра
 
-- `DATABASE_URL` (Neon Postgres)
-- `GEMINI_API_KEY` (Google AI Studio)
-- `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
-- `TUYA_DEVICE_ID`, `TUYA_LOCAL_KEY`, `TUYA_DEVICE_IP`
+#### `services/detective.js`
+- Gmail API интеграция
+- Airbnb detection (парсира потвърждения)
+- автоматично добавяне в базата
 
-Разработено от PapyBG.
+#### `services/autoremote.js` (63 lines)
+- HTTP запитване към AutoRemote облак
+- Преводи `meter_on`/`meter_off` команди
+- Retry логика и error handling
+
+---
+
+## 🗄 Database Schema
+
+### Таблица: `bookings`
+```sql
+CREATE TABLE bookings (
+    id SERIAL PRIMARY KEY,
+    reservation_code VARCHAR(50) UNIQUE NOT NULL,  -- HMA1234567
+    guest_name VARCHAR(100) NOT NULL,              -- "John Doe"
+    check_in TIMESTAMP WITH TIME ZONE NOT NULL,    -- 2026-02-20 19:30:00
+    check_out TIMESTAMP WITH TIME ZONE NOT NULL,   -- 2026-02-22 14:00:00
+    lock_pin VARCHAR(20),                          -- "9590" за брава
+    payment_status VARCHAR(20) DEFAULT 'pending',  -- paid/pending
+    power_on_time TIMESTAMP,                       -- 2 часа преди check-in
+    power_off_time TIMESTAMP,                      -- 1 час след check-out
+    source VARCHAR(20) DEFAULT 'airbnb',           -- airbnb/manual
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Таблица: `power_history` (ново)
+```sql
+CREATE TABLE power_history (
+    id SERIAL PRIMARY KEY,
+    is_on BOOLEAN NOT NULL,                        -- true=ВКЛ, false=ИЗКЛ
+    source VARCHAR(50),                            -- tasker/cron/guest/emergency
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    duration_seconds INT,                          -- как дълго е била в това състояние
+    booking_id INT REFERENCES bookings(id),        -- кой гост
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_power_history_timestamp ON power_history(timestamp DESC);
+```
+
+### Таблица: `pins` (управление на брава кодове)
+```sql
+CREATE TABLE pins (
+    id SERIAL PRIMARY KEY,
+    pin_code VARCHAR(20) UNIQUE NOT NULL,          -- "123456"
+    pin_name VARCHAR(100),                         -- "User 5"
+    is_used BOOLEAN DEFAULT FALSE,                 -- дали е използван
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Таблица: `guests_chats` (opcional - при реализация на persistent chat)
+```sql
+CREATE TABLE guest_chats (
+    id SERIAL PRIMARY KEY,
+    guest_id INT REFERENCES bookings(id),
+    message TEXT,
+    sender VARCHAR(20),  -- 'guest' или 'ai'
+    timestamp TIMESTAMP DEFAULT NOW()
+);
+```
+
+---
+
+## 🔌 API Endpoints
+
+### 🔵 Chat & AI Assistant
+
+#### `POST /api/chat`
+Комуникация с Ико асистент
+```bash
+curl -X POST http://localhost:10000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Как включвам климатика?",
+    "guestInfo": {"guest_name": "John", "check_in": "2026-02-20"},
+    "context": "property_info"
+  }'
+
+Response:
+{
+  "reply": "Климатикът се управлява от приложението Smart Life...",
+  "source": "manual",
+  "emergency": false
+}
+```
+
+### 🟢 Power Control
+
+#### `POST /api/power/status` (Tasker feedback)
+Получава обратна връзка от Tasker за текущо състояние
+```bash
+curl -X POST http://localhost:10000/api/power/status \
+  -H "Content-Type: application/json" \
+  -d '{"is_on": true, "booking_id": 5}'
+
+Response: 200 OK
+```
+
+#### `GET /api/power-status`
+Проверка на текущо състояние на тока
+```bash
+curl http://localhost:10000/api/power-status
+
+Response:
+{
+  "is_on": true,
+  "last_update": "2026-02-10T15:45:30.000Z",
+  "source": "tasker",
+  "last_switch": "5 minutes ago"
+}
+```
+
+#### `GET /api/power-history`
+История на всички включвания/изключвания
+```bash
+# Последния месец
+curl http://localhost:10000/api/power-history?days=30
+
+# Последния ден
+curl http://localhost:10000/api/power-history?days=1
+
+Response:
+{
+  "count": 12,
+  "data": [
+    {
+      "id": 45,
+      "is_on": false,
+      "source": "cron",
+      "timestamp": "2026-02-10T14:00:00Z",
+      "booking_id": 5,
+      "created_at": "2026-02-10T14:00:15Z"
+    },
+    ...
+  ],
+  "period": {
+    "since": "2026-01-10T...",
+    "until": "2026-02-10T..."
+  }
+}
+```
+
+### 🟡 Bookings Management
+
+#### `GET /bookings`
+Всички резервации (за админ панел)
+```bash
+curl http://localhost:10000/bookings
+
+Response:
+[
+  {
+    "id": 33,
+    "reservation_code": "HM2026JAN29",
+    "guest_name": "John Doe",
+    "check_in": "2026-01-30T19:30:00Z",
+    "check_out": "2026-01-31T14:00:00Z",
+    "lock_pin": "9590",
+    "payment_status": "paid",
+    "source": "airbnb"
+  },
+  ...
+]
+```
+
+#### `POST /api/bookings` (Manual добавяне)
+```bash
+curl -X POST http://localhost:10000/api/bookings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "guest_name": "Jane Smith",
+    "check_in": "2026-02-15T10:00:00Z",
+    "check_out": "2026-02-17T11:00:00Z",
+    "reservation_code": "HM999999"
+  }'
+```
+
+### 🔑 PIN/Lock Codes (pin_depot)
+
+#### `GET /api/pins`
+Всички PIN кодове за брава
+```bash
+curl http://localhost:10000/api/pins
+
+Response:
+[
+  {
+    "id": 1,
+    "pin_code": "9590",
+    "pin_name": "User 5",
+    "is_used": true,
+    "created_at": "2026-02-01T..."
+  },
+  ...
+]
+```
+
+#### `POST /api/pins`
+Добавяне на нов PIN код
+```bash
+curl -X POST http://localhost:10000/api/pins \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pin_name": "Guest Room",
+    "pin_code": "123456"
+  }'
+```
+
+#### `DELETE /api/pins/{id}`
+Изтриване на PIN код
+```bash
+curl -X DELETE http://localhost:10000/api/pins/1
+```
+
+### 📅 Calendar
+
+#### `GET /calendar.ics`
+iCal формат за Airbnb синхронизация
+```bash
+curl http://localhost:10000/calendar.ics
+```
+
+### 📡 Misc
+
+#### `GET /status` (Health check)
+```bash
+curl http://localhost:10000/status
+
+Response:
+{
+  "online": true,
+  "isOn": true,
+  "lastUpdate": "2026-02-10T...",
+  "source": "tasker"
+}
+```
+
+---
+
+## ✨ Features & Status
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| ✅ Gmail автоматична синхронизация | DONE | Всеки 15 минути |
+| ✅ AI Assistant (Gemini) | DONE | Intelligent mode със SSoT |
+| ✅ Автоматичен check-in контрол | DONE | 2 часа преди |
+| ✅ Автоматичен check-out контрол | DONE | 1 час след |
+| ✅ AutoRemote интеграция | DONE | Phone push commands |
+| ✅ Tasker слушане | DONE | `meter_on`/`meter_off` |
+| ✅ Power history logging | DONE | Всяка промяна логвана |
+| ✅ Dashboard visualization | DONE | История в таблица |
+| ✅ pin_depot (брава кодове) | DONE | CRUD операции |
+| ✅ Guest chat интерфейс | DONE | index.html |
+| ✅ Admin dashboard | DONE | dashboard.html |
+| ✅ Emergency detection | DONE | Medical + fire + violence |
+| 🟡 SMS уведомления | PENDING | Nodemailer ready |
+| 🟡 Persistent chat history | PENDING | Needs guest_chats table |
+| 🔴 Mobile app | NOT PLANNED | Web-only solution |
+| 🔴 Tuya API direct | NOT USED | Too expensive + Tasker can't control |
+
+---
+
+## ⚙️ Конфигурация
+
+### Environment Variables (.env)
+
+```bash
+# === SERVER ===
+PORT=10000
+NODE_ENV=production
+
+# === DATABASE (Neon PostgreSQL) ===
+DATABASE_URL=postgresql://user:pass@ep-xxxx.neon.tech/neondb?sslmode=require
+
+# === AI (Google Gemini) ===
+GEMINI_API_KEY=AIzaSyD...
+
+# === EMAIL (Gmail OAuth2) ===
+GMAIL_CLIENT_ID=xxx...
+GMAIL_CLIENT_SECRET=xxx...
+GMAIL_REFRESH_TOKEN=xxx...
+
+# === MESSAGING (Telegram) ===
+TELEGRAM_BOT_TOKEN=123456:ABC...
+TELEGRAM_CHAT_ID=987654
+
+# === PHONE CONTROL (AutoRemote) ===
+AUTOREMOTE_KEY=ezBgKK...
+
+# === OPTIONAL: Tuya (НЕ ИЗПОЛЗВАМ) ===
+# TUYA_ACCESS_ID=...
+# TUYA_ACCESS_SECRET=...
+# TUYA_DEVICE_ID=... (Power Switch)
+# TUYA_LOCK_ID=... (Smart Lock)
+```
+
+### Local Development (.env.local)
+```bash
+DATABASE_URL=postgresql://localhost/smart_stay_dev
+PORT=3000
+GEMINI_API_KEY=test_key
+# Осталите без стойност за локално тестване
+```
+
+---
+
+## 🚀 Развиване & Deployment
+
+### Local Development
+
+```bash
+# Install dependencies
+npm install
+
+# Create .env file with local variables
+cp .env.example .env
+
+# Start server
+npm start
+
+# Server běhá на http://localhost:10000
+```
+
+#### Тестване на endpoints локално
+
+```bash
+# Test chat endpoint
+curl -X POST http://localhost:10000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Hello","guestInfo":{"guest_name":"Test"}}'
+
+# Test power status
+curl http://localhost:10000/api/power-status
+
+# Test bookings
+curl http://localhost:10000/bookings
+
+# Test power history
+curl http://localhost:10000/api/power-history?days=7
+
+# Simulate Tasker feedback
+curl -X POST http://localhost:10000/api/power/status \
+  -H "Content-Type: application/json" \
+  -d '{"is_on":true,"booking_id":null}'
+```
+
+### Production Deployment (Render)
+
+1. **Prepare Render project:**
+   ```
+   Service Type: Web Service
+   Language: Node
+   Build Command: npm install
+   Start Command: npm start
+   ```
+
+2. **Set environment variables in Render dashboard:**
+   - DATABASE_URL (Neon connection string)
+   - GEMINI_API_KEY
+   - GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN
+   - TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+   - AUTOREMOTE_KEY
+   - NODE_ENV=production
+   - PORT=10000
+
+3. **Deploy:**
+   ```bash
+   git push origin main
+   # Render автоматично деплойва
+   ```
+
+4. **Verify deployment:**
+   ```bash
+   curl https://smart-stay-api.onrender.com/status
+   ```
+
+### Using Vercel (Static Frontend - Optional)
+
+```bash
+# Deploy only public/ folder to Vercel
+vercel --prod
+
+# Update API_URL in frontend to point to Render
+# const API = 'https://smart-stay-api.onrender.com'
+```
+
+---
+
+## 🧠 AI Architecture (Отделна система)
+
+### Разделяне на отговорност
+
+```
+┌─────────────────────────────────────────────┐
+│           server.js (HTTP Мост)             │
+│  - Прослушва POST /api/chat заявки          │
+│  - Валидира input                           │
+│  - Изпраща request към AI модула            │
+│  - Връща response към клиента               │
+└─────────────┬───────────────────────────────┘
+              │ await getAIResponse()
+              ▼
+┌─────────────────────────────────────────────┐
+│      ai_service.js (Мозък на системата)    │
+│  - Gemini AI интеграция                     │
+│  - Manual базирана SSoT                     │
+│  - Emergency detection                      │
+│  - Character personality (Ико)              │
+│  - Context aware responses                  │
+│  - Completely independent от HTTP           │
+└─────────────────────────────────────────────┘
+              │ return { reply, source, emergency }
+              ▼
+```
+
+### Преимущества на отделяне
+
+✅ **Независимост** - AI работи без HTTP зависимости
+✅ **Асинхронност** - Не блокира други заявки към сървъра
+✅ **Лесна подмяна** - Может да замениш Gemini с друго AI без промяна на server.js
+✅ **Тестваемост** - Можеш да тестваш AI отделно
+✅ **Масштабируемост** - AI може да работи на отделен процес/сървър
+✅ **Чистота на кода** - server.js е просто мост, не бизнес логика
+
+### AI независимост
+
+```javascript
+// server.js просто пропълхва данни:
+app.post('/api/chat', async (req, res) => {
+    const response = await getAIResponse(message, context);
+    res.json(response);
+});
+
+// ai_service.js е напълно независим:
+export async function getAIResponse(message, guestInfo, context) {
+    // Читай manual.txt (локалноот fs)
+    // Проверй emergency условия
+    // Вик Gemini AI
+    // Върни структуриран response
+    // ВСИЧКО тук, без HTTP или server логика
+}
+```
+
+---
+
+## 📋 TODO - Незавършено до окончателен проект
+
+### 🟥 КРИТИЧНИ (Нужни за работа)
+
+- [ ] **psql инсталация** - Създаване на power_history таблица в Neon
+  - Сървъра пытается да я създаде на старт, но трябва manual проверка
+  
+- [ ] **Tasker конфигурация** - Setup на Android phone
+  - Инсталирай: Tasker, AutoRemote, AutoInput, Smart Life
+  - Създай profiles за meter_on/meter_off
+  - Test POST към /api/power/status
+  
+- [ ] **AutoRemote ключ верификация** - AUTOREMOTE_KEY в .env
+  - Проверяй дали ключа работи
+  - Test: `curl https://autoremotejoaomgcd.appspot.com/sendmessage?key=YOUR_KEY&message=test`
+
+- [ ] **Tuya Smart Life сцени** - Създай OFF и ON сцени
+  - OFF сцена: изключва тока
+  - ON сцена: включва тока
+  - Test всяка сцена ръчно преди AutoInput integration
+
+- [ ] **Gmail OAuth2 refresh токен** - GMAIL_REFRESH_TOKEN в .env
+  - Генерирай нов refresh token от Google Cloud Console
+  - Test детектив функцията
+
+### 🟡 ВАЖНИ (Функционални)
+
+- [ ] **Smart Life AutoInput координати** - Намери точни позиции на бутоните
+  - Скрийнширни на Smart Life при ON и OFF сцена
+  - Запиши координати: x, y за ON/OFF бутон
+  - Обнови в Tasker автоматизацията
+  
+- [ ] **Database pins таблица** - Проверка дали съществува
+  - Query: `SELECT * FROM pins;`
+  - Ако не, createTable при server старт (като power_history)
+  
+- [ ] **Guest PIN система** - Интеграция с ключалката
+  - Генериране на нови PIN при check-in
+  - Отправяне на PIN към гост (SMS/Email - TODO)
+  - Управление на използвани vs неиспользувани кодове
+
+- [ ] **SMS/Email уведомления** - Уведомяване на гостите
+  - Изпрати PIN код при arrival
+  - Изпрати check-out напомняне
+  - Изпрати emergency alert ако има проблем
+  - Nodemailer е инсталиран, нужна е конфигурация
+
+- [ ] **Persistent chat history** - Съхранение на разговори
+  - Създай `guest_chats` таблица
+  - Store всеки chat message с timestamp
+  - Allow guests да видят history на техния stay
+
+### 🟠 ДОПЪЛНЕНИ (Полезни за production)
+
+- [ ] **Monitoring & Alerting** - Real-time дашбор на системата
+  - Status page на всеки компонент
+  - Alert quando AutoRemote/Tasker фейлват
+  - Email/SMS на admin при грешки
+  
+- [ ] **Backup & Recovery** - Защита на данните
+  - Regular database backups
+  - Disaster recovery план
+  - Manual override за ток контрол
+  
+- [ ] **Analytics & Reporting** - Статистики
+  - Power consumption graphs
+  - Guest satisfaction metrics
+  - Revenue tracking per booking
+  - Maintenance schedule tracking
+  
+- [ ] **Multi-property support** - Разширение
+  - Support за повече от един апартамент
+  - Отделни schedules и PIN кодове
+  - Property selector в dashboard
+  
+- [ ] **Advanced AI Features** - Умни функции
+  - Context learning (запомня гост preferences)
+  - Multi-language support
+  - Sentiment analysis (разбира ако гостът е недоволен)
+  - Automatic issue escalation
+  
+- [ ] **Mobile Web Optimization** - Responsive design
+  - Test dashboard на mobile
+  - Guest chat interface за mobile
+  - Power control quick action
+
+### 🔵 PRODUCTION (Deployment ready)
+
+- [ ] **Environment validation** - Проверка преди deploy
+  - .env verification script
+  - Database connection test
+  - API endpoint testing
+  - All env variables present
+  
+- [ ] **Error handling improvement** - Graceful failures
+  - Better error messages за клиента
+  - Fallback mechanisms
+  - Retry logic със exponential backoff
+  
+- [ ] **Performance optimization** - Speed & efficiency
+  - Database query optimization
+  - Caching за manual.txt (не читај всеки път)
+  - Rate limiting за API endpoints
+  - Connection pooling за DB
+  
+- [ ] **Security hardening** - Защита
+  - Input validation & sanitization
+  - SQL injection prevention (вече ползваш neon prepared statements ✅)
+  - XSS protection в frontend
+  - CORS configuration review
+  - Rate limiting на chat API
+  
+- [ ] **Logging improvement** - Logging best practices
+  - Structured logging (JSON format)
+  - Log levels (debug, info, warn, error)
+  - Log rotation & archival
+  - Centralized log monitoring (Papertrail или similarно)
+  
+- [ ] **Documentation** - Документиране
+  - API documentation (Swagger/OpenAPI)
+  - Deployment guide
+  - Troubleshooting guide
+  - Contributing guidelines
+
+---
+
+## 🎯 Приоритет за завършване
+
+### Phase 1: CORE FUNCTIONALITY (В момента)
+```
+1. ✅ AutoRemote + Tasker integration (DONE)
+2. ✅ Power history logging (DONE) 
+3. ⏳ Tasker phone setup (IN PROGRESS - USER)
+4. ⏳ Smart Life сцени creation (IN PROGRESS - USER)
+5. ⏳ AutoInput координати (IN PROGRESS - USER)
+```
+
+### Phase 2: USER EXPERIENCE (Next)
+```
+1. Guest PIN система - SMS/Email доставка
+2. Persistent chat history
+3. Mobile responsive dashboard
+4. Power history visualization (graph)
+```
+
+### Phase 3: PRODUCTION (After testing)
+```
+1. Environment validation
+2. Security hardening
+3. Performance optimization
+4. Monitoring & alerting
+5. Database backups
+```
+
+### Phase 4: ADVANCED (Future)
+```
+1. Multi-property support
+2. Advanced AI features
+3. Analytics & reporting
+4. Mobile app
+```
+
+---
+
+
+
+### 1. Install Required Apps
+- **Tasker** - Task automation
+- **AutoRemote** - Push notifications (by João Dias)
+- **AutoInput** - UI automation
+- **Smart Life** - Tuya device control
+
+### 2. Create AutoRemote Profile in Tasker
+```
+Profile: "AutoRemote Listener"
+Event → System → AutoRemote (Add Plugin) → Listen
+Variable: %ar_message (contains the command)
+
+Linked Tasks:
+- IF %ar_message ~ meter_on → Task "Turn Power ON"
+- IF %ar_message ~ meter_off → Task "Turn Power OFF"
+```
+
+### 3. Create "Turn Power ON" Task
+```
+Actions:
+1. Variable Set: %command = meter_on
+2. AutoInput Tap: [Smart Life button position for ON scene]
+3. HTTP POST: 
+   URL: https://smart-stay-api.onrender.com/api/power/status
+   Body: {"is_on": true}
+   Headers: Content-Type: application/json
+4. Toast: "Ток ВКЛ ✅"
+```
+
+### 4. Create "Turn Power OFF" Task
+```
+Actions:
+1. Variable Set: %command = meter_off
+2. AutoInput Tap: [Smart Life button position for OFF scene]
+3. HTTP POST:
+   URL: https://smart-stay-api.onrender.com/api/power/status
+   Body: {"is_on": false}
+   Headers: Content-Type: application/json
+4. Toast: "Ток ИЗКЛ ❌"
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### AutoRemote не работи
+- ✅ Проверя дали AUTOREMOTE_KEY е верен в .env
+- ✅ AutoRemote app е отворен на телефона?
+- ✅ Интернет връзка е налична?
+- ✅ Проверяй logs: `[AUTOREMOTE]` в консола
+
+### Tasker не получава команди
+- ✅ Дали AutoRemote Profile е активен?
+- ✅ Дали %ar_message условието е правилно?
+- ✅ Проверяй AutoRemote история на команди
+
+### Power history не се логва
+- ✅ Дали DATABASE_URL е верен?
+- ✅ Дали power_history таблица съществува?
+- ✅ Проверяй `[DB]` логове в консола
+
+### Gmail sync не работи
+- ✅ Дали OAuth2 токените са свежи?
+- ✅ Дали Gmail акаунт е верен?
+- ✅ Проверяй `[DETECTIVE]` логове
+
+### AI отговара неправилно
+- ✅ Дали manual.txt има информацията?
+- ✅ Дали GEMINI_API_KEY е верен?
+- ✅ Проверяй AI response в Dashboard
+
+---
+
+## 📊 Monitoring & Logging
+
+### Console Output Format
+
+```
+[TASKER] 📱 Статус: ON (от OFF)
+[DB] ✅ power_history записан
+[AUTOREMOTE] 📤 Изпращам команда към Tasker: meter_on
+[DETECTIVE] 🔍 Сканиране на имейли...
+[SCHEDULER] ⏰ CHECK-IN за John Doe в 120 минути
+[ALERT] 🚨 EMERGENCY: болен гост!
+[API] 🟢 POST /api/chat 200 OK
+```
+
+### Key Logs to Monitor
+
+1. **[SCHEDULER]** - Cron job проверки
+2. **[AUTOREMOTE]** - Phone command status
+3. **[DB]** - Database операции
+4. **[DETECTIVE]** - Email sync status
+5. **[ALERT]** - Emergency situations
+6. **[TASKER]** - Feedback от телефона
+
+---
+
+## 🔐 Security Notes
+
+⚠️ **ВАЖНО:**
+- `.env` файла никога НЕ пушай в Git
+- AutoRemote ключа е личен - пази го!
+- Gmail OAuth2 токени са чувствителни данни
+- Database connection string е конфиденциален
+
+✅ **Best Practices:**
+- Ползвай environment variables за всички secrets
+- Render dashboard има secure storage за variables
+- Never commit secrets in code
+- Rotate OAuth tokens периодично
+
+---
+
+## 📝 Future Improvements
+
+1. **Database Persistence for Chat History**
+   - Създай `guest_chats` таблица
+   - Store conversation history per booking
+
+2. **SMS Notifications**
+   - Twilio or Nodemailer integration
+   - Notify guests on check-in/power issues
+
+3. **Mobile App**
+   - React Native for iOS/Android
+   - Real-time notifications
+
+4. **Advanced Analytics**
+   - Power consumption graphs
+   - Guest satisfaction metrics
+   - Revenue tracking
+
+5. **Multi-Property Support**
+   - Support multiple apartments
+   - Separate schedules per property
+
+6. **Webhook System**
+   - Custom integrations
+   - Third-party automation
+
+---
+
+## 👤 Contributors
+
+- **PapyBG** - Original creator
+- **Latest Updates** - February 2026 (Smart Power Control + AutoRemote)
+
+---
+
+## 📄 License
+
+Private project - Smart Stay Property Management System
+
+---
+
+## 📞 Support
+
+For issues or questions:
+1. Check troubleshooting section
+2. Review console logs with `[TAG]` filters
+3. Check `.env` configuration
+4. Verify database connectivity
+
+---
+
+**Last Updated:** February 10, 2026
+**Version:** 2.1 (AutoRemote + Power History + Dashboard)
