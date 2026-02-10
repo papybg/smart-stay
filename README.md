@@ -11,9 +11,10 @@
 4. [Структура на проекта](#-структура-на-проекта)
 5. [Database Schema](#-database-schema)
 6. [API Endpoints](#-api-endpoints)
-7. [Features & Status](#-features--status)
-8. [Конфигурация](#-конфигурация)
-9. [Развиване & Deployment](#-развиване--deployment)
+7. [🔐 SESSION TOKEN Authentication](#-session-token-authentication)
+8. [Features & Status](#-features--status)
+9. [Конфигурация](#-конфигурация)
+10. [Развиване & Deployment](#-развиване--deployment)
 
 ---
 
@@ -436,6 +437,137 @@ Response:
   "source": "tasker"
 }
 ```
+
+---
+
+## 🔐 SESSION TOKEN Authentication
+
+**Status:** ✅ Fully Implemented (Feb 10, 2026)
+
+### Overview
+The system now uses **SESSION TOKEN** authentication for improved security and user experience. Users log in once and maintain access for **30 minutes** without re-entering passwords.
+
+### Authentication Flow
+
+#### 1️⃣ Login
+```bash
+POST /api/login
+Content-Type: application/json
+
+{
+  "password": "YOUR_HOST_CODE"
+}
+
+Response (200):
+{
+  "success": true,
+  "token": "a3f8b2c1e9d4f7a6b3e2d8c1f4a7b2e9d3c6f1a4e7b0d2c5f8a1b3d6e9f2a",
+  "expiresIn": 1800,
+  "role": "host",
+  "message": "Разбрах! Влезте успешно."
+}
+```
+
+#### 2️⃣ Send Message (with Token)
+```bash
+POST /api/chat
+Content-Type: application/json
+
+{
+  "message": "спри тока",
+  "history": [],
+  "token": "a3f8b2c1..."  ← TOKEN (not password!)
+}
+
+Response:
+{
+  "response": "Токът е прекъснат..."
+}
+```
+
+#### 3️⃣ Logout
+```bash
+POST /api/logout
+Content-Type: application/json
+
+{
+  "token": "a3f8b2c1..."
+}
+
+Response:
+{
+  "success": true
+}
+```
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Token Duration** | 30 minutes per session |
+| **Token Format** | 64-character hexadecimal (cryptographically random) |
+| **Storage** | Browser localStorage + Server-side Map |
+| **Expiration** | Automatic (background cleanup every 5 min) |
+| **Logout** | Immediate token invalidation |
+| **Backward Compat** | Old password auth still works |
+
+### Browser Storage (localStorage)
+
+```javascript
+// After successful login:
+localStorage['smart-stay-token'] = "a3f8b2c1..."  // 64-char hex
+localStorage['smart-stay-expiry'] = 1708790500000  // Unix timestamp
+```
+
+### Session Timeline Example
+
+```
+10:00:00 - User opens app → LOGIN MODAL
+10:00:15 - User enters password → Token generated
+10:00:30 - User: "спри тока" → Message sent with TOKEN
+10:05:00 - User: "Как е WiFi?" → Still same TOKEN (valid)
+10:15:00 - User: "Още един тест" → Still same TOKEN (valid)
+10:30:00 - TOKEN EXPIRES (30 min elapsed)
+10:30:30 - User tries to send message → LOGIN MODAL appears again
+```
+
+### User Experience
+
+| Action | Before | After |
+|--------|--------|-------|
+| **First visit** | Chat visible | Login modal appears |
+| **Password** | Sent with each message | Sent once at login |
+| **Each message** | Requires auth check | Uses cached token |
+| **Page refresh** | Works (stateless) | Session persists |
+| **Logout** | No option | One-click logout |
+| **30 minutes** | Never happens | Auto re-login prompt |
+
+### Security Improvements
+
+✅ **Password Protection**
+- Password sent ONLY at login (1 time)
+- NOT sent with every message
+- Cannot appear in chat history
+
+✅ **Token Security**
+- Cryptographically random (64 hex chars)
+- Expires after 30 minutes
+- Server validates on every request
+- Immediate invalidation on logout
+
+✅ **Automatic Cleanup**
+- Expired tokens removed every 5 minutes
+- Prevents memory leaks
+- Prevents token reuse after expiry
+
+### Documentation
+
+Complete documentation available:
+- **SESSION_TOKEN_GUIDE.md** - Full technical documentation
+- **SESSION_TOKEN_TEST_GUIDE.md** - Testing & debugging procedures
+- **SESSION_TOKEN_QUICK_REFERENCE.md** - Quick API reference
+- **DEPLOYMENT_SUMMARY.md** - Deployment procedures
+- **SYSTEM_ARCHITECTURE.md** - System diagrams & flows
 
 ---
 

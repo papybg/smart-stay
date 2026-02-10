@@ -37,6 +37,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
 import cron from 'node-cron';
+import crypto from 'crypto';
 import { getAIResponse } from './services/ai_service.js';
 import { controlPower } from './services/autoremote.js';
 
@@ -48,6 +49,57 @@ const PORT = process.env.PORT || 10000;
 // ============================================================================
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================================================
+
+// 🔐 SESSION TOKEN MANAGEMENT
+const SESSION_DURATION = 30 * 60 * 1000; // 30 minutes
+const sessions = new Map(); // token -> {role, expiresAt, createdAt}
+
+/**
+ * 🔓 Generate SESSION TOKEN
+ * @param {string} role - 'host', 'guest', 'stranger'
+ * @returns {string} Token string
+ */
+function generateToken(role) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = Date.now() + SESSION_DURATION;
+    sessions.set(token, { role, expiresAt, createdAt: Date.now() });
+    console.log(`[SESSION] ✅ Генериран token за ${role}, валиден до ${new Date(expiresAt).toLocaleTimeString('bg-BG')}`);
+    return token;
+}
+
+/**
+ * 🔍 Validate SESSION TOKEN
+ * @param {string} token - Token string
+ * @returns {object|null} {role, valid: true} or null if invalid/expired
+ */
+function validateToken(token) {
+    if (!token || !sessions.has(token)) {
+        return null;
+    }
+    const session = sessions.get(token);
+    if (Date.now() > session.expiresAt) {
+        console.log('[SESSION] ⏰ Token изтекъл, изтривам от сесии');
+        sessions.delete(token);
+        return null;
+    }
+    return { role: session.role, valid: true };
+}
+
+/**
+ * 🧹 CLEANUP: Remove expired tokens every 5 minutes
+ */
+setInterval(() => {
+    let removed = 0;
+    for (const [token, session] of sessions.entries()) {
+        if (Date.now() > session.expiresAt) {
+            sessions.delete(token);
+            removed++;
+        }
+    }
+    if (removed > 0) {
+        console.log(`[CLEANUP] 🧹 Изтрити ${removed} изтекли token`);
+    }
+}, 5 * 60 * 1000);
 
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 // === ТЕЛЕГРАМ (Закомментирано за по-нататък) ===
@@ -180,23 +232,84 @@ app.get('/', (req, res) => {
 });
 
 /**
+ * POST /api/login
+ * 🔐 Аутентификация с парола - генерира SESSION TOKEN
+ */
+app.post('/api/login', async (req, res) => {
+    try {
+        const { password } = req.body;
+        if (!password || !password.trim()) {
+            return res.status(400).json({ error: 'Паролата е задължителна' });
+        }
+
+        // 🔑 Verify password matches HOST_CODE
+        const HOST_CODE = process.env.HOST_CODE || '';
+        const normalizedPassword = password.trim().toLowerCase();
+        const normalizedHostCode = HOST_CODE.trim().toLowerCase();
+        
+        if (normalizedPassword !== normalizedHostCode && !normalizedPassword.includes(normalizedHostCode)) {
+            console.log('[LOGIN] ❌ Невалидна парола');
+            return res.status(401).json({ error: 'Невалидна парола' });
+        }
+
+        // ✅ Password valid - generate token
+        const token = generateToken('host');
+        const expiresIn = Math.floor(SESSION_DURATION / 1000); // seconds
+        console.log('[LOGIN] ✅ Успешна аутентификация за host');
+        
+        res.json({ 
+            success: true,
+            token, 
+            expiresIn,
+            role: 'host',
+            message: 'Разбрах! Влезте успешно.'
+        });
+    } catch (error) {
+        console.error('[LOGIN] 🔴 Грешка:', error.message);
+        res.status(500).json({ error: 'Грешка при вход' });
+    }
+});
+
+/**
+ * POST /api/logout
+ * 🔐 Излез и изтрий SESSION TOKEN
+ */
+app.post('/api/logout', (req, res) => {
+    try {
+        const { token } = req.body;
+        if (token && sessions.has(token)) {
+            sessions.delete(token);
+            console.log('[LOGOUT] ✅ Излязъл успешно, token изтрит');
+        }
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[LOGOUT] 🔴 Грешка:', error.message);
+        res.status(500).json({ error: 'Грешка при изход' });
+    }
+});
+
+/**
  * POST /api/chat
- * 📝 Мост към AI асистент - само преминава данни към getAIResponse()
+ * 📝 Мост към AI асистент - проверява SESSION TOKEN или парола
  */
 app.post('/api/chat', async (req, res) => {
     try {
-        const { message, history = [], authCode } = req.body;
+        const { message, history = [], token, authCode } = req.body;
         if (!message?.trim()) {
             return res.status(400).json({ error: 'Съобщението е празно' });
         }
+
+        let authToken = token || authCode; // Support both token and legacy authCode
         console.log('[CHAT] 🤖 Викам AI асистент...');
-        const aiResponse = await getAIResponse(message, history, authCode);
+        
+        const aiResponse = await getAIResponse(message, history, authToken);
         res.json({ response: aiResponse });
     } catch (error) {
         console.error('[CHAT] 🔴 Грешка:', error.message);
         res.status(500).json({ error: 'AI грешка' });
     }
 });
+
 
 /**
  * GET /api/power-status

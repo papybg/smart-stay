@@ -24,6 +24,34 @@ import { sendCommandToPhone } from './autoremote.js';
 // КОНФИГУРАЦИЯ И ИНИЦИАЛИЗАЦИЯ
 // ============================================================================
 
+// 🔐 EXTERNAL SESSION MANAGEMENT
+// Тези функции се постигат от server.js, но ние имплементираме локален backup за token валидиране
+const VALID_SESSION_TOKENS = new Map(); // token -> {role, expiresAt}
+
+/**
+ * Регистрира валиден token (викан от server.js през API)
+ * За целите на този дизайн, ai_service.js също може да проверя token
+ */
+export function registerSessionToken(token, role, expiresAt) {
+    VALID_SESSION_TOKENS.set(token, { role, expiresAt });
+    console.log(`[SESSION] Token регистриран за ${role}`);
+}
+
+/**
+ * Валидира дали token е валиден и не е изтекъл
+ */
+function validateSessionToken(token) {
+    if (!token || !VALID_SESSION_TOKENS.has(token)) {
+        return null;
+    }
+    const session = VALID_SESSION_TOKENS.get(token);
+    if (Date.now() > session.expiresAt) {
+        VALID_SESSION_TOKENS.delete(token);
+        return null;
+    }
+    return session; // {role, expiresAt}
+}
+
 /**
  * @const {string[]} MODELS - Gemini модели в ред на отказ
  * Първичен модел, последван от каскадни отказни за надежност
@@ -403,8 +431,18 @@ async function assignPinFromDepot(booking) {
  */
 export async function determineUserRole(authCode, userMessage) {
     console.log('\n[SECURITY] ========== НАЧАЛО ОПРЕДЕЛЯНЕ НА РОЛЯТА НА ПОТРЕБИТЕЛЯ ==========');
-    console.log('[SECURITY] authCode предоставен:', !!authCode);
+    console.log('[SECURITY] authCode/token предоставен:', !!authCode);
     console.log('[SECURITY] userMessage предоставен:', !!userMessage);
+
+    // ПРОВЕРКА #0: ВАЛИДИРАНЕ НА SESSION TOKEN (НОВО)
+    if (authCode) {
+        const sessionToken = validateSessionToken(authCode);
+        if (sessionToken) {
+            console.log(`[SECURITY] ✅ SESSION TOKEN валиден за ${sessionToken.role}`);
+            console.log('[SECURITY] ========== ПРОВЕРКА НА СИГУРНОСТ ЗАВЪРШЕНА ==========\n');
+            return { role: sessionToken.role, data: null };
+        }
+    }
 
     // ПРОВЕРКА #1: ВЕРИФИКАЦИЯ НА ДОМАКИНА (ТОЧНО СЪОТВЕТСТВИЕ НА КОД)
     if (isHostVerified(authCode, userMessage)) {
@@ -749,19 +787,20 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
         return "";
     }
 
-    // КОМАНДИ ЗА УПРАВЛЕНИЕ НА ТОК ОТ ДОМАКИН
-    if (role === 'host' && isPowerCommand) {
-        console.log('[POWER] 👑 КОМАНДА ЗА УПРАВЛЕНИЕ НА ТОК ОТ ДОМАКИН');
+    // КОМАНДИ ЗА УПРАВЛЕНИЕ НА ТОК (за всички роли - ако е разпозната команда)
+    // Ако има ясна команда за управление на тока, изпълни я независимо от роля
+    if (isPowerCommand) {
+        console.log('[POWER] 🎯 КОМАНДА ЗА УПРАВЛЕНИЕ НА ТОК РАЗПОЗНАТА (role=' + role + ')');
         
         const isInclude = /включи|пусни|включ/i.test(userMessage);
         const isExclude = /изключи|спри|изключ/i.test(userMessage);
         
         if (isInclude) {
-            console.log('[POWER] 👑 Домакин командва: ВКЛЮЧИ ТОКА');
+            console.log('[POWER] ⚡ КОМАНДА: ВКЛЮЧИ ТОКА');
             await automationClient.controlPower(true);
             return ""; // Остави AI да генерира отговор от manual
         } else if (isExclude) {
-            console.log('[POWER] 👑 Домакин командва: ИЗКЛЮЧИ ТОКА');
+            console.log('[POWER] ⚡ КОМАНДА: ИЗКЛЮЧИ ТОКА');
             await automationClient.controlPower(false);
             return ""; // Остави AI да генерира отговор от manual
         }
