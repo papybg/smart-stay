@@ -140,12 +140,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 // TELEGRAM ИНТЕГРАЦИЯ (Закомментирано за по-нататък)
 // ============================================================================
 /*
-// /**
-//  * 📤 Изпраща команда към Telegram бот
-//  * @async
-//  * @param {string} command - 'ВКЛ' или 'ИЗКЛ'
-//  * @returns {Promise<boolean>} True ако успешно
-//  */
+/**
+ * 📤 Изпраща команда към Telegram бот
+ * @async
+ * @param {string} command - 'ВКЛ' или 'ИЗКЛ'
+ * @returns {Promise<boolean>} True ако успешно
+ */
 // async function sendTelegramCommand(command) {
 //     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
 //         console.warn('[TELEGRAM] ⚠️ Telegram не е конфигуриран');
