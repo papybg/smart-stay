@@ -3,6 +3,7 @@ import { neon } from '@neondatabase/serverless';
 import fs from 'fs/promises';
 import path from 'path';
 import { sendCommandToPhone } from './autoremote.js';
+import { validateToken } from './sessionManager.js';
 
 /**
  * ============================================================================
@@ -25,32 +26,8 @@ import { sendCommandToPhone } from './autoremote.js';
 // ============================================================================
 
 // 🔐 EXTERNAL SESSION MANAGEMENT
-// Тези функции се постигат от server.js, но ние имплементираме локален backup за token валидиране
-const VALID_SESSION_TOKENS = new Map(); // token -> {role, expiresAt}
-
-/**
- * Регистрира валиден token (викан от server.js през API)
- * За целите на този дизайн, ai_service.js също може да проверя token
- */
-export function registerSessionToken(token, role, expiresAt) {
-    VALID_SESSION_TOKENS.set(token, { role, expiresAt });
-    console.log(`[SESSION] Token регистриран за ${role}`);
-}
-
-/**
- * Валидира дали token е валиден и не е изтекъл
- */
-function validateSessionToken(token) {
-    if (!token || !VALID_SESSION_TOKENS.has(token)) {
-        return null;
-    }
-    const session = VALID_SESSION_TOKENS.get(token);
-    if (Date.now() > session.expiresAt) {
-        VALID_SESSION_TOKENS.delete(token);
-        return null;
-    }
-    return session; // {role, expiresAt}
-}
+// Тези функции се постигат от sessionManager.js
+// ai_service.js само ВАЛИДИРА токени, НЕ ги генерира или управлява
 
 /**
  * @const {string[]} MODELS - Gemini модели в ред на отказ
@@ -452,7 +429,7 @@ export async function determineUserRole(authCode, userMessage) {
 
     // ПРОВЕРКА #0: ВАЛИДИРАНЕ НА SESSION TOKEN (НОВО)
     if (authCode) {
-        const sessionToken = validateSessionToken(authCode);
+        const sessionToken = validateToken(authCode);  // ← Използва функцията от sessionManager
         if (sessionToken) {
             console.log(`[SECURITY] ✅ SESSION TOKEN валиден за ${sessionToken.role}`);
             console.log('[SECURITY] ========== ПРОВЕРКА НА СИГУРНОСТ ЗАВЪРШЕНА ==========\n');
@@ -762,6 +739,52 @@ ${strictInstructions}
 // ============================================================================
 
 /**
+ * ⏳ ОЧАКВАНЕ НА TASKER ПОТВЪРЖДЕНИЕ
+ * 
+ * Когато изпратим команда към Tasker, изчакваме реалния отговор
+ * Вместо да казваме "включих тока" (лъжа), чакаме 20 сек
+ * и тогава казваме реалното состояние
+ * 
+ * @async
+ * @param {boolean} expectedState - Какво состояние очаквам (true за ON, false за OFF)
+ * @param {number} timeoutMs - Максимално време за чакане (ms)
+ * @returns {Promise<{success: boolean, actualState: boolean|null, waited: number}>}
+ */
+async function waitForPowerConfirmation(expectedState, timeoutMs = 20000) {
+    console.log(`[POWER:WAIT] ⏳ Очаквам потвърждение от Tasker за ${expectedState ? 'ON' : 'OFF'}...`);
+    
+    const startTime = Date.now();
+    const pollInterval = 500; // Проверка всеки 500ms
+    
+    while (Date.now() - startTime < timeoutMs) {
+        const currentState = global.powerState?.is_on;
+        const hasChanged = currentState === expectedState;
+        
+        if (hasChanged) {
+            const waited = Date.now() - startTime;
+            console.log(`[POWER:WAIT] ✅ ПОТВЪРДЕНО! Actual state: ${currentState}, Чакахме: ${waited}ms`);
+            return {
+                success: true,
+                actualState: currentState,
+                waited: waited
+            };
+        }
+        
+        // Чакай преди следващата проверка
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+    
+    // Timeout - не получихме потвърждение
+    const waited = Date.now() - startTime;
+    console.log(`[POWER:WAIT] ⏰ TIMEOUT! Очаквахме ${expectedState ? 'ON' : 'OFF'}, но не се случи в ${waited}ms`);
+    return {
+        success: false,
+        actualState: global.powerState?.is_on || null,
+        waited: waited
+    };
+}
+
+/**
  * РАЗПОЗНАВАНЕ НА СПЕШНОСТ НА ТОК И ОТГОВОР
  * 
  * Мониторира съобщенията на гост за оплаквания, свързани с ток
@@ -814,10 +837,20 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
         if (isInclude) {
             console.log('[POWER] ⚡ КОМАНДА: ВКЛЮЧИ ТОКА');
             await automationClient.controlPower(true, bookingData?.id, 'ai_command');
+            
+            // ⏳ ИЗЧАКАЙ РЕАЛНОТО ПОТВЪРЖДЕНИЕ ОТ TASKER
+            const confirmation = await waitForPowerConfirmation(true, 20000);
+            console.log(`[POWER] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
+            
             return ""; // Остави AI да генерира отговор от manual
         } else if (isExclude) {
             console.log('[POWER] ⚡ КОМАНДА: ИЗКЛЮЧИ ТОКА');
             await automationClient.controlPower(false, bookingData?.id, 'ai_command');
+            
+            // ⏳ ИЗЧАКАЙ РЕАЛНОТО ПОТВЪРЖДЕНИЕ ОТ TASKER
+            const confirmation = await waitForPowerConfirmation(false, 20000);
+            console.log(`[POWER] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
+            
             return ""; // Остави AI да генерира отговор от manual
         }
     }
@@ -850,8 +883,12 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
     console.log('[POWER] 🚨 ОВЪРАЙД НА ГОСТ АКТИВИРАН: Принудително включване на ток');
     
     const overrideSuccess = await automationClient.controlPower(true, bookingData?.id, 'ai_emergency_override');
+    
+    // ⏳ ИЗЧАКАЙ РЕАЛНОТО ПОТВЪРЖДЕНИЕ ОТ TASKER
+    const confirmation = await waitForPowerConfirmation(true, 20000);
+    console.log(`[POWER:OVERRIDE] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
 
-    if (overrideSuccess) {
+    if (overrideSuccess || confirmation.success) {
         console.log('[POWER] ✅ Команда за возстановяване на ток изпратена успешно');
         
         // Изпраща известуване до домакина
@@ -1090,7 +1127,12 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     if (role === 'guest' && !powerStatus.isOn && /няма ток|спря ток|токът не работи/i.test(userMessage)) {
         console.log('🚨 АВАРИЯ: Гост докладва липса на ток. Опит за възстановяване...');
         const success = await automationClient.controlPower(true, data?.booking_id, 'ai_guest_emergency'); // Това ще прати и Telegram команда
-        if (success) {
+        
+        // ⏳ ИЗЧАКАЙ РЕАЛНОТО ПОТВЪРЖДЕНИЕ ОТ TASKER
+        const confirmation = await waitForPowerConfirmation(true, 20000);
+        console.log(`[POWER:GUEST_EMERGENCY] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
+        
+        if (success || confirmation.success) {
             await automationClient.sendAlert("Автоматично възстановяване на ток за гост", data);
             finalReply = `Разбрах! Изпратих сигнал към апартамента. 📡
 

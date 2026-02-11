@@ -40,6 +40,7 @@ import cron from 'node-cron';
 import crypto from 'crypto';
 import { getAIResponse } from './services/ai_service.js';
 import { controlPower } from './services/autoremote.js';
+import { generateToken, validateToken, cleanupExpiredTokens, invalidateToken } from './services/sessionManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,58 +50,6 @@ const PORT = process.env.PORT || 10000;
 // ============================================================================
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================================================
-
-// 🔐 SESSION TOKEN MANAGEMENT
-const SESSION_DURATION = 30 * 60 * 1000; // 30 minutes
-const sessions = new Map(); // token -> {role, expiresAt, createdAt}
-
-/**
- * 🔓 Generate SESSION TOKEN
- * @param {string} role - 'host', 'guest', 'stranger'
- * @returns {string} Token string
- */
-function generateToken(role) {
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = Date.now() + SESSION_DURATION;
-    sessions.set(token, { role, expiresAt, createdAt: Date.now() });
-    console.log(`[SESSION] ✅ Генериран token за ${role}, валиден до ${new Date(expiresAt).toLocaleTimeString('bg-BG')}`);
-    return token;
-}
-
-/**
- * 🔍 Validate SESSION TOKEN
- * @param {string} token - Token string
- * @returns {object|null} {role, valid: true} or null if invalid/expired
- */
-function validateToken(token) {
-    if (!token || !sessions.has(token)) {
-        return null;
-    }
-    const session = sessions.get(token);
-    if (Date.now() > session.expiresAt) {
-        console.log('[SESSION] ⏰ Token изтекъл, изтривам от сесии');
-        sessions.delete(token);
-        return null;
-    }
-    return { role: session.role, valid: true };
-}
-
-/**
- * 🧹 CLEANUP: Remove expired tokens every 5 minutes
- */
-setInterval(() => {
-    let removed = 0;
-    for (const [token, session] of sessions.entries()) {
-        if (Date.now() > session.expiresAt) {
-            sessions.delete(token);
-            removed++;
-        }
-    }
-    if (removed > 0) {
-        console.log(`[CLEANUP] 🧹 Изтрити ${removed} изтекли token`);
-    }
-}, 5 * 60 * 1000);
-
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 // === ТЕЛЕГРАМ (Закомментирано за по-нататък) ===
 // const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
