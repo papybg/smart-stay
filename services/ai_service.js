@@ -147,10 +147,26 @@ const automationClient = {
      * @returns {Promise<boolean>} True при успешно управление, false в противния случай
      * @throws Мълчаливо връща false при мрежова грешка
      */
-    async controlPower(state) {
+    async controlPower(state, bookingId = null, source = 'ai_command') {
         try {
             const command = state ? 'meter_on' : 'meter_off';
+            const timestamp = new Date();
             console.log('[AUTOMATION] 📡 Управление на тока чрез AutoRemote:', command);
+            
+            // 🔴 ШАГ 1: ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
+            if (sql) {
+                try {
+                    await sql`
+                        INSERT INTO power_history (is_on, timestamp, source, status, booking_id)
+                        VALUES (${state}, ${timestamp}, ${source}, ${`AI/Scheduler команда: ${command}`}, ${bookingId || null})
+                    `;
+                    console.log('[DB] ✅ AI команда записана в power_history (state=' + state + ')');
+                } catch (dbError) {
+                    console.error('[DB] 🔴 Грешка при запис на команда:', dbError.message);
+                }
+            }
+            
+            // 🟢 ШАГ 2: ПРАЩА КЪМ TASKER
             const success = await sendCommandToPhone(command);
             if (success) {
                 console.log('[AUTOMATION] ✅ Команда успешно изпратена към Tasker');
@@ -797,11 +813,11 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
         
         if (isInclude) {
             console.log('[POWER] ⚡ КОМАНДА: ВКЛЮЧИ ТОКА');
-            await automationClient.controlPower(true);
+            await automationClient.controlPower(true, bookingData?.id, 'ai_command');
             return ""; // Остави AI да генерира отговор от manual
         } else if (isExclude) {
             console.log('[POWER] ⚡ КОМАНДА: ИЗКЛЮЧИ ТОКА');
-            await automationClient.controlPower(false);
+            await automationClient.controlPower(false, bookingData?.id, 'ai_command');
             return ""; // Остави AI да генерира отговор от manual
         }
     }
@@ -833,7 +849,7 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
     // Това е защитна мярка - гостът ще получи ток дори ако е планирано изключване
     console.log('[POWER] 🚨 ОВЪРАЙД НА ГОСТ АКТИВИРАН: Принудително включване на ток');
     
-    const overrideSuccess = await automationClient.controlPower(true);
+    const overrideSuccess = await automationClient.controlPower(true, bookingData?.id, 'ai_emergency_override');
 
     if (overrideSuccess) {
         console.log('[POWER] ✅ Команда за возстановяване на ток изпратена успешно');
@@ -1073,7 +1089,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     // Ако е гост, няма ток и се оплаква -> пускаме го
     if (role === 'guest' && !powerStatus.isOn && /няма ток|спря ток|токът не работи/i.test(userMessage)) {
         console.log('🚨 АВАРИЯ: Гост докладва липса на ток. Опит за възстановяване...');
-        const success = await automationClient.controlPower(true); // Това ще прати и Telegram команда
+        const success = await automationClient.controlPower(true, data?.booking_id, 'ai_guest_emergency'); // Това ще прати и Telegram команда
         if (success) {
             await automationClient.sendAlert("Автоматично възстановяване на ток за гост", data);
             finalReply = `Разбрах! Изпратих сигнал към апартамента. 📡

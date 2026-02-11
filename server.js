@@ -445,10 +445,24 @@ app.post('/api/meter', async (req, res) => {
         // Преведи action към команда
         const command = action === 'on' ? 'meter_on' : 'meter_off';
         const willTurnOn = action === 'on';
+        const timestamp = new Date();
 
         console.log(`[METER API] 🎛️  Управление на ток: ${action.toUpperCase()}`);
 
-        // Изпрати команда към Tasker через AutoRemote
+        // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
+        if (sql) {
+            try {
+                await sql`
+                    INSERT INTO power_history (is_on, timestamp, source, status)
+                    VALUES (${willTurnOn}, ${timestamp}, 'api_meter', ${`API /meter команда: ${command}`})
+                `;
+                console.log('[DB] ✅ API meter команда записана в power_history');
+            } catch (dbErr) {
+                console.error('[DB] 🔴 Грешка при запис API meter:', dbErr.message);
+            }
+        }
+
+        // 2. ПРАЩА КЪМ TASKER
         const success = await controlPower(willTurnOn);
 
         if (success) {
@@ -565,8 +579,22 @@ function initializeScheduler() {
             for (const booking of checkinBookings) {
                 if (!global.powerState.is_on) {
                     console.log(`[SCHEDULER] 🚨 CHECK-IN за ${booking.guest_name} - ВКЛ`);
+                    
+                    // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
+                    try {
+                        await sql`
+                            INSERT INTO power_history (is_on, timestamp, source, status, booking_id)
+                            VALUES (true, ${now}, 'scheduler_checkin', ${`Автоматично включване при check-in за ${booking.guest_name}`}, ${booking.id})
+                        `;
+                        console.log('[DB] ✅ Scheduler check-in записан в power_history');
+                    } catch (dbErr) {
+                        console.error('[DB] 🔴 Грешка при запис scheduler check-in:', dbErr.message);
+                    }
+                    
                     global.powerState.is_on = true;
                     global.powerState.source = 'scheduler-checkin';
+                    
+                    // 2. ПРАЩА КЪМ TASKER
                     await controlPower(true); // Праща команда към Tasker через AutoRemote
                 }
             }
@@ -580,8 +608,22 @@ function initializeScheduler() {
             for (const booking of checkoutBookings) {
                 if (global.powerState.is_on) {
                     console.log(`[SCHEDULER] 🚨 CHECK-OUT ${booking.guest_name} - ИЗКЛ`);
+                    
+                    // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
+                    try {
+                        await sql`
+                            INSERT INTO power_history (is_on, timestamp, source, status, booking_id)
+                            VALUES (false, ${now}, 'scheduler_checkout', ${`Автоматично изключване при check-out за ${booking.guest_name}`}, ${booking.id})
+                        `;
+                        console.log('[DB] ✅ Scheduler check-out записан в power_history');
+                    } catch (dbErr) {
+                        console.error('[DB] 🔴 Грешка при запис scheduler check-out:', dbErr.message);
+                    }
+                    
                     global.powerState.is_on = false;
                     global.powerState.source = 'scheduler-checkout';
+                    
+                    // 2. ПРАЩА КЪМ TASKER
                     await controlPower(false); // Праща команда към Tasker през AutoRemote
                 }
             }
