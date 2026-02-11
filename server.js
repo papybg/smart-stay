@@ -359,37 +359,46 @@ app.get('/api/power-status', (req, res) => {
 
 // POST /api/power/status
 // 📱 Tasker интеграция - обновление статус + Tasker данни (status, device, battery)
-// Приема и батерия като число или Tasker переменна (например %BATT)
+// 🛡️ УЛУЧШЕНА ЛОГИКА: Гарантира что is_on НИКОГДА не е NULL
 app.post('/api/power/status', async (req, res) => {
     try {
-        // Събери данни от Tasker
-        let { is_on, booking_id, status, device, battery } = req.body;
+        const { status, device, battery, booking_id } = req.body;
         const prevState = global.powerState.is_on;
         const timestamp = new Date();
         
-        // Валидирай и преобразувай battery (ако е строка като "%BATT", остави null)
+        // 1. ЛОГВАНЕ НА ВХОДЯЩИ ДАННИ (За debug)
+        console.log(`[TASKER] 📨 Получени данни:`, JSON.stringify(req.body));
+
+        // 2. НОРМАЛИЗИРАНЕ НА СТАТУСА (Гарантира true или false, никога не е NULL)
+        // Преобразува всичко в текст и малки букви, за да няма грешки
+        const statusString = String(status).toLowerCase(); 
+        
+        // Проверяваме дали е 'on' или 'true' - всичко друго става false
+        const is_on = (statusString === 'on' || statusString === 'true' || status === true);
+
+        console.log(`[TASKER] 📊 Status: ${status} -> Parsed: ${is_on ? 'ON' : 'OFF'} (от ${prevState ? 'ON' : 'OFF'})`);
+
+        // 3. ВАЛИДИРАНЕ И ПРЕОБРАЗУВАНЕ НА BATTERY
         let batteryValue = null;
         if (battery && typeof battery === 'string') {
             const parsed = parseInt(battery, 10);
-            batteryValue = isNaN(parsed) ? null : parsed; // Ако е "%BATT" или невалидно, стави null
+            batteryValue = isNaN(parsed) ? null : parsed;
         } else if (typeof battery === 'number') {
             batteryValue = battery;
         }
-        
-        // Обновяване на глобално състояние
-        global.powerState.is_on = !!is_on;
-        global.powerState.last_update = timestamp;
-        global.powerState.source = 'tasker';
-        
-        console.log(`[TASKER] 📱 Статус: ${is_on ? 'ON' : 'OFF'} (от ${prevState ? 'ON' : 'OFF'})`);
-        if (status) console.log(`[TASKER] 📊 Status: ${status}`);
+
         if (device) console.log(`[TASKER] 📱 Device: ${device}`);
         if (batteryValue !== null) console.log(`[TASKER] 🔋 Battery: ${batteryValue}%`);
         if (battery && batteryValue === null && battery.toString().startsWith('%')) {
             console.log(`[TASKER] ⚠️ Battery е Tasker переменна: ${battery}`);
         }
         
-        // Логване в база данни ако има промяна на състоянието
+        // 4. ОБНОВЯВАНЕ НА ГЛОБАЛНО СЪСТОЯНИЕ
+        global.powerState.is_on = is_on;  // ← Гарантирано true или false
+        global.powerState.last_update = timestamp;
+        global.powerState.source = 'tasker';
+        
+        // 5. ЗАПИС В БАЗА ДАННИ (С ГАРАНТИРАНА СТОЙНОСТ)
         if (sql && prevState !== is_on) {
             try {
                 await sql`
