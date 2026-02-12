@@ -37,10 +37,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
 import cron from 'node-cron';
-import crypto from 'crypto';
 import { getAIResponse } from './services/ai_service.js';
 import { controlPower } from './services/autoremote.js';
-import { generateToken, validateToken, cleanupExpiredTokens, invalidateToken } from './services/sessionManager.js';
+import { generateToken, validateToken, cleanupExpiredTokens, invalidateToken, SESSION_DURATION } from './services/sessionManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -226,8 +225,7 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/logout', (req, res) => {
     try {
         const { token } = req.body;
-        if (token && sessions.has(token)) {
-            sessions.delete(token);
+        if (invalidateToken(token)) {
             console.log('[LOGOUT] ✅ Излязъл успешно, token изтрит');
         }
         res.json({ success: true });
@@ -598,4 +596,8 @@ app.listen(PORT, async () => {
     await initializeDatabase();
     
     initializeScheduler();
+
+    // Периодично почистване на изтекли сесии
+    setInterval(cleanupExpiredTokens, 5 * 60 * 1000);
+    console.log('[SESSION] ✅ Периодичното почистване на токени е активно (на всеки 5 минути)');
 });
