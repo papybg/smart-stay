@@ -58,22 +58,22 @@ export function cleanupExpiredTokens() {
             removed++;
         }
     }
-        if (removed > 0) {
-            console.log(`[CLEANUP] 🧹 Изтрити ${removed} изтекли token`);
-        }
-        return removed;
+    if (removed > 0) {
+        console.log(`[CLEANUP] 🧹 Изтрити ${removed} изтекли token`);
     }
-    
-    /**
-     * Изтрива токен при logout
-     * @param {string} token - Токен за изтриване
-     */
-    export function invalidateToken(token) {
-        if (token && sessions.has(token)) {
-            sessions.delete(token);
-            console.log('[SESSION] 🗑️ Token изтрит (logout)');
-            return true;
-        }
-        return false;
+    return removed;
+}
+
+/**
+ * Изтрива токен при logout
+ * @param {string} token - Токен за изтриване
+ */
+export function invalidateToken(token) {
+    if (token && sessions.has(token)) {
+        sessions.delete(token);
+        console.log('[SESSION] 🗑️ Token изтрит (logout)');
+        return true;
     }
+    return false;
+}
     
