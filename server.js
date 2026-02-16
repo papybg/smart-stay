@@ -315,11 +315,13 @@ app.post('/api/power/status', async (req, res) => {
         
         // 1. ЛОГВАНЕ НА ВХОДЯЩИ ДАННИ
         console.log(`[TASKER] 📨 Получени данни:`, JSON.stringify(req.body));
+        console.log(`[TASKER] 📊 prevState=${prevState}, newState=${is_on}, changed=${prevState !== is_on}`);
 
         // 2. ВАЛИДИРАНЕ НА STATE (преобразуване в boolean)
         const newState = Boolean(is_on);
 
         console.log(`[TASKER] 📊 State: ${newState ? 'ON' : 'OFF'} (беше ${prevState ? 'ON' : 'OFF'})`);
+        console.log(`[TASKER] 🔍 sql available: ${sql ? '✅ YES' : '❌ NO'}`);
         
         // 3. ОБНОВЯВАНЕ НА ГЛОБАЛНО СЪСТОЯНИЕ (винаги)
         global.powerState.is_on = newState;
@@ -329,6 +331,7 @@ app.post('/api/power/status', async (req, res) => {
         // 4. ЗАПИС В БАЗА ДАННИ (САМО ако има промяна)
         if (sql && prevState !== newState) {
             try {
+                console.log(`[DB] 📝 Inserting: is_on=${newState}, source=${source || 'tasker_direct'}, booking_id=${booking_id || null}`);
                 await sql`
                     INSERT INTO power_history (is_on, source, timestamp, booking_id)
                     VALUES (${newState}, ${source || 'tasker_direct'}, ${timestamp}, ${booking_id || null})
@@ -338,7 +341,9 @@ app.post('/api/power/status', async (req, res) => {
                 console.error('[DB] 🔴 Грешка при логване:', dbError.message);
             }
         } else if (sql && prevState === newState) {
-            console.log(`[TASKER] ℹ️ Състоянието е същото, без запис`);
+            console.log(`[TASKER] ℹ️ Състоянието е същото (${newState ? 'ON' : 'OFF'}), без запис`);
+        } else if (!sql) {
+            console.error(`[DB] 🔴 КРИТИЧНО: sql е NULL/undefined - База недостъпна!`);
         }
         
         res.status(200).json({ 
@@ -349,7 +354,7 @@ app.post('/api/power/status', async (req, res) => {
                 source: source || 'tasker_direct',
                 booking_id,
                 stateChanged: prevState !== newState,
-                note: prevState === newState ? '状態未変更 - без запис' : 'Записано в power_history'
+                note: prevState === newState ? 'Състояние без промяна' : 'Записано в power_history'
             }
         });
     } catch (error) {
