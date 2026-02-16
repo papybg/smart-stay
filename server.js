@@ -431,8 +431,7 @@ app.get('/api/power-history', async (req, res) => {
                 is_on,
                 source,
                 timestamp,
-                booking_id,
-                created_at
+                booking_id
             FROM power_history
             WHERE timestamp >= ${sinceDate}
             ORDER BY timestamp DESC
