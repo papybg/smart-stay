@@ -111,16 +111,21 @@ async function initializeDatabase() {
         
         // 🆕 ИНИЦИАЛЕН ЗАПИС - Ако таблицата е един има писък, направи запис за текущото состояние
         try {
-            const count = await sql`SELECT COUNT(*) as cnt FROM power_history;`;
-            if (count[0].cnt === 0) {
-                console.log('[DB] 📝 Таблица е празна - правя инициален запис...');
-                await sql`
+            const countResult = await sql`SELECT COUNT(*) as cnt FROM power_history;`;
+            console.log('[DB] 🔍 COUNT result:', JSON.stringify(countResult));
+            
+            const recordCount = countResult[0].cnt || countResult[0]['count(*)'] || 0;
+            console.log('[DB] 🔍 recordCount:', recordCount);
+            
+            if (recordCount === 0) {
+                console.log('[DB] 📝 Таблица е ПРАЗНА - правя инициален запис...');
+                const insertResult = await sql`
                     INSERT INTO power_history (is_on, source, timestamp, booking_id)
                     VALUES (${global.powerState.is_on}, 'system_startup', NOW(), NULL)
                 `;
                 console.log(`[DB] ✅ Инициален запис създаден: is_on=${global.powerState.is_on}`);
             } else {
-                console.log(`[DB] ℹ️ Таблица има ${count[0].cnt} записа - без инициален запис`);
+                console.log(`[DB] ℹ️ Таблица има ${recordCount} записа - без инициален запис`);
             }
         } catch (initError) {
             console.warn('[DB] ⚠️ Инициализиране на история: не е критично', initError.message);
