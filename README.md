@@ -294,10 +294,55 @@ Response:
 ```bash
 curl -X POST http://localhost:10000/api/power/status \
   -H "Content-Type: application/json" \
-  -d '{"is_on": true, "booking_id": 5}'
+  -d '{"is_on": true, "booking_id": 5, "source": "tasker_direct"}'
 
 Response: 200 OK
 ```
+
+**🎯 TASKER CONFIGURATION (ВАЖНО)**
+
+Трябва да настроиш Tasker да отправя POST запит, когато се промени состоянието на тока. Това може да е от:
+- 🤖 Scheduler команда (meter_on/meter_off)
+- 👤 Manual управление от Smart Life app
+- 🔘 Физически бутон на устройството
+
+**Стъпки в Tasker:**
+
+1. **Създай нов Profile:**
+   ```
+   Trigger: Device → Power → [Smart Life Power State Change]
+   (или друг trigger за промяна на состояние)
+   ```
+
+2. **Създай нова Task с HTTP POST:**
+   ```
+   Action: Internet → HTTP Post
+   
+   Server:Port: https://smart-stay.onrender.com/api/power/status
+   (или твоя домейн)
+   
+   Body (JSON):
+   {
+     "is_on": %power_state,
+     "source": "tasker_direct",
+     "booking_id": %current_booking_id
+   }
+   
+   Content Type: application/json
+   Timeout: 10 seconds
+   ```
+
+3. **Alternative (ако използваш обичайния HTTP GET):**
+   ```
+   Если го используешь вместо POST за простота:
+   URL: https://smart-stay.onrender.com/api/power/status?is_on=true&source=tasker_direct
+   ```
+
+**💡 Резултат:**
+- Tasker праща актуално состояние на тока
+- Backend записва в `power_history` таблица
+- Dashboard се обновява в реално време
+- Логът показва кой контролира тока (scheduler, manual, tasker_direct)
 
 #### `GET /api/power-status`
 Проверка на текущо състояние на тока
@@ -1054,6 +1099,74 @@ Actions:
 - Render dashboard има secure storage за variables
 - Never commit secrets in code
 - Rotate OAuth tokens периодично
+
+---
+
+## 🤖 Tasker Integration Implementation
+
+### Backend Implementation (server.js)
+
+Endpoint `/api/power/status` трябва да обработвам POST запити от Tasker:
+
+```javascript
+app.post('/api/power/status', async (req, res) => {
+    const { is_on, source, booking_id } = req.body;
+    
+    try {
+        console.log(`[TASKER] 📱 Статус: ${is_on ? 'ON' : 'OFF'} (от ${source})`);
+        
+        // Записване в power_history таблица
+        await db.query(
+            `INSERT INTO power_history (is_on, timestamp, source, booking_id)
+             VALUES ($1, NOW(), $2, $3)`,
+            [is_on, source || 'tasker_direct', booking_id]
+        );
+        
+        // Обновяване на глобално состояние
+        globalPowerState = {
+            is_on: is_on,
+            last_update: new Date(),
+            source: source || 'tasker_direct',
+            last_switch: 'just now'
+        };
+        
+        // Успешен отговор
+        res.json({ success: true, message: 'Статът е записан успешно' });
+        
+    } catch (error) {
+        console.error('[DB] ❌ Грешка при запис на състояние:', error);
+        res.status(500).json({ error: 'Грешка при запис' });
+    }
+});
+```
+
+### Data Flow
+
+```
+Tasker Action (Smart Life State Change)
+        ↓
+   HTTP POST /api/power/status
+        ↓
+   Backend приема { is_on, source, booking_id }
+        ↓
+   INSERT INTO power_history
+        ↓
+   Обновяване на globalPowerState
+        ↓
+   Dashboard refresh (WebSocket или polling)
+        ↓
+   Показване на real-time updates
+```
+
+### Sources Mapping
+
+| Source | Значение | Пример |
+|--------|----------|--------|
+| `tasker_direct` | Потребител управлява от Smart Life или физически бутон | Гост включва от app |
+| `scheduler_checkin` | Автоматично включване при check-in | 14:00 - 2h преди резервация |
+| `scheduler_checkout` | Автоматично изключване при check-out | 15:00 + 1h след резервация |
+| `ai_command` | AI команда от гост | "включи тока" по чат |
+| `api_meter` | Външни API запит | Интеграция със трети системи |
 
 ---
 

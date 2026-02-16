@@ -1,13 +1,13 @@
 /**
  * ============================================================================
- * AUTOREMOTE INTEGRATION - Communication with Tasker on Phone
+ * ИНТЕГРАЦИЯ С AUTOREMOTE - Комуникация с Tasker на телефона
  * ============================================================================
  * 
- * Праща команди към Tasker на телефона через AutoRemote облачен сервис
- * AutoRemote работи като push notification - изпраща message към телефона
- * Tasker чака точния message и стартира сцена в Smart Life
+ * Праща команди към Tasker на телефона през AutoRemote облачен сервис
+ * AutoRemote работи като push notification - изпраща съобщение към телефона
+ * Tasker чака точното съобщение и стартира сцена в Smart Life
  * 
- * ПОТОК: Backend → AutoRemote API → Push Notification → Tasker → Smart Life → Tuya Device
+ * ПОТОК: Backend → AutoRemote API → Push Notification → Tasker → Smart Life → Tuya устройство
  */
 
 import axios from 'axios';
@@ -26,7 +26,7 @@ if (!AR_KEY) {
  * 
  * @async
  * @param {string} command - 'meter_on' или 'meter_off'
- * @returns {Promise<boolean>} True ако успешно изпратено
+ * @returns {Promise<boolean>} True ако успешно е изпратено
  */
 export async function sendCommandToPhone(command) {
     // Ако ключа не е зададен, върни false
@@ -63,7 +63,7 @@ export async function sendCommandToPhone(command) {
 }
 
 /**
- * Управление на тока (мост функция)
+ * Управление на тока (мостова функция)
  * @async
  * @param {boolean} turnOn - true за ВКЛ, false за ИЗКЛ
  * @returns {Promise<boolean>}

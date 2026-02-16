@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
+import { assignPinFromDepot } from './ai_service.js';
 
 async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
     for (let i = 0; i < maxRetries; i++) {
@@ -75,7 +76,9 @@ export async function syncBookingsFromGmail() {
 
                     console.log(`📝 Ток график: ВКЛ ${powerOn.toISOString()} | ИЗКЛ ${powerOff.toISOString()}`);
 
-                    const pin = Math.floor(1000 + Math.random() * 9000);
+                    // Вземи PIN от pin_depot таблица (детектив служи за това)
+                    const tempBooking = { lock_pin: null };  // Временен обект за вземане на PIN
+                    const pin = await assignPinFromDepot(tempBooking);
                     
                     await executeQueryWithRetry(async () => {
                         await sql`

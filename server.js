@@ -305,68 +305,51 @@ app.get('/api/power-status', (req, res) => {
  */
 
 // POST /api/power/status
-// 📱 Tasker интеграция - обновление статус + Tasker данни (status, device, battery)
-// 🛡️ УЛУЧШЕНА ЛОГИКА: Гарантира что is_on НИКОГДА не е NULL
+// 📱 Tasker интеграция - обновление статус когато има ПРОМЯНА
+// 🛡️ ЛОГИКА: Записва в power_history САМО ако состоянието е променено
 app.post('/api/power/status', async (req, res) => {
     try {
-        const { status, device, battery, booking_id } = req.body;
+        const { is_on, source, booking_id } = req.body;
         const prevState = global.powerState.is_on;
         const timestamp = new Date();
         
-        // 1. ЛОГВАНЕ НА ВХОДЯЩИ ДАННИ (За debug)
+        // 1. ЛОГВАНЕ НА ВХОДЯЩИ ДАННИ
         console.log(`[TASKER] 📨 Получени данни:`, JSON.stringify(req.body));
 
-        // 2. НОРМАЛИЗИРАНЕ НА СТАТУСА (Гарантира true или false, никога не е NULL)
-        // Преобразува всичко в текст и малки букви, за да няма грешки
-        const statusString = String(status).toLowerCase(); 
+        // 2. ВАЛИДИРАНЕ НА STATE (преобразуване в boolean)
+        const newState = Boolean(is_on);
+
+        console.log(`[TASKER] 📊 State: ${newState ? 'ON' : 'OFF'} (беше ${prevState ? 'ON' : 'OFF'})`);
         
-        // Проверяваме дали е 'on' или 'true' - всичко друго става false
-        const is_on = (statusString === 'on' || statusString === 'true' || status === true);
-
-        console.log(`[TASKER] 📊 Status: ${status} -> Parsed: ${is_on ? 'ON' : 'OFF'} (от ${prevState ? 'ON' : 'OFF'})`);
-
-        // 3. ВАЛИДИРАНЕ И ПРЕОБРАЗУВАНЕ НА BATTERY
-        let batteryValue = null;
-        if (battery && typeof battery === 'string') {
-            const parsed = parseInt(battery, 10);
-            batteryValue = isNaN(parsed) ? null : parsed;
-        } else if (typeof battery === 'number') {
-            batteryValue = battery;
-        }
-
-        if (device) console.log(`[TASKER] 📱 Device: ${device}`);
-        if (batteryValue !== null) console.log(`[TASKER] 🔋 Battery: ${batteryValue}%`);
-        if (battery && batteryValue === null && battery.toString().startsWith('%')) {
-            console.log(`[TASKER] ⚠️ Battery е Tasker переменна: ${battery}`);
-        }
-        
-        // 4. ОБНОВЯВАНЕ НА ГЛОБАЛНО СЪСТОЯНИЕ
-        global.powerState.is_on = is_on;  // ← Гарантирано true или false
+        // 3. ОБНОВЯВАНЕ НА ГЛОБАЛНО СЪСТОЯНИЕ (винаги)
+        global.powerState.is_on = newState;
         global.powerState.last_update = timestamp;
-        global.powerState.source = 'tasker';
+        global.powerState.source = source || 'tasker_direct';
         
-        // 5. ЗАПИС В БАЗА ДАННИ (С ГАРАНТИРАНА СТОЙНОСТ)
-        if (sql && prevState !== is_on) {
+        // 4. ЗАПИС В БАЗА ДАННИ (САМО ако има промяна)
+        if (sql && prevState !== newState) {
             try {
                 await sql`
-                    INSERT INTO power_history (is_on, status, device, battery, source, timestamp, booking_id)
-                    VALUES (${is_on}, ${status || null}, ${device || null}, ${batteryValue}, 'tasker', ${timestamp}, ${booking_id || null})
+                    INSERT INTO power_history (is_on, source, timestamp, booking_id)
+                    VALUES (${newState}, ${source || 'tasker_direct'}, ${timestamp}, ${booking_id || null})
                 `;
-                console.log('[DB] ✅ power_history записан със Tasker данни');
+                console.log(`[DB] ✅ Промяна записана: ${prevState ? 'ON' : 'OFF'} → ${newState ? 'ON' : 'OFF'}`);
             } catch (dbError) {
                 console.error('[DB] 🔴 Грешка при логване:', dbError.message);
             }
+        } else if (sql && prevState === newState) {
+            console.log(`[TASKER] ℹ️ Състоянието е същото, без запис`);
         }
         
         res.status(200).json({ 
             success: true, 
             message: 'Статус получен и обработен',
             received: { 
-                is_on, 
-                status, 
-                device, 
-                battery: batteryValue || battery, // Покажи оригинално ако е переменна
-                stateChanged: prevState !== is_on 
+                is_on: newState, 
+                source: source || 'tasker_direct',
+                booking_id,
+                stateChanged: prevState !== newState,
+                note: prevState === newState ? '状態未変更 - без запис' : 'Записано в power_history'
             }
         });
     } catch (error) {
@@ -400,10 +383,10 @@ app.post('/api/meter', async (req, res) => {
         if (sql) {
             try {
                 await sql`
-                    INSERT INTO power_history (is_on, timestamp, source, status)
-                    VALUES (${willTurnOn}, ${timestamp}, 'api_meter', ${`API /meter команда: ${command}`})
+                    INSERT INTO power_history (is_on, timestamp, source)
+                    VALUES (${willTurnOn}, ${timestamp}, 'api_meter')
                 `;
-                console.log('[DB] ✅ API meter команда записана в power_history');
+                console.log('[DB] ✅ API команда записана в power_history');
             } catch (dbErr) {
                 console.error('[DB] 🔴 Грешка при запис API meter:', dbErr.message);
             }
@@ -530,10 +513,10 @@ function initializeScheduler() {
                     // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
                     try {
                         await sql`
-                            INSERT INTO power_history (is_on, timestamp, source, status, booking_id)
-                            VALUES (true, ${now}, 'scheduler_checkin', ${`Автоматично включване при check-in за ${booking.guest_name}`}, ${booking.id})
+                            INSERT INTO power_history (is_on, timestamp, source, booking_id)
+                            VALUES (true, ${now}, 'scheduler_checkin', ${booking.id})
                         `;
-                        console.log('[DB] ✅ Scheduler check-in записан в power_history');
+                        console.log('[DB] ✅ Check-in включване записано');
                     } catch (dbErr) {
                         console.error('[DB] 🔴 Грешка при запис scheduler check-in:', dbErr.message);
                     }
@@ -559,10 +542,10 @@ function initializeScheduler() {
                     // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
                     try {
                         await sql`
-                            INSERT INTO power_history (is_on, timestamp, source, status, booking_id)
-                            VALUES (false, ${now}, 'scheduler_checkout', ${`Автоматично изключване при check-out за ${booking.guest_name}`}, ${booking.id})
+                            INSERT INTO power_history (is_on, timestamp, source, booking_id)
+                            VALUES (false, ${now}, 'scheduler_checkout', ${booking.id})
                         `;
-                        console.log('[DB] ✅ Scheduler check-out записан в power_history');
+                        console.log('[DB] ✅ Check-out изключване записано');
                     } catch (dbErr) {
                         console.error('[DB] 🔴 Грешка при запис scheduler check-out:', dbErr.message);
                     }

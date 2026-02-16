@@ -134,12 +134,12 @@ const automationClient = {
             if (sql) {
                 try {
                     await sql`
-                        INSERT INTO power_history (is_on, timestamp, source, status, booking_id)
-                        VALUES (${state}, ${timestamp}, ${source}, ${`AI/Scheduler команда: ${command}`}, ${bookingId || null})
+                        INSERT INTO power_history (is_on, timestamp, source, booking_id)
+                        VALUES (${state}, ${timestamp}, ${source}, ${bookingId || null})
                     `;
-                    console.log('[DB] ✅ AI команда записана в power_history (state=' + state + ')');
+                    console.log('[DB] ✅ Команда записана в power_history (is_on=' + state + ', source=' + source + ')');
                 } catch (dbError) {
-                    console.error('[DB] 🔴 Грешка при запис на команда:', dbError.message);
+                    console.error('[DB] 🔴 Грешка при запис:', dbError.message);
                 }
             }
             
@@ -349,7 +349,7 @@ async function verifyGuestByHMCode(authCode, userMessage) {
  * @param {Object} booking - Обект резервация от база данни
  * @returns {Promise<string|null>} Назначен щифт код или null ако няма налични
  */
-async function assignPinFromDepot(booking) {
+export async function assignPinFromDepot(booking) {
     console.log('[PIN_DEPOT] Проверявам дали гост вече има щифт...');
     
     // Ако гост вече има щифт, го върни
@@ -448,10 +448,10 @@ export async function determineUserRole(authCode, userMessage) {
     const guestCheck = await verifyGuestByHMCode(authCode, userMessage);
     if (guestCheck.role === 'guest' && guestCheck.booking) {
         const booking = guestCheck.booking;
-        console.log('[PIN_DEPOT] Обработвам разпределяне на щифт за гост...');
+        console.log('[PIN_DEPOT] Четя щифт за гост от резервация...');
 
-        // Назначава щифт ако е необходимо
-        const lockPin = await assignPinFromDepot(booking);
+        // Четем щифта из резервация (детектив вече го е разпределил)
+        const lockPin = booking.lock_pin;
 
         const guestData = {
             guest_name: booking.guest_name,
