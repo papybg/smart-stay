@@ -108,6 +108,23 @@ async function initializeDatabase() {
         
         await sql`CREATE INDEX IF NOT EXISTS idx_power_history_timestamp ON power_history(timestamp DESC);`;
         console.log('[DB] ✅ power_history таблица готова (със Tasker данни)');
+        
+        // 🆕 ИНИЦИАЛЕН ЗАПИС - Ако таблицата е един има писък, направи запис за текущото состояние
+        try {
+            const count = await sql`SELECT COUNT(*) as cnt FROM power_history;`;
+            if (count[0].cnt === 0) {
+                console.log('[DB] 📝 Таблица е празна - правя инициален запис...');
+                await sql`
+                    INSERT INTO power_history (is_on, source, timestamp, booking_id)
+                    VALUES (${global.powerState.is_on}, 'system_startup', NOW(), NULL)
+                `;
+                console.log(`[DB] ✅ Инициален запис създаден: is_on=${global.powerState.is_on}`);
+            } else {
+                console.log(`[DB] ℹ️ Таблица има ${count[0].cnt} записа - без инициален запис`);
+            }
+        } catch (initError) {
+            console.warn('[DB] ⚠️ Инициализиране на история: не е критично', initError.message);
+        }
     } catch (error) {
         console.error('[DB] 🔴 Грешка при инициализация:', error.message);
     }
