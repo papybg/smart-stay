@@ -114,8 +114,8 @@ async function initializeDatabase() {
             const countResult = await sql`SELECT COUNT(*) as cnt FROM power_history;`;
             console.log('[DB] 🔍 COUNT result:', JSON.stringify(countResult));
             
-            const recordCount = countResult[0].cnt || countResult[0]['count(*)'] || 0;
-            console.log('[DB] 🔍 recordCount:', recordCount);
+            const recordCount = Number(countResult[0].cnt) || 0;
+            console.log('[DB] 🔍 recordCount:', recordCount, 'type:', typeof recordCount);
             
             if (recordCount === 0) {
                 console.log('[DB] 📝 Таблица е ПРАЗНА - правя инициален запис...');
