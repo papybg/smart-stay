@@ -119,6 +119,7 @@ async function initializeDatabase() {
             
             if (recordCount === 0) {
                 console.log('[DB] 📝 Таблица е ПРАЗНА - правя инициален запис...');
+                console.log('[DB] 🔍 global.powerState.is_on =', global.powerState.is_on, 'type:', typeof global.powerState.is_on);
                 const insertResult = await sql`
                     INSERT INTO power_history (is_on, source, timestamp, booking_id)
                     VALUES (${global.powerState.is_on}, 'system_startup', NOW(), NULL)
