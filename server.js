@@ -77,57 +77,25 @@ async function initializeDatabase() {
         return;
     }
     try {
-        // Създай таблица ако не съществува
+        // Създай таблица ако не съществува (опростена схема)
         await sql`
             CREATE TABLE IF NOT EXISTS power_history (
                 id SERIAL PRIMARY KEY,
                 is_on BOOLEAN NOT NULL,
-                status VARCHAR(50),
-                device VARCHAR(100),
-                battery INT,
                 source VARCHAR(50),
                 timestamp TIMESTAMPTZ DEFAULT NOW(),
-                duration_seconds INT,
-                booking_id INT REFERENCES bookings(id),
-                created_at TIMESTAMPTZ DEFAULT NOW()
+                booking_id INT REFERENCES bookings(id)
             );
         `;
         
-        // Добави нови колони ако не съществуват (для old databases)
-        try {
-            await sql`ALTER TABLE power_history ADD COLUMN status VARCHAR(50);`;
-        } catch (e) { /* колона вече съществува */ }
-        
-        try {
-            await sql`ALTER TABLE power_history ADD COLUMN device VARCHAR(100);`;
-        } catch (e) { /* колона вече съществува */ }
-        
-        try {
-            await sql`ALTER TABLE power_history ADD COLUMN battery INT;`;
-        } catch (e) { /* колона вече съществува */ }
-        
         await sql`CREATE INDEX IF NOT EXISTS idx_power_history_timestamp ON power_history(timestamp DESC);`;
-        console.log('[DB] ✅ power_history таблица готова (със Tasker данни)');
-        
-        // 🆕 ИНИЦИАЛЕН ЗАПИС - Ако таблицата е един има писък, направи запис за текущото состояние
+        console.log('[DB] ✅ power_history таблица готова');
+
+        // Информационна проверка (без синтетичен запис, за да не въвежда нереално състояние)
         try {
             const countResult = await sql`SELECT COUNT(*) as cnt FROM power_history;`;
-            console.log('[DB] 🔍 COUNT result:', JSON.stringify(countResult));
-            
             const recordCount = Number(countResult[0].cnt) || 0;
-            console.log('[DB] 🔍 recordCount:', recordCount, 'type:', typeof recordCount);
-            
-            if (recordCount === 0) {
-                console.log('[DB] 📝 Таблица е ПРАЗНА - правя инициален запис...');
-                console.log('[DB] 🔍 global.powerState.is_on =', global.powerState.is_on, 'type:', typeof global.powerState.is_on);
-                const insertResult = await sql`
-                    INSERT INTO power_history (is_on, source, timestamp, booking_id)
-                    VALUES (${global.powerState.is_on}, 'system_startup', NOW(), NULL)
-                `;
-                console.log(`[DB] ✅ Инициален запис създаден: is_on=${global.powerState.is_on}`);
-            } else {
-                console.log(`[DB] ℹ️ Таблица има ${recordCount} записа - без инициален запис`);
-            }
+            console.log(`[DB] ℹ️ power_history записи: ${recordCount}`);
         } catch (initError) {
             console.warn('[DB] ⚠️ Инициализиране на история: не е критично', initError.message);
         }
@@ -327,37 +295,54 @@ app.get('/api/power-status', (req, res) => {
  * }
  */
 
-// POST /api/power/status
-// 📱 Tasker интеграция - обновление статус когато има ПРОМЯНА
-// 🛡️ ЛОГИКА: Записва в power_history САМО ако состоянието е променено
-app.post('/api/power/status', async (req, res) => {
+function normalizePowerState(rawValue) {
+    if (typeof rawValue === 'boolean') return rawValue;
+    if (typeof rawValue === 'number') {
+        if (rawValue === 1) return true;
+        if (rawValue === 0) return false;
+        return null;
+    }
+    if (typeof rawValue === 'string') {
+        const value = rawValue.trim().toLowerCase();
+        if (['on', 'true', '1', 'вкл', 'включен', 'включи'].includes(value)) return true;
+        if (['off', 'false', '0', 'изкл', 'изключен', 'изключи'].includes(value)) return false;
+    }
+    return null;
+}
+
+async function handlePowerStatusUpdate(req, res) {
     try {
-        const { is_on, source, booking_id } = req.body;
+        const rawState = req.body?.is_on ?? req.body?.isOn ?? req.body?.status ?? req.body?.state;
+        const source = req.body?.source || 'tasker_direct';
+        const booking_id = req.body?.booking_id || null;
         const prevState = global.powerState.is_on;
         const timestamp = new Date();
-        
-        // 1. ЛОГВАНЕ НА ВХОДЯЩИ ДАННИ
-        console.log(`[TASKER] 📨 Получени данни:`, JSON.stringify(req.body));
-        console.log(`[TASKER] 📊 prevState=${prevState}, newState=${is_on}, changed=${prevState !== is_on}`);
 
-        // 2. ВАЛИДИРАНЕ НА STATE (преобразуване в boolean)
-        const newState = Boolean(is_on);
+        console.log(`[TASKER] 📨 Получени данни:`, JSON.stringify(req.body));
+        const newState = normalizePowerState(rawState);
+        if (newState === null) {
+            console.warn(`[TASKER] ⚠️ Невалидно състояние: ${rawState}`);
+            return res.status(400).json({
+                success: false,
+                error: 'Невалидно поле за състояние. Изпратете is_on/status/state като true|false|on|off|1|0'
+            });
+        }
 
         console.log(`[TASKER] 📊 State: ${newState ? 'ON' : 'OFF'} (беше ${prevState ? 'ON' : 'OFF'})`);
         console.log(`[TASKER] 🔍 sql available: ${sql ? '✅ YES' : '❌ NO'}`);
-        
-        // 3. ОБНОВЯВАНЕ НА ГЛОБАЛНО СЪСТОЯНИЕ (винаги)
+
+        // 1) Обновяване на глобално състояние
         global.powerState.is_on = newState;
         global.powerState.last_update = timestamp;
-        global.powerState.source = source || 'tasker_direct';
-        
-        // 4. ЗАПИС В БАЗА ДАННИ (САМО ако има промяна)
+        global.powerState.source = source;
+
+        // 2) Запис в БД само при промяна
         if (sql && prevState !== newState) {
             try {
-                console.log(`[DB] 📝 Inserting: is_on=${newState}, source=${source || 'tasker_direct'}, booking_id=${booking_id || null}`);
+                console.log(`[DB] 📝 Inserting: is_on=${newState}, source=${source}, booking_id=${booking_id}`);
                 await sql`
                     INSERT INTO power_history (is_on, source, timestamp, booking_id)
-                    VALUES (${newState}, ${source || 'tasker_direct'}, ${timestamp}, ${booking_id || null})
+                    VALUES (${newState}, ${source}, ${timestamp}, ${booking_id})
                 `;
                 console.log(`[DB] ✅ Промяна записана: ${prevState ? 'ON' : 'OFF'} → ${newState ? 'ON' : 'OFF'}`);
             } catch (dbError) {
@@ -374,7 +359,7 @@ app.post('/api/power/status', async (req, res) => {
             message: 'Статус получен и обработен',
             received: { 
                 is_on: newState, 
-                source: source || 'tasker_direct',
+                source,
                 booking_id,
                 stateChanged: prevState !== newState,
                 note: prevState === newState ? 'Състояние без промяна' : 'Записано в power_history'
@@ -384,7 +369,11 @@ app.post('/api/power/status', async (req, res) => {
         console.error('[TASKER] 🔴 Грешка:', error.message);
         res.status(500).json({ error: error.message });
     }
-});
+}
+
+// Поддържа и двата endpoint варианта, за да не чупи Tasker конфигурации
+app.post('/api/power/status', handlePowerStatusUpdate);
+app.post('/api/power-status', handlePowerStatusUpdate);
 
 /**
  * POST /api/meter
