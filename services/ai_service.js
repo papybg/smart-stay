@@ -33,7 +33,14 @@ import { validateToken } from './sessionManager.js';
  * @const {string[]} MODELS - Gemini модели в ред на отказ
  * Първичен модел, последван от каскадни отказни за надежност
  */
-const MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3-flash-preview"];
+const MODELS = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-3-flash-preview",
+    "gemini-3-pro-preview"
+];
 const MODEL_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_MODEL_TIMEOUT_MS || 12000);
 const MODEL_COOLDOWN_MS = Number(process.env.GEMINI_MODEL_COOLDOWN_MS || 60000);
 const modelCooldownUntil = new Map();
@@ -632,41 +639,10 @@ export function buildSystemInstruction(role, data, powerStatus, manual, currentD
         
         // КРИТИЧНО: Само ако имаме действителна резервация
         if (data) {
-            const checkInDate = new Date(data.check_in);
-            const checkOutDate = new Date(data.check_out);
-            const hoursUntilCheckIn = (checkInDate.getTime() - new Date().getTime()) / (1000 * 60 * 60);
-            
-            // ДИНАМИЧНА SCHEDULER БЕЛЕЖКА - Само ако ток е ИЗКЛЮЧЕН и чек-ин е близо
-            const schedulerNote = !isOn && hoursUntilCheckIn <= 2 && hoursUntilCheckIn > 0 
-                ? '\n📌 СИСТЕМА: Токът е планиран да се включи автоматично 2 часа преди твоя check-in.'
-                : '';
-            
             roleBlock = `
-🎟️ **ВАШАТА РЕЗЕРВАЦИЯ**
-• **Име:** ${data.guest_name}
-• **Код:** ${data.reservation_code}
-• **Вход:** ${checkInDate.toLocaleString('bg-BG')}
-• **Изход:** ${checkOutDate.toLocaleString('bg-BG')}
-
-🏠 **ИНФОРМАЦИЯ ЗА ИМОТА**
-• **Комплекс:** Aspen Valley, Апартамент D106 (Първи етаж, Крило Д)
-• **Адрес:** ул. Св. Никола 32, 2760 Разлог (600м преди разклона за Разлог откъм Симитли)
-
-📶 **WI-FI ДОСТЪП**
-• **Мрежа:** PAPYNET
-• **Парола:** kokokoko1
-
-🔐 **КОД ЗА ДОСТЪП**
-• ${data.lock_pin || 'Попълваме го сега...'}${schedulerNote}
-
-📞 **ВАЖНИ КОНТАКТИ**
-• **Домакин:** 0888 600 851
-• **Охрана/Рецепция:** 0883 292 339
-
-Ако имате нужда от информация за удобствата в комплекса (басейн, СПА, паркинг) или района (магазини, ресторанти), не се колебайте да попитате! 😊
-
 🔐 НИВО НА ДОСТЪП: ГОСТ
-📋 ФУНКЦИИ: Информация за престой, вода/ток статус, контакти за спешност
+📋 ФУНКЦИИ: Отговаряй само на конкретния въпрос на госта, без да изписваш пълен пакет с контакти/пароли/инструкции предварително.
+📌 ПРАВИЛО: Давай само минималната нуждна информация за искането. Ако питат за Wi‑Fi, дай Wi‑Fi. Ако питат за контакти, дай контакти. Ако не питат, не ги изписвай.
 `;
         } else {
             console.warn('[AI:SSoT] ⚠️ ГОСТ без данни за резервация - нещо е грешно!');
@@ -1074,6 +1050,30 @@ function isReservationRefreshRequest(userMessage) {
     return refreshKeywords.test(userMessage);
 }
 
+function isReservationCodeIntro(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const introKeywords = /код(ът)?\s*(ми)?\s*за\s*резервация|reservation code|my code is|my reservation is|имам резервация|i have reservation|i have a reservation/i;
+    return introKeywords.test(userMessage);
+}
+
+function getGuestOnboardingReply(bookingData, language = 'bg') {
+    if (!bookingData) {
+        return language === 'en'
+            ? 'I could not validate an active reservation code.'
+            : 'Не успях да валидирам активен код за резервация.';
+    }
+
+    const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+    const checkIn = new Date(bookingData.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+    const checkOut = new Date(bookingData.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+
+    if (language === 'en') {
+        return `Welcome, ${bookingData.guest_name}. Your reservation code ${bookingData.reservation_code} is active from ${checkIn} to ${checkOut}. What would you like to ask?`;
+    }
+
+    return `Привет, ${bookingData.guest_name}. Кодът ви за резервация ${bookingData.reservation_code} е активен за периода от ${checkIn} до ${checkOut}. Какво бихте желали да попитате?`;
+}
+
 function getReservationRefreshReply(role, bookingData, language = 'bg') {
     if (role !== 'guest' || !bookingData) {
         return language === 'en'
@@ -1299,6 +1299,11 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     // 2.3. ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА РОЛЯТА (без Gemini)
     if (isRoleIdentityRequest(userMessage)) {
         return getRoleIdentityReply(role, preferredLanguage);
+    }
+
+    // 2.35. КРАТКО ПОТВЪРЖДЕНИЕ ПРИ ПОДАДЕН КОД НА РЕЗЕРВАЦИЯ
+    if (role === 'guest' && isReservationCodeIntro(userMessage)) {
+        return getGuestOnboardingReply(data, preferredLanguage);
     }
 
     // 2.4. ДЕТЕРМИНИСТИЧЕН REFRESH НА РЕЗЕРВАЦИЯ (без Gemini)
