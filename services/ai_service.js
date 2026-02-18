@@ -53,6 +53,8 @@ const BACKUP_API_KEY = process.env.BACKUP_API_KEY || null;
 const BACKUP_API_URL = (process.env.BACKUP_API_URL || '').replace(/\/$/, '');
 const BACKUP_MODEL = process.env.BACKUP_MODEL || '';
 const BACKUP_TIMEOUT_MS = Number(process.env.BACKUP_TIMEOUT_MS || 15000);
+const ACCESS_START_BEFORE_CHECKIN_HOURS = Number(process.env.ACCESS_START_BEFORE_CHECKIN_HOURS || 2);
+const ACCESS_END_AFTER_CHECKOUT_HOURS = Number(process.env.ACCESS_END_AFTER_CHECKOUT_HOURS || 1);
 
 function isManualLikeQuestion(userMessage = '') {
     const text = String(userMessage || '').toLowerCase();
@@ -66,7 +68,7 @@ function isManualLikeQuestion(userMessage = '') {
         'tv', 'телевизор', 'дистанционно', 'гараж', 'асансьор', 'код за вход',
         'parking', 'address', 'manual', 'instructions', 'apartment', 'property',
         'heater', 'boiler', 'washing machine', 'fridge', 'oven', 'stove', 'door',
-        'lock', 'checkin', 'checkout', 'how to', 'where is'
+        'lock', 'checkin', 'checkout'
     ];
 
     return manualHints.some(token => text.includes(token));
@@ -595,7 +597,8 @@ async function verifyGuestByHMCode(authCode, userMessage, history = []) {
             SELECT * FROM bookings 
                         WHERE regexp_replace(UPPER(reservation_code), '[^A-Z0-9]', '', 'g') = ${normalizedReservationCode}
               AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
-                            AND check_out > (NOW() - INTERVAL '6 hours')
+                            AND (check_in - make_interval(hours => ${ACCESS_START_BEFORE_CHECKIN_HOURS})) <= NOW()
+                            AND (check_out + make_interval(hours => ${ACCESS_END_AFTER_CHECKOUT_HOURS})) > NOW()
             LIMIT 1
         `;
 
@@ -1311,6 +1314,12 @@ function isReservationCodeIntro(userMessage) {
     return introKeywords.test(userMessage);
 }
 
+function isBareReservationCodeMessage(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const trimmed = String(userMessage).trim();
+    return /^HM[A-Z0-9_-]+$/i.test(trimmed);
+}
+
 function isTodayRegistrationsRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     const keywords = /каква(и)?\s+регистраци(я|и)\s+има\s+за\s+днес|регистраци(я|и)\s+за\s+днес|резерваци(я|и)\s+за\s+днес|какви\s+резервации\s+има\s+днес|today registrations|today bookings|bookings for today/i;
@@ -1340,6 +1349,75 @@ function isRecentCancelledRequest(userMessage) {
 function isUnknownPowerStatusRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     return /unknown\s+power|неизвестен\s+статус\s+на\s+тока|липсващ\s+статус\s+на\s+тока|power_status\s+unknown/i.test(userMessage);
+}
+
+function isDatabaseSnapshotRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /прочети\s+базата|чети\s+базата|покажи\s+базата|какво\s+има\s+в\s+базата|покажи\s+данните\s+от\s+bookings|дай\s+справка\s+от\s+базата|database\s+snapshot|read\s+the\s+database|show\s+database\s+status|bookings\s+database\s+summary/i.test(userMessage);
+}
+
+async function getDatabaseSnapshotReply(role, language = 'bg') {
+    if (role !== 'host') {
+        return language === 'en'
+            ? 'Database reports are available only for host access.'
+            : 'Справките от базата са достъпни само за домакин.';
+    }
+
+    if (!sql) {
+        return language === 'en'
+            ? 'Database is not available right now.'
+            : 'Базата данни не е достъпна в момента.';
+    }
+
+    try {
+        const rows = await sql`
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                      AND check_in <= NOW()
+                      AND check_out > NOW()
+                ) AS active_now,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                      AND check_in < date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia') + INTERVAL '1 day'
+                      AND check_out > date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia')
+                ) AS today_total,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                      AND check_in < date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia') + INTERVAL '2 day'
+                      AND check_out > date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia') + INTERVAL '1 day'
+                ) AS tomorrow_total,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(LOWER(payment_status), '') = 'cancelled'
+                      AND check_out >= (NOW() - INTERVAL '7 day')
+                ) AS cancelled_last_7d,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                      AND check_in <= NOW()
+                      AND check_out > NOW()
+                      AND (power_status IS NULL OR LOWER(power_status) = 'unknown')
+                ) AS active_unknown_power
+            FROM bookings
+        `;
+
+        const stats = rows[0] || {};
+        const activeNow = Number(stats.active_now || 0);
+        const todayTotal = Number(stats.today_total || 0);
+        const tomorrowTotal = Number(stats.tomorrow_total || 0);
+        const cancelledLast7d = Number(stats.cancelled_last_7d || 0);
+        const activeUnknownPower = Number(stats.active_unknown_power || 0);
+
+        if (language === 'en') {
+            return `Database snapshot (bookings):\n\n• Active now: ${activeNow}\n• Registrations today: ${todayTotal}\n• Registrations tomorrow: ${tomorrowTotal}\n• Cancelled (last 7 days): ${cancelledLast7d}\n• Active with unknown power: ${activeUnknownPower}`;
+        }
+
+        return `Справка от базата (bookings):\n\n• Активни сега: ${activeNow}\n• Регистрации за днес: ${todayTotal}\n• Регистрации за утре: ${tomorrowTotal}\n• Анулирани (последни 7 дни): ${cancelledLast7d}\n• Активни с unknown power: ${activeUnknownPower}`;
+    } catch (error) {
+        console.error('[HOST] 🔴 Грешка при database snapshot:', error.message);
+        return language === 'en'
+            ? 'I could not load database snapshot from bookings.'
+            : 'Не успях да заредя справка от bookings.';
+    }
 }
 
 async function getHostReportReply(reportType, role, language = 'bg') {
@@ -1511,6 +1589,19 @@ async function getTodayRegistrationsReply(role, language = 'bg') {
     }
 }
 
+function getLockAccessWindow(bookingData) {
+    const checkInTs = new Date(bookingData?.check_in);
+    const checkOutTs = new Date(bookingData?.check_out);
+
+    if (Number.isNaN(checkInTs.getTime()) || Number.isNaN(checkOutTs.getTime())) {
+        return { from: null, to: null };
+    }
+
+    const from = new Date(checkInTs.getTime() - (ACCESS_START_BEFORE_CHECKIN_HOURS * 60 * 60 * 1000));
+    const to = new Date(checkOutTs.getTime() + (ACCESS_END_AFTER_CHECKOUT_HOURS * 60 * 60 * 1000));
+    return { from, to };
+}
+
 function getGuestOnboardingReply(bookingData, language = 'bg') {
     if (!bookingData) {
         return language === 'en'
@@ -1521,12 +1612,19 @@ function getGuestOnboardingReply(bookingData, language = 'bg') {
     const locale = language === 'en' ? 'en-GB' : 'bg-BG';
     const checkIn = new Date(bookingData.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
     const checkOut = new Date(bookingData.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+    const accessWindow = getLockAccessWindow(bookingData);
+    const accessFrom = accessWindow.from
+        ? accessWindow.from.toLocaleString(locale, { timeZone: 'Europe/Sofia' })
+        : null;
+    const accessTo = accessWindow.to
+        ? accessWindow.to.toLocaleString(locale, { timeZone: 'Europe/Sofia' })
+        : null;
 
     if (language === 'en') {
-        return `Welcome, ${bookingData.guest_name}. Your reservation code ${bookingData.reservation_code} is active from ${checkIn} to ${checkOut}. What would you like to ask?`;
+        return `Welcome, ${bookingData.guest_name}. Your reservation code ${bookingData.reservation_code} is active from ${checkIn} to ${checkOut}. The temporary lock code is managed in Tuya and will be provided to you in the allowed access window: ${accessFrom || checkIn} → ${accessTo || checkOut}.`;
     }
 
-    return `Привет, ${bookingData.guest_name}. Кодът ви за резервация ${bookingData.reservation_code} е активен за периода от ${checkIn} до ${checkOut}. Какво бихте желали да попитате?`;
+    return `Привет, ${bookingData.guest_name}. Кодът ви за резервация ${bookingData.reservation_code} е активен за периода от ${checkIn} до ${checkOut}. Временният код за бравата се управлява в Tuya и ще ви бъде предоставен в разрешения прозорец за достъп: ${accessFrom || checkIn} → ${accessTo || checkOut}.`;
 }
 
 function getReservationRefreshReply(role, bookingData, language = 'bg') {
@@ -1539,6 +1637,13 @@ function getReservationRefreshReply(role, bookingData, language = 'bg') {
     const locale = language === 'en' ? 'en-GB' : 'bg-BG';
     const checkIn = new Date(bookingData.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
     const checkOut = new Date(bookingData.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+    const accessWindow = getLockAccessWindow(bookingData);
+    const accessFrom = accessWindow.from
+        ? accessWindow.from.toLocaleString(locale, { timeZone: 'Europe/Sofia' })
+        : null;
+    const accessTo = accessWindow.to
+        ? accessWindow.to.toLocaleString(locale, { timeZone: 'Europe/Sofia' })
+        : null;
 
     if (language === 'en') {
         return `I rechecked your reservation in real time.
@@ -1546,7 +1651,9 @@ function getReservationRefreshReply(role, bookingData, language = 'bg') {
 Reservation code: ${bookingData.reservation_code}
 Guest: ${bookingData.guest_name}
 Check-in: ${checkIn}
-Check-out: ${checkOut}`;
+Check-out: ${checkOut}
+Temporary lock code: managed in Tuya and sent in the allowed access window
+Code validity window (power ON → power OFF): ${accessFrom || checkIn} → ${accessTo || checkOut}`;
     }
 
     return `Проверих отново резервацията в реално време.
@@ -1554,7 +1661,9 @@ Check-out: ${checkOut}`;
 Код за резервация: ${bookingData.reservation_code}
 Гост: ${bookingData.guest_name}
 Настаняване: ${checkIn}
-Напускане: ${checkOut}`;
+Напускане: ${checkOut}
+Временен код за бравата: управлява се в Tuya и се изпраща в разрешения прозорец за достъп
+Валидност на кода (пускане на ток → спиране на ток): ${accessFrom || checkIn} → ${accessTo || checkOut}`;
 }
 
 /**
@@ -1757,7 +1866,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 2.35. КРАТКО ПОТВЪРЖДЕНИЕ ПРИ ПОДАДЕН КОД НА РЕЗЕРВАЦИЯ
-    if (role === 'guest' && isReservationCodeIntro(userMessage)) {
+    if (role === 'guest' && (isReservationCodeIntro(userMessage) || isBareReservationCodeMessage(userMessage))) {
         return getGuestOnboardingReply(data, preferredLanguage);
     }
 
@@ -1786,6 +1895,9 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
     if (isUnknownPowerStatusRequest(userMessage)) {
         return await getHostReportReply('unknown_power', role, preferredLanguage);
+    }
+    if (isDatabaseSnapshotRequest(userMessage)) {
+        return await getDatabaseSnapshotReply(role, preferredLanguage);
     }
 
     // 2.5. ТВЪРДА АВТОРИЗАЦИОННА БАРИЕРА ЗА УПРАВЛЕНИЕ НА ТОК
@@ -1885,17 +1997,21 @@ After successful verification, I will execute the command immediately.`;
         const manualLike = isManualLikeQuestion(userMessage);
         console.log(`[GROQ_ROUTER] Старт на router проверка (manualLike=${manualLike})`);
 
-        const routerResult = await generateWithGroqRouter(
-            role,
-            preferredLanguage,
-            manualContent,
-            history,
-            userMessage
-        );
+        if (manualLike) {
+            const routerResult = await generateWithGroqRouter(
+                role,
+                preferredLanguage,
+                manualContent,
+                history,
+                userMessage
+            );
 
-        if (routerResult?.reply) {
-            finalReply = routerResult.reply;
-            generatedByModel = true;
+            if (routerResult?.reply) {
+                finalReply = routerResult.reply;
+                generatedByModel = true;
+            }
+        } else {
+            console.log('[GROQ_ROUTER] ⏭️ Не е имотен/manual въпрос, директно към Gemini');
         }
     }
 
