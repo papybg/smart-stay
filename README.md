@@ -43,14 +43,15 @@
 
 4. FEEDBACK LOOP (Tasker → Backend)
    ├─ Tasker изпраща POST /api/power/status със ново състояние
-   ├─ Backend обновява глобално состояние + логва в power_history
+  ├─ Backend обновява глобално състояние + логва в power_history
+  ├─ Backend обновява bookings.power_status за активните резервации
    └─ Dashboard показва история в реално време
 
 5. GUEST SUPPORT (AI Assistant)
    ├─ Гостите пишат чат съобщения (index.html)
-   ├─ AI (Gemini) анализира въпроса
-   ├─ Отговаря само с информация от manual.txt (SSoT)
-   └─ Може да управлява аварийни ситуации (болест, пожар, насилие)
+  ├─ AI използва bookings-first логика за резервации и power status
+  ├─ Host справките са детерминистични (read-only към базата)
+  └─ Свободни отговори от Gemini се ползват само извън тези фиксирани intents
 ```
 
 ---
@@ -61,7 +62,7 @@
 |-----------|-----------|--------|
 | **Backend** | Node.js + Express | ^4.21.2 |
 | **Database** | PostgreSQL (Neon Cloud) | Serverless |
-| **AI** | Google Gemini Flash | Latest |
+| **AI** | Google Gemini (allowlist 2.0/2.5/3) | Current |
 | **Scheduling** | node-cron | ^4.2.1 |
 | **HTTP Client** | axios | ^1.13.4 |
 | **Email** | Gmail API + OAuth2 | googleapis ^144.0.0 |
@@ -138,6 +139,7 @@
 ### Данни flow
 ```
 Gmail (Airbnb) → detective.js → Gemini AI → DB (bookings)
+AI queries → bookings (read-only for reports/status)
                                     ↓
                             Cron Scheduler
                                     ↓
@@ -159,7 +161,7 @@ Gmail (Airbnb) → detective.js → Gemini AI → DB (bookings)
                         ↓
                    POST /api/power/status
                         ↓
-                   power_history (DB logging)
+                  power_history (events log) + bookings.power_status (current state)
                         ↓
                    Dashboard (live visualization)
 ```
@@ -237,34 +239,35 @@ CREATE TABLE bookings (
     payment_status VARCHAR(20) DEFAULT 'pending',  -- paid/pending
     power_on_time TIMESTAMP,                       -- 2 часа преди check-in
     power_off_time TIMESTAMP,                      -- 1 час след check-out
+    power_status VARCHAR(10) DEFAULT 'unknown',    -- on/off/unknown
+    power_status_updated_at TIMESTAMPTZ,
     source VARCHAR(20) DEFAULT 'airbnb',           -- airbnb/manual
     created_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
-### Таблица: `power_history` (ново)
+  ### Таблица: `power_history`
 ```sql
 CREATE TABLE power_history (
     id SERIAL PRIMARY KEY,
     is_on BOOLEAN NOT NULL,                        -- true=ВКЛ, false=ИЗКЛ
-    source VARCHAR(50),                            -- tasker/cron/guest/emergency
+    source VARCHAR(50),                            -- tasker/scheduler/guest/host/api
     timestamp TIMESTAMPTZ DEFAULT NOW(),
-    duration_seconds INT,                          -- как дълго е била в това състояние
-    booking_id INT REFERENCES bookings(id),        -- кой гост
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    battery INT,
+    booking_id TEXT                                -- actor label (tasker/host/guest/...)
 );
 
 CREATE INDEX idx_power_history_timestamp ON power_history(timestamp DESC);
 ```
 
-### Таблица: `pins` (управление на брава кодове)
+  ### Таблица: `pin_depot` (управление на брава кодове)
 ```sql
-CREATE TABLE pins (
+  CREATE TABLE pin_depot (
     id SERIAL PRIMARY KEY,
     pin_code VARCHAR(20) UNIQUE NOT NULL,          -- "123456"
-    pin_name VARCHAR(100),                         -- "User 5"
     is_used BOOLEAN DEFAULT FALSE,                 -- дали е използван
-    created_at TIMESTAMP DEFAULT NOW()
+    assigned_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
@@ -292,15 +295,12 @@ curl -X POST http://localhost:10000/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Как включвам климатика?",
-    "guestInfo": {"guest_name": "John", "check_in": "2026-02-20"},
-    "context": "property_info"
+    "history": []
   }'
 
 Response:
 {
-  "reply": "Климатикът се управлява от приложението Smart Life...",
-  "source": "manual",
-  "emergency": false
+  "response": "..."
 }
 ```
 
@@ -368,10 +368,10 @@ curl http://localhost:10000/api/power-status
 
 Response:
 {
-  "is_on": true,
-  "last_update": "2026-02-10T15:45:30.000Z",
-  "source": "tasker",
-  "last_switch": "5 minutes ago"
+  "online": true,
+  "isOn": true,
+  "lastUpdate": "2026-02-10T15:45:30.000Z",
+  "source": "tasker_direct"
 }
 ```
 
@@ -393,8 +393,8 @@ Response:
       "is_on": false,
       "source": "cron",
       "timestamp": "2026-02-10T14:00:00Z",
-      "booking_id": 5,
-      "created_at": "2026-02-10T14:00:15Z"
+      "battery": 80,
+      "booking_id": "tasker_direct"
     },
     ...
   ],
@@ -407,8 +407,14 @@ Response:
 
 ### 🟡 Bookings Management
 
+#### `GET /api/bookings`
+Резервации (API формат)
+```bash
+curl http://localhost:10000/api/bookings
+```
+
 #### `GET /bookings`
-Всички резервации (за админ панел)
+Legacy резервации (за dashboard/aaadmin)
 ```bash
 curl http://localhost:10000/bookings
 
@@ -428,9 +434,9 @@ Response:
 ]
 ```
 
-#### `POST /api/bookings` (Manual добавяне)
+#### `POST /add-booking` (Manual добавяне)
 ```bash
-curl -X POST http://localhost:10000/api/bookings \
+curl -X POST http://localhost:10000/add-booking \
   -H "Content-Type: application/json" \
   -d '{
     "guest_name": "Jane Smith",
@@ -438,6 +444,18 @@ curl -X POST http://localhost:10000/api/bookings \
     "check_out": "2026-02-17T11:00:00Z",
     "reservation_code": "HM999999"
   }'
+```
+
+#### `DELETE /bookings/:id`
+Изтриване на резервация
+```bash
+curl -X DELETE http://localhost:10000/bookings/33
+```
+
+#### `GET /sync`
+Ръчен Detective sync от Gmail
+```bash
+curl http://localhost:10000/sync
 ```
 
 ### 🔑 PIN/Lock Codes (pin_depot)

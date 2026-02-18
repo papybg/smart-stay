@@ -327,6 +327,36 @@ function isHostVerified(authCode, userMessage) {
 }
 
 /**
+ * Проверка за домакински код в последните user съобщения от history
+ * Използва се за устойчивост в chat сесия без token.
+ *
+ * @param {Array} history
+ * @returns {boolean}
+ */
+function isHostVerifiedInHistory(history = []) {
+    if (!HOST_CODE || !Array.isArray(history) || history.length === 0) return false;
+
+    const normalizedHostCode = String(HOST_CODE).trim().toLowerCase();
+    const escapedHostCode = normalizedHostCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const hostCodePattern = new RegExp(`(^|[^a-z0-9])${escapedHostCode}([^a-z0-9]|$)`, 'i');
+
+    const recentUserMessages = history
+        .filter(msg => msg && msg.role === 'user' && typeof msg.content === 'string')
+        .slice(-12);
+
+    for (let index = recentUserMessages.length - 1; index >= 0; index--) {
+        const text = String(recentUserMessages[index].content || '').trim().toLowerCase();
+        if (!text) continue;
+        if (text === normalizedHostCode || hostCodePattern.test(text)) {
+            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: HOST_CODE намерен в history');
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
  * ВЕРИФИКАЦИЯ НА ГОСТ ЧРЕЗ HM КОДОВЕ НА РЕЗЕРВАЦИИ
  * 
  * Използва regex за извличане на HM кодове от съобщения и верификация срещу таблица резервации
@@ -555,6 +585,14 @@ export async function determineUserRole(authCode, userMessage, history = []) {
         console.log('[SECURITY] Данни на гост подготвени:', guestData.guest_name);
         console.log('[SECURITY] ========== ПРОВЕРКА НА СИГУРНОСТ ЗАВЪРШЕНА ==========\n');
         return { role: 'guest', data: guestData };
+    }
+
+    // ПРОВЕРКА #2.5: ВЕРИФИКАЦИЯ НА ДОМАКИНА ОТ HISTORY (fallback за chat сесии без token)
+    // ВАЖНО: изпълнява се СЛЕД guest верификация, за да не засенчва валиден HM код.
+    if (isHostVerifiedInHistory(history)) {
+        console.log('[SECURITY] Определена роля: ДОМАКИН (history fallback)');
+        console.log('[SECURITY] ========== ПРОВЕРКА НА СИГУРНОСТ ЗАВЪРШЕНА ==========\n');
+        return { role: 'host', data: null };
     }
 
     // ПО ПОДРАЗБИРАНЕ: НЕПОЗНАТ (ОГРАНИЧЕН ДОСТЪП)
@@ -1032,6 +1070,51 @@ function isPowerStatusRequest(userMessage) {
     return statusKeywords.test(userMessage);
 }
 
+async function getBookingsPowerStatus(role, bookingData) {
+    if (!sql) return { available: false, state: null };
+
+    try {
+        // За гост: статус от неговата резервация
+        if (role === 'guest' && bookingData?.booking_id) {
+            const rows = await sql`
+                SELECT power_status
+                FROM bookings
+                WHERE id = ${bookingData.booking_id}
+                LIMIT 1
+            `;
+            const status = rows[0]?.power_status || null;
+            if (status === 'on' || status === 'off') {
+                return { available: true, state: status };
+            }
+            return { available: true, state: null };
+        }
+
+        // За домакин/други: вземи активна резервация в момента
+        const activeRows = await sql`
+            SELECT power_status
+            FROM bookings
+            WHERE check_in <= NOW()
+              AND check_out > NOW()
+              AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+            ORDER BY check_in ASC
+            LIMIT 1
+        `;
+
+        if (activeRows.length === 0) {
+            return { available: true, state: null };
+        }
+
+        const status = activeRows[0]?.power_status || null;
+        if (status === 'on' || status === 'off') {
+            return { available: true, state: status };
+        }
+        return { available: true, state: null };
+    } catch (error) {
+        console.error('[DB] 🔴 Грешка при четене на bookings.power_status:', error.message);
+        return { available: false, state: null };
+    }
+}
+
 /**
  * Разпознава въпроси за ролята на потребителя
  *
@@ -1054,6 +1137,206 @@ function isReservationCodeIntro(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     const introKeywords = /код(ът)?\s*(ми)?\s*за\s*резервация|reservation code|my code is|my reservation is|имам резервация|i have reservation|i have a reservation/i;
     return introKeywords.test(userMessage);
+}
+
+function isTodayRegistrationsRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const keywords = /каква(и)?\s+регистраци(я|и)\s+има\s+за\s+днес|регистраци(я|и)\s+за\s+днес|резерваци(я|и)\s+за\s+днес|какви\s+резервации\s+има\s+днес|today registrations|today bookings|bookings for today/i;
+    return keywords.test(userMessage);
+}
+
+function isActiveNowRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /активни\s+резерваци(я|и)\s+сега|активни\s+регистраци(я|и)\s+сега|колко\s+са\s+активните\s+сега|active\s+bookings\s+now|active\s+registrations\s+now/i.test(userMessage);
+}
+
+function isTomorrowRegistrationsRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /резерваци(я|и)\s+за\s+утре|регистраци(я|и)\s+за\s+утре|tomorrow\s+bookings|tomorrow\s+registrations/i.test(userMessage);
+}
+
+function isCheckoutTodayRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /check\s*-?out\s+днес|напускан(е|ия)\s+днес|излиза(т)?\s+днес|checkout\s+today|check-out\s+today/i.test(userMessage);
+}
+
+function isRecentCancelledRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /анулиран(и|ия)\s+(резерваци(я|и))?|cancelled\s+bookings|canceled\s+bookings|анулаци(я|и)\s+последните/i.test(userMessage);
+}
+
+function isUnknownPowerStatusRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /unknown\s+power|неизвестен\s+статус\s+на\s+тока|липсващ\s+статус\s+на\s+тока|power_status\s+unknown/i.test(userMessage);
+}
+
+async function getHostReportReply(reportType, role, language = 'bg') {
+    if (role !== 'host') {
+        return language === 'en'
+            ? 'This report is available only for host access.'
+            : 'Тази справка е достъпна само за домакин.';
+    }
+
+    if (!sql) {
+        return language === 'en'
+            ? 'Database is not available right now.'
+            : 'Базата данни не е достъпна в момента.';
+    }
+
+    const dayStartExpr = sql`date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia')`;
+    const dayEndExpr = sql`date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia') + INTERVAL '1 day'`;
+    const tomorrowStartExpr = sql`date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia') + INTERVAL '1 day'`;
+    const tomorrowEndExpr = sql`date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia') + INTERVAL '2 day'`;
+
+    try {
+        if (reportType === 'active_now') {
+            const rows = await sql`
+                SELECT check_in, check_out, payment_status
+                FROM bookings
+                WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                  AND check_in <= NOW()
+                  AND check_out > NOW()
+                ORDER BY check_in ASC
+                LIMIT 20
+            `;
+
+            if (!rows.length) return language === 'en' ? 'No active registrations right now.' : 'Няма активни регистрации в момента.';
+            const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+            const lines = rows.map(row => `• ${new Date(row.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' })} → ${new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' })} | ${row.payment_status || 'paid'}`);
+            return language === 'en'
+                ? `Active registrations now (${rows.length}):\n\n${lines.join('\n')}`
+                : `Активни регистрации в момента (${rows.length}):\n\n${lines.join('\n')}`;
+        }
+
+        if (reportType === 'tomorrow') {
+            const rows = await sql`
+                SELECT check_in, check_out, payment_status
+                FROM bookings
+                WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                  AND check_in < ${tomorrowEndExpr}
+                  AND check_out > ${tomorrowStartExpr}
+                ORDER BY check_in ASC
+                LIMIT 20
+            `;
+            if (!rows.length) return language === 'en' ? 'No registrations for tomorrow.' : 'Няма регистрации за утре.';
+            const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+            const lines = rows.map(row => `• ${new Date(row.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' })} → ${new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' })} | ${row.payment_status || 'paid'}`);
+            return language === 'en'
+                ? `Registrations for tomorrow (${rows.length}):\n\n${lines.join('\n')}`
+                : `Регистрации за утре (${rows.length}):\n\n${lines.join('\n')}`;
+        }
+
+        if (reportType === 'checkout_today') {
+            const rows = await sql`
+                SELECT check_out, payment_status
+                FROM bookings
+                WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                  AND check_out >= ${dayStartExpr}
+                  AND check_out < ${dayEndExpr}
+                ORDER BY check_out ASC
+                LIMIT 20
+            `;
+            if (!rows.length) return language === 'en' ? 'No check-outs for today.' : 'Няма напускания за днес.';
+            const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+            const lines = rows.map(row => `• ${new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' })} | ${row.payment_status || 'paid'}`);
+            return language === 'en'
+                ? `Check-outs today (${rows.length}):\n\n${lines.join('\n')}`
+                : `Напускания днес (${rows.length}):\n\n${lines.join('\n')}`;
+        }
+
+        if (reportType === 'cancelled_recent') {
+            const rows = await sql`
+                SELECT check_in, check_out
+                FROM bookings
+                WHERE COALESCE(LOWER(payment_status), '') = 'cancelled'
+                  AND check_out >= (NOW() - INTERVAL '7 day')
+                ORDER BY check_out DESC
+                LIMIT 20
+            `;
+            if (!rows.length) return language === 'en' ? 'No cancelled bookings in the last 7 days.' : 'Няма анулирани резервации за последните 7 дни.';
+            const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+            const lines = rows.map(row => `• ${new Date(row.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' })} → ${new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' })}`);
+            return language === 'en'
+                ? `Cancelled bookings (last 7 days, ${rows.length}):\n\n${lines.join('\n')}`
+                : `Анулирани резервации (последни 7 дни, ${rows.length}):\n\n${lines.join('\n')}`;
+        }
+
+        if (reportType === 'unknown_power') {
+            const rows = await sql`
+                SELECT check_in, check_out, power_status
+                FROM bookings
+                WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                  AND check_in <= NOW()
+                  AND check_out > NOW()
+                  AND (power_status IS NULL OR LOWER(power_status) = 'unknown')
+                ORDER BY check_in ASC
+                LIMIT 20
+            `;
+            if (!rows.length) return language === 'en' ? 'No active bookings with unknown power status.' : 'Няма активни резервации с unknown статус на тока.';
+            const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+            const lines = rows.map(row => `• ${new Date(row.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' })} → ${new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' })}`);
+            return language === 'en'
+                ? `Active bookings with unknown power status (${rows.length}):\n\n${lines.join('\n')}`
+                : `Активни резервации с unknown статус на тока (${rows.length}):\n\n${lines.join('\n')}`;
+        }
+    } catch (error) {
+        console.error('[HOST] 🔴 Грешка при host report:', reportType, error.message);
+        return language === 'en'
+            ? 'I could not load this report from the database.'
+            : 'Не успях да заредя тази справка от базата.';
+    }
+
+    return language === 'en' ? 'Unknown report request.' : 'Непознат тип справка.';
+}
+
+async function getTodayRegistrationsReply(role, language = 'bg') {
+    if (role !== 'host') {
+        return language === 'en'
+            ? 'This information is available only for host access.'
+            : 'Тази информация е достъпна само за домакин.';
+    }
+
+    if (!sql) {
+        return language === 'en'
+            ? 'Database is not available right now.'
+            : 'Базата данни не е достъпна в момента.';
+    }
+
+    try {
+                const rows = await sql`
+                        SELECT check_in, check_out, payment_status
+            FROM bookings
+            WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+              AND check_in < date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia') + INTERVAL '1 day'
+              AND check_out > date_trunc('day', NOW() AT TIME ZONE 'Europe/Sofia')
+            ORDER BY check_in ASC
+            LIMIT 20
+        `;
+
+        if (!rows || rows.length === 0) {
+            return language === 'en'
+                ? 'There are no active registrations for today in the database.'
+                : 'Няма активни регистрации за днес в базата.';
+        }
+
+        const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+        const lines = rows.map(row => {
+            const inTime = new Date(row.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+            const outTime = new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+            return `• ${inTime} → ${outTime} | ${row.payment_status || 'paid'}`;
+        });
+
+        if (language === 'en') {
+            return `Today registrations in the database (${rows.length}):\n\n${lines.join('\n')}`;
+        }
+
+        return `Регистрации за днес в базата (${rows.length}):\n\n${lines.join('\n')}`;
+    } catch (error) {
+        console.error('[HOST] 🔴 Грешка при четене на регистрации за днес:', error.message);
+        return language === 'en'
+            ? 'I could not load today registrations from the database.'
+            : 'Не успях да заредя регистрациите за днес от базата.';
+    }
 }
 
 function getGuestOnboardingReply(bookingData, language = 'bg') {
@@ -1311,6 +1594,28 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         return getReservationRefreshReply(role, data, preferredLanguage);
     }
 
+    // 2.45. ДЕТЕРМИНИСТИЧЕН HOST ОТГОВОР ЗА "РЕГИСТРАЦИИ ЗА ДНЕС"
+    if (isTodayRegistrationsRequest(userMessage)) {
+        return await getTodayRegistrationsReply(role, preferredLanguage);
+    }
+
+    // 2.46. ДЕТЕРМИНИСТИЧНИ HOST СПРАВКИ
+    if (isActiveNowRequest(userMessage)) {
+        return await getHostReportReply('active_now', role, preferredLanguage);
+    }
+    if (isTomorrowRegistrationsRequest(userMessage)) {
+        return await getHostReportReply('tomorrow', role, preferredLanguage);
+    }
+    if (isCheckoutTodayRequest(userMessage)) {
+        return await getHostReportReply('checkout_today', role, preferredLanguage);
+    }
+    if (isRecentCancelledRequest(userMessage)) {
+        return await getHostReportReply('cancelled_recent', role, preferredLanguage);
+    }
+    if (isUnknownPowerStatusRequest(userMessage)) {
+        return await getHostReportReply('unknown_power', role, preferredLanguage);
+    }
+
     // 2.5. ТВЪРДА АВТОРИЗАЦИОННА БАРИЕРА ЗА УПРАВЛЕНИЕ НА ТОК
     // Ако няма валидна роля (guest/host), никога не допускай AI да обещава действие.
     const requestedPowerCommand = isPowerCommandRequest(userMessage);
@@ -1342,14 +1647,23 @@ After successful verification, I will execute the command immediately.`;
     // 3.5 КРАТЪК ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА СТАТУС НА ТОКА
     // Изискване: без час, само кратка информация
     if (isPowerStatusRequest(userMessage) && !requestedPowerCommand) {
-        if (!powerStatus?.online) {
+        const bookingsStatus = await getBookingsPowerStatus(role, data);
+        if (!bookingsStatus.available) {
             return preferredLanguage === 'en'
-                ? 'I currently have no connection to the power system.'
-                : 'В момента нямам връзка със системата за ток.';
+                ? 'I currently cannot read booking status.'
+                : 'В момента не мога да прочета статуса от bookings.';
         }
-        return powerStatus?.isOn
-            ? (preferredLanguage === 'en' ? 'Yes, there is electricity.' : 'Да, има ток.')
-            : (preferredLanguage === 'en' ? 'No, there is no electricity.' : 'Не, няма ток.');
+
+        if (bookingsStatus.state === 'on') {
+            return preferredLanguage === 'en' ? 'Yes, there is electricity.' : 'Да, има ток.';
+        }
+        if (bookingsStatus.state === 'off') {
+            return preferredLanguage === 'en' ? 'No, there is no electricity.' : 'Не, няма ток.';
+        }
+
+        return preferredLanguage === 'en'
+            ? 'There is no active booking power status at the moment.'
+            : 'В момента няма активен статус на тока в bookings.';
     }
 
     // 4. ЧЕТЕНЕ НА МАНУАЛА (РАЗДЕЛЕН НА ПУБЛИЧЕН И ЧАСТЕН)

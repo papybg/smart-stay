@@ -100,6 +100,14 @@ async function initializeDatabase() {
         try {
             await sql`ALTER TABLE power_history ADD COLUMN battery INT;`;
         } catch (e) { /* колона вече съществува */ }
+
+        // bookings.power_status - източник за AI (bookings-first архитектура)
+        try {
+            await sql`ALTER TABLE bookings ADD COLUMN power_status VARCHAR(10) DEFAULT 'unknown';`;
+        } catch (e) { /* колона вече съществува */ }
+        try {
+            await sql`ALTER TABLE bookings ADD COLUMN power_status_updated_at TIMESTAMPTZ;`;
+        } catch (e) { /* колона вече съществува */ }
         console.log('[DB] ✅ power_history таблица готова');
 
         // Информационна проверка (без синтетичен запис, за да не въвежда нереално състояние)
@@ -367,6 +375,20 @@ async function handlePowerStatusUpdate(req, res) {
                 console.log(`[DB] ✅ Промяна записана: ${prevState ? 'ON' : 'OFF'} → ${newState ? 'ON' : 'OFF'}`);
             } catch (dbError) {
                 console.error('[DB] 🔴 Грешка при логване:', dbError.message);
+            }
+
+            // 3) Обнови bookings.power_status за активните резервации
+            try {
+                await sql`
+                    UPDATE bookings
+                    SET power_status = ${newState ? 'on' : 'off'},
+                        power_status_updated_at = ${timestamp}
+                    WHERE check_in <= ${timestamp}
+                      AND check_out > ${timestamp}
+                      AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                `;
+            } catch (bookingErr) {
+                console.error('[DB] 🔴 Грешка при update на bookings.power_status:', bookingErr.message);
             }
         } else if (sql && prevState === newState) {
             console.log(`[TASKER] ℹ️ Състоянието е същото (${newState ? 'ON' : 'OFF'}), без запис`);
@@ -703,6 +725,18 @@ function initializeScheduler() {
                     
                     global.powerState.is_on = true;
                     global.powerState.source = 'scheduler-checkin';
+
+                    // Обнови bookings.power_status за тази резервация
+                    try {
+                        await sql`
+                            UPDATE bookings
+                            SET power_status = 'on',
+                                power_status_updated_at = ${now}
+                            WHERE id = ${booking.id}
+                        `;
+                    } catch (bookingErr) {
+                        console.error('[DB] 🔴 Грешка при scheduler check-in power_status:', bookingErr.message);
+                    }
                     
                     // 2. ПРАЩА КЪМ TASKER
                     await controlPower(true); // Праща команда към Tasker через AutoRemote
@@ -732,6 +766,18 @@ function initializeScheduler() {
                     
                     global.powerState.is_on = false;
                     global.powerState.source = 'scheduler-checkout';
+
+                    // Обнови bookings.power_status за тази резервация
+                    try {
+                        await sql`
+                            UPDATE bookings
+                            SET power_status = 'off',
+                                power_status_updated_at = ${now}
+                            WHERE id = ${booking.id}
+                        `;
+                    } catch (bookingErr) {
+                        console.error('[DB] 🔴 Грешка при scheduler check-out power_status:', bookingErr.message);
+                    }
                     
                     // 2. ПРАЩА КЪМ TASKER
                     await controlPower(false); // Праща команда към Tasker през AutoRemote
