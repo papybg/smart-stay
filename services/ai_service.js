@@ -134,8 +134,8 @@ const automationClient = {
             if (sql) {
                 try {
                     await sql`
-                        INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                        VALUES (${state}, ${timestamp}, ${source}, ${bookingId || null})
+                        INSERT INTO power_history (is_on, timestamp, source)
+                        VALUES (${state}, ${timestamp}, ${source})
                     `;
                     console.log('[DB] ✅ Команда записана в power_history (is_on=' + state + ', source=' + source + ')');
                 } catch (dbError) {
@@ -773,7 +773,8 @@ async function waitForPowerConfirmation(expectedState, timeoutMs = 20000) {
     const pollInterval = 500; // Проверка всеки 500ms
     
     while (Date.now() - startTime < timeoutMs) {
-        const currentState = global.powerState?.is_on;
+        const latestStatus = await automationClient.getPowerStatus();
+        const currentState = latestStatus?.isOn;
         const hasChanged = currentState === expectedState;
         
         if (hasChanged) {
@@ -795,7 +796,7 @@ async function waitForPowerConfirmation(expectedState, timeoutMs = 20000) {
     console.log(`[POWER:WAIT] ⏰ TIMEOUT! Очаквахме ${expectedState ? 'ON' : 'OFF'}, но не се случи в ${waited}ms`);
     return {
         success: false,
-        actualState: global.powerState?.is_on || null,
+        actualState: null,
         waited: waited
     };
 }
@@ -857,8 +858,10 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
             // ⏳ ИЗЧАКАЙ РЕАЛНОТО ПОТВЪРЖДЕНИЕ ОТ TASKER
             const confirmation = await waitForPowerConfirmation(true, 20000);
             console.log(`[POWER] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
-            
-            return ""; // Остави AI да генерира отговор от manual
+
+            return confirmation.success
+                ? 'Разбрах. Пуснах тока и получих потвърждение от системата. ✅'
+                : 'Изпратих команда за включване на тока, но още нямам потвърждение от Tasker. Провери след 20-30 секунди.';
         } else if (isExclude) {
             console.log('[POWER] ⚡ КОМАНДА: ИЗКЛЮЧИ ТОКА');
             await automationClient.controlPower(false, bookingData?.id, 'ai_command');
@@ -866,8 +869,10 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
             // ⏳ ИЗЧАКАЙ РЕАЛНОТО ПОТВЪРЖДЕНИЕ ОТ TASKER
             const confirmation = await waitForPowerConfirmation(false, 20000);
             console.log(`[POWER] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
-            
-            return ""; // Остави AI да генерира отговор от manual
+
+            return confirmation.success
+                ? 'Разбрах. Спрях тока и получих потвърждение от системата. ✅'
+                : 'Изпратих команда за спиране на тока, но още нямам потвърждение от Tasker. Провери след 20-30 секунди.';
         }
     }
 
@@ -920,7 +925,7 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
         );
 
         console.log('[POWER] Известуванието е изпратено до домакина');
-        return ""; // Остави AI да генерира отговор от manual
+        return 'Получих сигнал за липса на ток. Пуснах тока и уведомих домакина. ✅';
     } else {
         console.log('[POWER] ❌ Команда за управление на ток не успя');
         
@@ -936,7 +941,7 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
             }
         );
         
-        return ""; // Остави AI да генерира отговор от manual
+        return 'Опитах да включа тока, но автоматичното възстановяване не успя. Уведомих домакина за спешна проверка.';
     }
 }
 

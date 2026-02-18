@@ -84,11 +84,14 @@ async function initializeDatabase() {
                 is_on BOOLEAN NOT NULL,
                 source VARCHAR(50),
                 timestamp TIMESTAMPTZ DEFAULT NOW(),
-                booking_id INT REFERENCES bookings(id)
+                battery INT
             );
         `;
         
         await sql`CREATE INDEX IF NOT EXISTS idx_power_history_timestamp ON power_history(timestamp DESC);`;
+        try {
+            await sql`ALTER TABLE power_history ADD COLUMN battery INT;`;
+        } catch (e) { /* колона вече съществува */ }
         console.log('[DB] ✅ power_history таблица готова');
 
         // Информационна проверка (без синтетичен запис, за да не въвежда нереално състояние)
@@ -314,7 +317,7 @@ async function handlePowerStatusUpdate(req, res) {
     try {
         const rawState = req.body?.is_on ?? req.body?.isOn ?? req.body?.status ?? req.body?.state;
         const source = req.body?.source || 'tasker_direct';
-        const booking_id = req.body?.booking_id || null;
+        const rawBattery = req.body?.battery;
         const prevState = global.powerState.is_on;
         const timestamp = new Date();
 
@@ -331,6 +334,14 @@ async function handlePowerStatusUpdate(req, res) {
         console.log(`[TASKER] 📊 State: ${newState ? 'ON' : 'OFF'} (беше ${prevState ? 'ON' : 'OFF'})`);
         console.log(`[TASKER] 🔍 sql available: ${sql ? '✅ YES' : '❌ NO'}`);
 
+        let batteryValue = null;
+        if (rawBattery !== undefined && rawBattery !== null && String(rawBattery).trim() !== '') {
+            const parsedBattery = Number.parseInt(String(rawBattery), 10);
+            if (!Number.isNaN(parsedBattery)) {
+                batteryValue = parsedBattery;
+            }
+        }
+
         // 1) Обновяване на глобално състояние
         global.powerState.is_on = newState;
         global.powerState.last_update = timestamp;
@@ -339,10 +350,10 @@ async function handlePowerStatusUpdate(req, res) {
         // 2) Запис в БД само при промяна
         if (sql && prevState !== newState) {
             try {
-                console.log(`[DB] 📝 Inserting: is_on=${newState}, source=${source}, booking_id=${booking_id}`);
+                console.log(`[DB] 📝 Inserting: is_on=${newState}, source=${source}, battery=${batteryValue}`);
                 await sql`
-                    INSERT INTO power_history (is_on, source, timestamp, booking_id)
-                    VALUES (${newState}, ${source}, ${timestamp}, ${booking_id})
+                    INSERT INTO power_history (is_on, source, timestamp, battery)
+                    VALUES (${newState}, ${source}, ${timestamp}, ${batteryValue})
                 `;
                 console.log(`[DB] ✅ Промяна записана: ${prevState ? 'ON' : 'OFF'} → ${newState ? 'ON' : 'OFF'}`);
             } catch (dbError) {
@@ -360,7 +371,7 @@ async function handlePowerStatusUpdate(req, res) {
             received: { 
                 is_on: newState, 
                 source,
-                booking_id,
+                battery: batteryValue,
                 stateChanged: prevState !== newState,
                 note: prevState === newState ? 'Състояние без промяна' : 'Записано в power_history'
             }
@@ -448,7 +459,7 @@ app.get('/api/power-history', async (req, res) => {
                 is_on,
                 source,
                 timestamp,
-                booking_id
+                battery
             FROM power_history
             WHERE timestamp >= ${sinceDate}
             ORDER BY timestamp DESC
@@ -529,8 +540,8 @@ function initializeScheduler() {
                     // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
                     try {
                         await sql`
-                            INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                            VALUES (true, ${now}, 'scheduler_checkin', ${booking.id})
+                            INSERT INTO power_history (is_on, timestamp, source)
+                            VALUES (true, ${now}, 'scheduler_checkin')
                         `;
                         console.log('[DB] ✅ Check-in включване записано');
                     } catch (dbErr) {
@@ -558,8 +569,8 @@ function initializeScheduler() {
                     // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
                     try {
                         await sql`
-                            INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                            VALUES (false, ${now}, 'scheduler_checkout', ${booking.id})
+                            INSERT INTO power_history (is_on, timestamp, source)
+                            VALUES (false, ${now}, 'scheduler_checkout')
                         `;
                         console.log('[DB] ✅ Check-out изключване записано');
                     } catch (dbErr) {
