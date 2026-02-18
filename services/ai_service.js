@@ -260,10 +260,11 @@ function isHostVerified(authCode, userMessage) {
             return true;
         }
 
-        // 2) Точно съответствие на token вътре в съобщението
-        const messageTokens = trimmedMessage.split(/[^a-z0-9]+/i).filter(Boolean);
-        if (messageTokens.includes(normalizedHostCode)) {
-            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: намерен точен token за HOST_CODE в userMessage');
+        // 2) Точно съответствие вътре в съобщението (работи и при кодове със символи)
+        const escapedHostCode = normalizedHostCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const hostCodePattern = new RegExp(`(^|[^a-z0-9])${escapedHostCode}([^a-z0-9]|$)`, 'i');
+        if (hostCodePattern.test(trimmedMessage)) {
+            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: намерен точен HOST_CODE в userMessage');
             return true;
         }
     }
@@ -289,7 +290,7 @@ async function verifyGuestByHMCode(authCode, userMessage) {
     
     // ПРАВИЛО НА СИГУРНОСТ #2: REGEX ШАБЛОН ЗА HM КОДОВЕ
     // Шаблон: HM seguito от алфанумерични знаци (формат на код на резервация)
-    const hmCodePattern = /HM[A-Z0-9]+/i;
+    const hmCodePattern = /HM[A-Z0-9_-]+/i;
     
     // Проверя authCode първо
     let codeToVerify = null;
@@ -318,13 +319,14 @@ async function verifyGuestByHMCode(authCode, userMessage) {
         return { role: 'stranger', booking: null };
     }
 
-    try {
+        try {
+                const normalizedReservationCode = codeToVerify.replace(/[^A-Z0-9]/gi, '').toUpperCase();
         console.log('[DATABASE] Запитвам таблица резервации за HM код:', codeToVerify);
         const bookings = await sql`
             SELECT * FROM bookings 
-            WHERE UPPER(reservation_code) = ${codeToVerify.toUpperCase()}
+                        WHERE regexp_replace(UPPER(reservation_code), '[^A-Z0-9]', '', 'g') = ${normalizedReservationCode}
               AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
-              AND check_out > NOW()
+                            AND check_out > (NOW() - INTERVAL '6 hours')
             LIMIT 1
         `;
 
@@ -339,7 +341,7 @@ async function verifyGuestByHMCode(authCode, userMessage) {
         const archived = await sql`
             SELECT reservation_code, payment_status, check_out
             FROM bookings
-            WHERE UPPER(reservation_code) = ${codeToVerify.toUpperCase()}
+            WHERE regexp_replace(UPPER(reservation_code), '[^A-Z0-9]', '', 'g') = ${normalizedReservationCode}
             LIMIT 1
         `;
         if (archived.length > 0) {
@@ -1018,6 +1020,22 @@ function detectPreferredLanguage(userMessage, history = []) {
     const toEnglishRegex = /please in english|in english|speak english|english please|на английски|говори на английски/i;
     const toBulgarianRegex = /на български|говори на български|in bulgarian|bulgarian please|speak bulgarian/i;
 
+    const detectByAlphabet = (text) => {
+        const value = String(text || '');
+        const latinChars = (value.match(/[A-Za-z]/g) || []).length;
+        const cyrillicChars = (value.match(/[А-Яа-яЁё]/g) || []).length;
+
+        if (latinChars === 0 && cyrillicChars === 0) return null;
+        if (latinChars >= 6 && latinChars > cyrillicChars * 2) return 'en';
+        if (cyrillicChars >= 6 && cyrillicChars > latinChars * 2) return 'bg';
+
+        const englishSignal = /\b(the|and|is|are|please|hello|wifi|password|electricity|booking|reservation|can you|i need)\b/i;
+        const bulgarianSignal = /\b(и|или|има|няма|моля|здравей|парола|интернет|резервация|ток|какво|искам)\b/i;
+        if (englishSignal.test(value) && !bulgarianSignal.test(value)) return 'en';
+        if (bulgarianSignal.test(value) && !englishSignal.test(value)) return 'bg';
+        return null;
+    };
+
     const candidates = [
         userMessage,
         ...((Array.isArray(history) ? history : [])
@@ -1031,6 +1049,9 @@ function detectPreferredLanguage(userMessage, history = []) {
         if (!text) continue;
         if (toEnglishRegex.test(text)) return 'en';
         if (toBulgarianRegex.test(text)) return 'bg';
+
+        const inferred = detectByAlphabet(text);
+        if (inferred) return inferred;
     }
 
     return 'bg';
