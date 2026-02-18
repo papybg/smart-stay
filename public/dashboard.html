@@ -192,7 +192,7 @@
                                 <th>Време</th>
                                 <th>Състояние</th>
                                 <th>Източник</th>
-                                <th>Гост</th>
+                                <th>Актьор</th>
                             </tr>
                         </thead>
                         <tbody id="powerHistoryBody">
@@ -336,24 +336,21 @@
                 
                 tbody.innerHTML = '';
                 data.forEach(record => {
-                    // Намери гост по booking_id
-                    let guestName = '---';
-                    if (record.booking_id && currentBookings.length > 0) {
-                        const booking = currentBookings.find(b => b.id === record.booking_id);
-                        guestName = booking ? booking.guest_name : '---';
-                    }
+                    const actorLabel = (record.booking_id || '').toString().trim() || (record.source || '').toString().trim() || '---';
                     
                     const stateText = record.is_on ? '✅ ВКЛ' : '❌ ИЗКЛ';
-                    const sourceEmoji = record.source === 'tasker' ? '📱' : 
-                                       record.source === 'cron' ? '⏰' : 
-                                       record.source === 'guest' ? '👤' : '🔧';
+                    const normalizedSource = (record.source || '').toString().toLowerCase();
+                    const sourceEmoji = normalizedSource.includes('tasker') ? '📱' : 
+                                       normalizedSource.includes('scheduler') || normalizedSource.includes('cron') ? '⏰' : 
+                                       normalizedSource.includes('guest') ? '👤' : 
+                                       normalizedSource.includes('host') ? '🧑‍💼' : '🔧';
                     
                     const row = `
                         <tr>
                             <td>${formatBG(record.timestamp)}</td>
                             <td><strong>${stateText}</strong></td>
                             <td>${sourceEmoji} ${record.source}</td>
-                            <td>${guestName}</td>
+                            <td>${actorLabel}</td>
                         </tr>
                     `;
                     tbody.innerHTML += row;

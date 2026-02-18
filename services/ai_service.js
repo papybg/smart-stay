@@ -959,6 +959,19 @@ function isPowerCommandRequest(userMessage) {
     return powerCommandKeywords.test(userMessage);
 }
 
+/**
+ * Разпознава въпрос от типа "има ли ток" (само статус)
+ * Използва се за кратък детерминистичен отговор без генерация от AI
+ *
+ * @param {string} userMessage
+ * @returns {boolean}
+ */
+function isPowerStatusRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const statusKeywords = /има ли ток|има ток|няма ли ток|статус на тока|как е токът|токът има ли го|има ли електричество|има електричество|няма електричество|има ли захранване|има захранване|няма захранване|има ли ток в апартамента|ток има ли|power status|is there power|electricity status|is electricity on/i;
+    return statusKeywords.test(userMessage);
+}
+
 // ============================================================================
 // ОБРАБОТКА НА ИЗВЕСТУВАНИЯ
 // ============================================================================
@@ -1101,6 +1114,15 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     // 3. ПОЛУЧАВАНЕ НА СТАТУС НА ТОКА
     const powerStatus = await automationClient.getPowerStatus();
     const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
+
+    // 3.5 КРАТЪК ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА СТАТУС НА ТОКА
+    // Изискване: без час, само кратка информация
+    if (isPowerStatusRequest(userMessage) && !requestedPowerCommand) {
+        if (!powerStatus?.online) {
+            return 'В момента нямам връзка със системата за ток.';
+        }
+        return powerStatus?.isOn ? 'Да, има ток.' : 'Не, няма ток.';
+    }
 
     // 4. ЧЕТЕНЕ НА МАНУАЛА (РАЗДЕЛЕН НА ПУБЛИЧЕН И ЧАСТЕН)
     let manualContent = "";

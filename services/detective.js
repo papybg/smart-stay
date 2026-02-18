@@ -76,9 +76,22 @@ export async function syncBookingsFromGmail() {
 
                     console.log(`📝 Ток график: ВКЛ ${powerOn.toISOString()} | ИЗКЛ ${powerOff.toISOString()}`);
 
-                    // Вземи PIN от pin_depot таблица (детектив служи за това)
-                    const tempBooking = { lock_pin: null };  // Временен обект за вземане на PIN
-                    const pin = await assignPinFromDepot(tempBooking);
+                    // Вземи съществуващ PIN, или алокирай нов само за нова резервация
+                    const existingBooking = await executeQueryWithRetry(async () => {
+                        const rows = await sql`
+                            SELECT lock_pin
+                            FROM bookings
+                            WHERE reservation_code = ${details.reservation_code}
+                            LIMIT 1
+                        `;
+                        return rows[0] || null;
+                    });
+
+                    let pin = existingBooking?.lock_pin || null;
+                    if (!pin) {
+                        const tempBooking = { lock_pin: null };
+                        pin = await assignPinFromDepot(tempBooking);
+                    }
                     
                     await executeQueryWithRetry(async () => {
                         await sql`
@@ -92,7 +105,7 @@ export async function syncBookingsFromGmail() {
                                 power_on_time = EXCLUDED.power_on_time, -- Обновяваме и тока
                                 power_off_time = EXCLUDED.power_off_time,
                                 payment_status = 'paid',
-                                lock_pin = bookings.lock_pin;
+                                lock_pin = COALESCE(bookings.lock_pin, EXCLUDED.lock_pin);
                         `;
                     });
                     console.log(`✅ Успешен запис с график за тока!`);
