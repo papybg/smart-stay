@@ -1105,7 +1105,7 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
     // Разпознава ключови думи на български език, свързани със спешни ситуации
     const emergencyPowerKeywords = /няма ток|без ток|не работи ток|спрян ток|изключен ток|няма енергия|NO POWER|нет тока/i;
     const medicalEmergencyKeywords = /болен|травма|инфаркт|помощ|спешност|здравословен|насилие|пожар/i;
-    const powerCommandKeywords = /включи тока|включи ток|пусни тока|пусни ток|изключи тока|изключи ток|спри тока|спри ток|включ|изключ/i;
+    const powerCommandKeywords = /включи\s+(тока|ток|захранването)|пусни\s+(тока|ток)|възстанови\s+(тока|ток)|дай\s+ток|изключи\s+(тока|ток|захранването)|спри\s+(тока|ток)|махни\s+тока|power\s+on|power\s+off|turn\s+on\s+(power|electricity)|turn\s+off\s+(power|electricity)|restore\s+(power|electricity)|cut\s+(power|electricity)|включ|изключ/i;
     
     const needsPower = emergencyPowerKeywords.test(userMessage);
     const needsMedical = medicalEmergencyKeywords.test(userMessage);
@@ -1228,7 +1228,7 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
  */
 function isPowerCommandRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    const powerCommandKeywords = /включи тока|включи ток|пусни тока|пусни ток|изключи тока|изключи ток|спри тока|спри ток|включ|изключ|turn on power|turn off power|power on|power off/i;
+    const powerCommandKeywords = /включи\s+(тока|ток|захранването)|пусни\s+(тока|ток)|възстанови\s+(тока|ток)|дай\s+ток|изключи\s+(тока|ток|захранването)|спри\s+(тока|ток)|махни\s+тока|power\s+on|power\s+off|turn\s+on\s+(power|electricity)|turn\s+off\s+(power|electricity)|restore\s+(power|electricity)|cut\s+(power|electricity)/i;
     return powerCommandKeywords.test(userMessage);
 }
 
@@ -1322,13 +1322,13 @@ function isBareReservationCodeMessage(userMessage) {
 
 function isTodayRegistrationsRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    const keywords = /каква(и)?\s+регистраци(я|и)\s+има\s+за\s+днес|регистраци(я|и)\s+за\s+днес|резерваци(я|и)\s+за\s+днес|какви\s+резервации\s+има\s+днес|today registrations|today bookings|bookings for today/i;
+    const keywords = /каква(и)?\s+регистраци(я|и)\s+има\s+за\s+днес|регистраци(я|и)\s+за\s+днес|резерваци(я|и)\s+за\s+днес|какви\s+резервации\s+има\s+днес|днешн(и|ата)\s+регистраци(я|и)|има\s+ли\s+регистраци(я|и)\s+днес|today registrations|today bookings|bookings for today/i;
     return keywords.test(userMessage);
 }
 
 function isActiveNowRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /активни\s+резерваци(я|и)\s+сега|активни\s+регистраци(я|и)\s+сега|колко\s+са\s+активните\s+сега|active\s+bookings\s+now|active\s+registrations\s+now/i.test(userMessage);
+    return /активни\s+резерваци(я|и)\s+сега|активни\s+регистраци(я|и)\s+сега|колко\s+са\s+активните\s+сега|има\s+ли\s+активни\s+гост(и|а)\s+в\s+момента|кой\s+е\s+настанен\s+в\s+момента|active\s+bookings\s+now|active\s+registrations\s+now/i.test(userMessage);
 }
 
 function isTomorrowRegistrationsRequest(userMessage) {
@@ -1353,7 +1353,12 @@ function isUnknownPowerStatusRequest(userMessage) {
 
 function isDatabaseSnapshotRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /прочети\s+базата|чети\s+базата|покажи\s+базата|какво\s+има\s+в\s+базата|покажи\s+данните\s+от\s+bookings|дай\s+справка\s+от\s+базата|database\s+snapshot|read\s+the\s+database|show\s+database\s+status|bookings\s+database\s+summary/i.test(userMessage);
+    return /прочети\s+базата|чети\s+базата|покажи\s+базата|какво\s+има\s+в\s+базата|покажи\s+данните\s+от\s+bookings|дай\s+справка\s+от\s+базата|статус\s+на\s+базата|резюме\s+от\s+базата|използвай\s+базата|database\s+snapshot|database\s+report|read\s+the\s+database|show\s+database\s+status|bookings\s+database\s+summary/i.test(userMessage);
+}
+
+function isHostDbCatchAllRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /(база(та)?|database|bookings)/i.test(userMessage) && /(резервац|регистрац|активни|днес|утре|анулиран|справка|статус|summary|report)/i.test(userMessage);
 }
 
 async function getDatabaseSnapshotReply(role, language = 'bg') {
@@ -1897,6 +1902,9 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         return await getHostReportReply('unknown_power', role, preferredLanguage);
     }
     if (isDatabaseSnapshotRequest(userMessage)) {
+        return await getDatabaseSnapshotReply(role, preferredLanguage);
+    }
+    if (role === 'host' && isHostDbCatchAllRequest(userMessage)) {
         return await getDatabaseSnapshotReply(role, preferredLanguage);
     }
 
