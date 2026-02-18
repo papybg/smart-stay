@@ -1310,7 +1310,7 @@ function isReservationRefreshRequest(userMessage) {
 
 function isReservationCodeIntro(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    const introKeywords = /код(ът)?\s*(ми)?\s*за\s*резервация|reservation code|my code is|my reservation is|имам резервация|i have reservation|i have a reservation/i;
+    const introKeywords = /код(ът)?\s*(ми)?\s*за\s*резервация|reservation code|my code is|my reservation is|i am\s+hm[a-z0-9_-]+|i'm\s+hm[a-z0-9_-]+|аз\s+съм\s*hm[a-z0-9_-]+|имам резервация|i have reservation|i have a reservation/i;
     return introKeywords.test(userMessage);
 }
 
@@ -1318,6 +1318,16 @@ function isBareReservationCodeMessage(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     const trimmed = String(userMessage).trim();
     return /^HM[A-Z0-9_-]+$/i.test(trimmed);
+}
+
+function containsReservationCode(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /HM[A-Z0-9_-]+/i.test(userMessage);
+}
+
+function isLockCodeLookupRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /код\s+за\s+бравата|код\s+за\s+вратата|код\s+за\s+вход|lock\s+code|door\s+code|entry\s+code|tuya\s+code|парола\s+за\s+бравата/i.test(userMessage);
 }
 
 function isTodayRegistrationsRequest(userMessage) {
@@ -1594,6 +1604,74 @@ async function getTodayRegistrationsReply(role, language = 'bg') {
     }
 }
 
+async function getLockCodeLookupReply(role, bookingData, language = 'bg') {
+    if (role !== 'guest' && role !== 'host') {
+        return language === 'en'
+            ? 'Lock code details are available only for verified guest or host.'
+            : 'Детайли за кода на бравата са достъпни само за верифициран гост или домакин.';
+    }
+
+    if (!sql) {
+        return language === 'en'
+            ? 'Database is not available right now.'
+            : 'Базата данни не е достъпна в момента.';
+    }
+
+    if (role === 'guest') {
+        if (!bookingData?.booking_id) {
+            return language === 'en'
+                ? 'I cannot find an active reservation linked to this chat.'
+                : 'Не намирам активна резервация, свързана с този чат.';
+        }
+
+        try {
+            const rows = await sql`
+                SELECT id, reservation_code, check_in, check_out, lock_pin
+                FROM bookings
+                WHERE id = ${bookingData.booking_id}
+                LIMIT 1
+            `;
+
+            if (!rows.length) {
+                return language === 'en'
+                    ? 'I could not find this booking in the database.'
+                    : 'Не намерих тази резервация в базата.';
+            }
+
+            const row = rows[0];
+            const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+            const accessWindow = getLockAccessWindow(row);
+            const checkIn = new Date(row.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+            const checkOut = new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+            const accessFrom = accessWindow.from
+                ? accessWindow.from.toLocaleString(locale, { timeZone: 'Europe/Sofia' })
+                : checkIn;
+            const accessTo = accessWindow.to
+                ? accessWindow.to.toLocaleString(locale, { timeZone: 'Europe/Sofia' })
+                : checkOut;
+
+            if (row.lock_pin) {
+                return language === 'en'
+                    ? `I checked the database: a temporary lock code exists for booking ${row.reservation_code}. For security, I do not show the code in chat. It will be provided within the allowed access window: ${accessFrom} → ${accessTo}.`
+                    : `Проверих базата: има временен код за бравата за резервация ${row.reservation_code}. От съображения за сигурност не показвам кода в чата. Той ще бъде предоставен в разрешения прозорец за достъп: ${accessFrom} → ${accessTo}.`;
+            }
+
+            return language === 'en'
+                ? `I checked the database: there is no generated temporary lock code yet for booking ${row.reservation_code}. Reservation period: ${checkIn} → ${checkOut}.`
+                : `Проверих базата: все още няма генериран временен код за бравата за резервация ${row.reservation_code}. Период на резервацията: ${checkIn} → ${checkOut}.`;
+        } catch (error) {
+            console.error('[DB] 🔴 Грешка при lock code lookup (guest):', error.message);
+            return language === 'en'
+                ? 'I could not read lock code status from the database.'
+                : 'Не успях да прочета статуса на кода за бравата от базата.';
+        }
+    }
+
+    return language === 'en'
+        ? 'For host: ask with a specific reservation code (HM...) to check lock code status.'
+        : 'За домакин: изпрати конкретен код на резервация (HM...), за да проверя статуса на кода за бравата.';
+}
+
 function getLockAccessWindow(bookingData) {
     const checkInTs = new Date(bookingData?.check_in);
     const checkOutTs = new Date(bookingData?.check_out);
@@ -1624,12 +1702,20 @@ function getGuestOnboardingReply(bookingData, language = 'bg') {
     const accessTo = accessWindow.to
         ? accessWindow.to.toLocaleString(locale, { timeZone: 'Europe/Sofia' })
         : null;
+    const hasLockCodeInDb = Boolean(bookingData.lock_pin);
 
     if (language === 'en') {
-        return `Welcome, ${bookingData.guest_name}. Your reservation code ${bookingData.reservation_code} is active from ${checkIn} to ${checkOut}. The temporary lock code is managed in Tuya and will be provided to you in the allowed access window: ${accessFrom || checkIn} → ${accessTo || checkOut}.`;
+        if (hasLockCodeInDb) {
+            return `Welcome, ${bookingData.guest_name}. Your reservation code ${bookingData.reservation_code} is active from ${checkIn} to ${checkOut}. I checked the database: a temporary lock code exists and will be provided in the allowed access window: ${accessFrom || checkIn} → ${accessTo || checkOut}.`;
+        }
+        return `Welcome, ${bookingData.guest_name}. Your reservation code ${bookingData.reservation_code} is active from ${checkIn} to ${checkOut}. I checked the database: there is no generated temporary lock code yet. Access window: ${accessFrom || checkIn} → ${accessTo || checkOut}.`;
     }
 
-    return `Привет, ${bookingData.guest_name}. Кодът ви за резервация ${bookingData.reservation_code} е активен за периода от ${checkIn} до ${checkOut}. Временният код за бравата се управлява в Tuya и ще ви бъде предоставен в разрешения прозорец за достъп: ${accessFrom || checkIn} → ${accessTo || checkOut}.`;
+    if (hasLockCodeInDb) {
+        return `Привет, ${bookingData.guest_name}. Кодът ви за резервация ${bookingData.reservation_code} е активен за периода от ${checkIn} до ${checkOut}. Проверих базата: има временен код за бравата и той ще бъде предоставен в разрешения прозорец за достъп: ${accessFrom || checkIn} → ${accessTo || checkOut}.`;
+    }
+
+    return `Привет, ${bookingData.guest_name}. Кодът ви за резервация ${bookingData.reservation_code} е активен за периода от ${checkIn} до ${checkOut}. Проверих базата: все още няма генериран временен код за бравата. Разрешен прозорец за достъп: ${accessFrom || checkIn} → ${accessTo || checkOut}.`;
 }
 
 function getReservationRefreshReply(role, bookingData, language = 'bg') {
@@ -1871,13 +1957,17 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 2.35. КРАТКО ПОТВЪРЖДЕНИЕ ПРИ ПОДАДЕН КОД НА РЕЗЕРВАЦИЯ
-    if (role === 'guest' && (isReservationCodeIntro(userMessage) || isBareReservationCodeMessage(userMessage))) {
+    if (role === 'guest' && (isReservationCodeIntro(userMessage) || isBareReservationCodeMessage(userMessage) || containsReservationCode(userMessage))) {
         return getGuestOnboardingReply(data, preferredLanguage);
     }
 
     // 2.4. ДЕТЕРМИНИСТИЧЕН REFRESH НА РЕЗЕРВАЦИЯ (без Gemini)
     if (isReservationRefreshRequest(userMessage)) {
         return getReservationRefreshReply(role, data, preferredLanguage);
+    }
+
+    if (isLockCodeLookupRequest(userMessage)) {
+        return await getLockCodeLookupReply(role, data, preferredLanguage);
     }
 
     // 2.45. ДЕТЕРМИНИСТИЧЕН HOST ОТГОВОР ЗА "РЕГИСТРАЦИИ ЗА ДНЕС"
