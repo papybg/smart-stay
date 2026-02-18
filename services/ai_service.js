@@ -34,6 +34,52 @@ import { validateToken } from './sessionManager.js';
  * Първичен модел, последван от каскадни отказни за надежност
  */
 const MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3-flash-preview"];
+const MODEL_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_MODEL_TIMEOUT_MS || 12000);
+const MODEL_COOLDOWN_MS = Number(process.env.GEMINI_MODEL_COOLDOWN_MS || 60000);
+const modelCooldownUntil = new Map();
+
+function parseRetryDelayMs(errorMessage = '') {
+    const text = String(errorMessage || '');
+    const match = text.match(/Please retry in\s*([\d.]+)s/i) || text.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
+    if (!match) return null;
+    const seconds = Number.parseFloat(match[1]);
+    if (Number.isNaN(seconds) || seconds <= 0) return null;
+    return Math.ceil(seconds * 1000);
+}
+
+function isQuotaError(errorMessage = '') {
+    const text = String(errorMessage || '').toLowerCase();
+    return text.includes('429') || text.includes('quota exceeded') || text.includes('too many requests');
+}
+
+function isModelCoolingDown(modelName) {
+    const until = modelCooldownUntil.get(modelName);
+    if (!until) return false;
+    if (Date.now() >= until) {
+        modelCooldownUntil.delete(modelName);
+        return false;
+    }
+    return true;
+}
+
+function setModelCooldown(modelName, errorMessage = '') {
+    const retryDelayMs = parseRetryDelayMs(errorMessage);
+    const cooldownMs = Math.max(MODEL_COOLDOWN_MS, retryDelayMs || 0);
+    const until = Date.now() + cooldownMs;
+    modelCooldownUntil.set(modelName, until);
+    console.warn(`[AI] ⏳ Модел ${modelName} е в cooldown за ~${Math.ceil(cooldownMs / 1000)}s`);
+}
+
+async function sendMessageWithTimeout(chat, userMessage, modelName) {
+    return await Promise.race([
+        chat.sendMessage(userMessage),
+        new Promise((_, reject) => {
+            setTimeout(() => {
+                reject(new Error(`[MODEL_TIMEOUT] ${modelName} exceeded ${MODEL_REQUEST_TIMEOUT_MS}ms`));
+            }, MODEL_REQUEST_TIMEOUT_MS);
+        })
+    ]);
+}
 
 /**
  * @const {any} sql - Neon клиент на база данни за PostgreSQL заявки
@@ -285,7 +331,7 @@ function isHostVerified(authCode, userMessage) {
  * @param {string} userMessage - Съобщение потенциално съдържащо HM код
  * @returns {Promise<{role: 'guest'|'stranger', booking: Object|null}>}
  */
-async function verifyGuestByHMCode(authCode, userMessage) {
+async function verifyGuestByHMCode(authCode, userMessage, history = []) {
     console.log('[SECURITY] Верификация на гост: търся HM код...');
     
     // ПРАВИЛО НА СИГУРНОСТ #2: REGEX ШАБЛОН ЗА HM КОДОВЕ
@@ -305,6 +351,20 @@ async function verifyGuestByHMCode(authCode, userMessage) {
         if (match) {
             codeToVerify = match[0].toUpperCase();
             console.log('[SECURITY] HM код намерен в userMessage:', codeToVerify);
+        }
+    }
+
+    // Проверя recent user history (ако текущото съобщение е от типа "провери пак")
+    if (!codeToVerify && Array.isArray(history)) {
+        for (let index = history.length - 1; index >= 0; index--) {
+            const msg = history[index];
+            if (!msg || msg.role !== 'user' || typeof msg.content !== 'string') continue;
+            const match = msg.content.match(hmCodePattern);
+            if (match) {
+                codeToVerify = match[0].toUpperCase();
+                console.log('[SECURITY] HM код намерен в history:', codeToVerify);
+                break;
+            }
         }
     }
 
@@ -444,7 +504,7 @@ export async function assignPinFromDepot(booking) {
  * @returns {Promise<{role: 'host'|'guest'|'stranger', data: Object|null}>}
  *          Връща ролята и свързаните метаданни (инфо на гост, данни на резервация)
  */
-export async function determineUserRole(authCode, userMessage) {
+export async function determineUserRole(authCode, userMessage, history = []) {
     console.log('\n[SECURITY] ========== НАЧАЛО ОПРЕДЕЛЯНЕ НА РОЛЯТА НА ПОТРЕБИТЕЛЯ ==========');
     console.log('[SECURITY] authCode/token предоставен:', !!authCode);
     console.log('[SECURITY] userMessage предоставен:', !!userMessage);
@@ -467,7 +527,7 @@ export async function determineUserRole(authCode, userMessage) {
     }
 
     // ПРОВЕРКА #2: ВЕРИФИКАЦИЯ НА ГОСТ (HM КОД В БАЗА ДАННИ)
-    const guestCheck = await verifyGuestByHMCode(authCode, userMessage);
+    const guestCheck = await verifyGuestByHMCode(authCode, userMessage, history);
     if (guestCheck.role === 'guest' && guestCheck.booking) {
         const booking = guestCheck.booking;
         console.log('[PIN_DEPOT] Четя щифт за гост от резервация...');
@@ -1008,6 +1068,40 @@ function isRoleIdentityRequest(userMessage) {
     return roleKeywords.test(userMessage);
 }
 
+function isReservationRefreshRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const refreshKeywords = /провери пак|провери отново|обнови резервацията|рефрешни резервацията|check again|check my reservation again|refresh reservation|recheck reservation/i;
+    return refreshKeywords.test(userMessage);
+}
+
+function getReservationRefreshReply(role, bookingData, language = 'bg') {
+    if (role !== 'guest' || !bookingData) {
+        return language === 'en'
+            ? 'I cannot find an active reservation linked to this chat right now.'
+            : 'В момента не намирам активна резервация, свързана с този чат.';
+    }
+
+    const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+    const checkIn = new Date(bookingData.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+    const checkOut = new Date(bookingData.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+
+    if (language === 'en') {
+        return `I rechecked your reservation in real time.
+
+Reservation code: ${bookingData.reservation_code}
+Guest: ${bookingData.guest_name}
+Check-in: ${checkIn}
+Check-out: ${checkOut}`;
+    }
+
+    return `Проверих отново резервацията в реално време.
+
+Код за резервация: ${bookingData.reservation_code}
+Гост: ${bookingData.guest_name}
+Настаняване: ${checkIn}
+Напускане: ${checkOut}`;
+}
+
 /**
  * Открива предпочитан език от текущо съобщение и history
  * По подразбиране: български
@@ -1199,12 +1293,17 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 2. ОПРЕДЕЛЯНЕ НА РОЛЯ И ДАННИ (Поправка: добавено е ", data")
-    const { role, data } = await determineUserRole(authCode, userMessage);
+    const { role, data } = await determineUserRole(authCode, userMessage, history);
     const preferredLanguage = detectPreferredLanguage(userMessage, history);
 
     // 2.3. ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА РОЛЯТА (без Gemini)
     if (isRoleIdentityRequest(userMessage)) {
         return getRoleIdentityReply(role, preferredLanguage);
+    }
+
+    // 2.4. ДЕТЕРМИНИСТИЧЕН REFRESH НА РЕЗЕРВАЦИЯ (без Gemini)
+    if (isReservationRefreshRequest(userMessage)) {
+        return getReservationRefreshReply(role, data, preferredLanguage);
     }
 
     // 2.5. ТВЪРДА АВТОРИЗАЦИОННА БАРИЕРА ЗА УПРАВЛЕНИЕ НА ТОК
@@ -1291,6 +1390,11 @@ After successful verification, I will execute the command immediately.`;
     let finalReply = "В момента имам техническо затруднение. Моля, опитайте след малко.";
 
     for (const modelName of MODELS) {
+        if (isModelCoolingDown(modelName)) {
+            console.log(`⏭️ Пропускам ${modelName} (cooldown активен)`);
+            continue;
+        }
+
         try {
             const model = genAI.getGenerativeModel({ 
                 model: modelName, 
@@ -1306,13 +1410,17 @@ After successful verification, I will execute the command immediately.`;
             });
 
             console.log(`🤖 Опит за генериране с модел: ${modelName}`);
-            const result = await chat.sendMessage(userMessage);
+            const result = await sendMessageWithTimeout(chat, userMessage, modelName);
             finalReply = result.response.text();
             
             // Ако стигнем тук, значи е успешно
             break; 
         } catch (modelError) {
             console.warn(`⚠️ Модел ${modelName} отказа:`, modelError.message);
+
+            if (isQuotaError(modelError?.message)) {
+                setModelCooldown(modelName, modelError.message);
+            }
             continue; // Пробвай следващия модел
         }
     }
