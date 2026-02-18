@@ -236,27 +236,34 @@ function isHostVerified(authCode, userMessage) {
     console.log('[SECURITY] Верификация на домакина: проверявам authCode...');
     // Нормализирай authCode за whitespace проблеми от JSON
     if (authCode) {
-        const normalizedAuthCode = String(authCode).trim();
-        const normalizedHostCode = String(HOST_CODE).trim();
+        const normalizedAuthCode = String(authCode).trim().toLowerCase();
+        const normalizedHostCode = String(HOST_CODE).trim().toLowerCase();
         
         console.log(`[SECURITY] DEBUG: authCode="${normalizedAuthCode}" (${normalizedAuthCode.length} знака)`);
         console.log(`[SECURITY] DEBUG: HOST_CODE="${normalizedHostCode}" (${normalizedHostCode.length} знака)`);
         
-        // Проверява дали authCode СЪДЪРЖА HOST_CODE или е точно съответствие
-        if (normalizedAuthCode === normalizedHostCode || normalizedAuthCode.includes(normalizedHostCode)) {
-            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: authCode съдържа/съвпада с HOST_CODE');
+        // Проверява ТОЧНО съответствие (case-insensitive)
+        if (normalizedAuthCode === normalizedHostCode) {
+            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: authCode съвпада с HOST_CODE');
             return true;
         }
     }
 
     if (userMessage) {
         console.log('[SECURITY] Верификация на домакина: проверявам userMessage...');
-        const trimmedMessage = String(userMessage).trim();
-        const normalizedHostCode = String(HOST_CODE).trim();
-        
-        // Проверява дали съобщението СЪДЪРЖА HOST_CODE
-        if (trimmedMessage === normalizedHostCode || trimmedMessage.includes(normalizedHostCode)) {
-            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: userMessage съдържа HOST_CODE');
+        const trimmedMessage = String(userMessage).trim().toLowerCase();
+        const normalizedHostCode = String(HOST_CODE).trim().toLowerCase();
+
+        // 1) Точно съответствие на целото съобщение
+        if (trimmedMessage === normalizedHostCode) {
+            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: userMessage съвпада с HOST_CODE');
+            return true;
+        }
+
+        // 2) Точно съответствие на token вътре в съобщението
+        const messageTokens = trimmedMessage.split(/[^a-z0-9]+/i).filter(Boolean);
+        if (messageTokens.includes(normalizedHostCode)) {
+            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: намерен точен token за HOST_CODE в userMessage');
             return true;
         }
     }
@@ -316,6 +323,8 @@ async function verifyGuestByHMCode(authCode, userMessage) {
         const bookings = await sql`
             SELECT * FROM bookings 
             WHERE UPPER(reservation_code) = ${codeToVerify.toUpperCase()}
+              AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+              AND check_out > NOW()
             LIMIT 1
         `;
 
@@ -324,6 +333,17 @@ async function verifyGuestByHMCode(authCode, userMessage) {
             console.log('[DATABASE] ✅ Резервация намерена за код:', codeToVerify);
             console.log('[DATABASE] Име на гост:', booking.guest_name);
             return { role: 'guest', booking };
+        }
+
+        // Допълнителен диагностичен лог: кодът съществува ли, но е изтекъл/анулиран
+        const archived = await sql`
+            SELECT reservation_code, payment_status, check_out
+            FROM bookings
+            WHERE UPPER(reservation_code) = ${codeToVerify.toUpperCase()}
+            LIMIT 1
+        `;
+        if (archived.length > 0) {
+            console.log('[DATABASE] ⚠️ Кодът съществува, но не е активен (изтекъл или анулиран):', codeToVerify);
         }
 
         console.log('[DATABASE] ❌ Не е намерена резервация за HM код:', codeToVerify);
@@ -510,8 +530,11 @@ export async function determineUserRole(authCode, userMessage) {
  * @param {string} currentDateTime - ISO дата/час на български
  * @returns {string} Системна инструкция за Gemini AI (с СТРОГИ правила за manual-only)
  */
-export function buildSystemInstruction(role, data, powerStatus, manual, currentDateTime) {
+export function buildSystemInstruction(role, data, powerStatus, manual, currentDateTime, preferredLanguage = 'bg') {
     const { online, isOn } = powerStatus;
+    const languageInstruction = preferredLanguage === 'en'
+        ? 'Respond in ENGLISH. Keep answers concise, clear, and practical.'
+        : 'Отговаряй на БЪЛГАРСКИ език. Тон: приветлив, професионален, насочен към помощ.';
     
     // АНАЛИЗ: Логиране на входни параметри (за дебъг)
     console.log('[AI:SSoT] 🏗️ Строя системно указание със SSoT архитектура');
@@ -682,8 +705,7 @@ ${strictInstructions}
    → Препоръчай контакт със собственика ако е спешно
 
 ════════════════════════════════════════════════════════════════════════
-   Отговаряй на БЪЛГАРСКИ език, независимо на какъв език е въпросът.
-   Тон: Приветливо, професионално, насочено към помощ.
+    ${languageInstruction}
 
 ════════════════════════════════════════════════════════════════════════
 📐 ФОРМАТИРАНЕ НА ОТГОВОРИТЕ:
@@ -972,6 +994,67 @@ function isPowerStatusRequest(userMessage) {
     return statusKeywords.test(userMessage);
 }
 
+/**
+ * Разпознава въпроси за ролята на потребителя
+ *
+ * @param {string} userMessage
+ * @returns {boolean}
+ */
+function isRoleIdentityRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const roleKeywords = /какъв съм аз|каква е ролята ми|кой съм аз|дали съм гост|дали съм домакин|am i guest|am i host|what is my role|who am i/i;
+    return roleKeywords.test(userMessage);
+}
+
+/**
+ * Открива предпочитан език от текущо съобщение и history
+ * По подразбиране: български
+ *
+ * @param {string} userMessage
+ * @param {Array} history
+ * @returns {'bg'|'en'}
+ */
+function detectPreferredLanguage(userMessage, history = []) {
+    const toEnglishRegex = /please in english|in english|speak english|english please|на английски|говори на английски/i;
+    const toBulgarianRegex = /на български|говори на български|in bulgarian|bulgarian please|speak bulgarian/i;
+
+    const candidates = [
+        userMessage,
+        ...((Array.isArray(history) ? history : [])
+            .slice()
+            .reverse()
+            .filter(msg => msg && msg.role === 'user' && typeof msg.content === 'string')
+            .map(msg => msg.content))
+    ];
+
+    for (const text of candidates) {
+        if (!text) continue;
+        if (toEnglishRegex.test(text)) return 'en';
+        if (toBulgarianRegex.test(text)) return 'bg';
+    }
+
+    return 'bg';
+}
+
+/**
+ * Детерминистичен отговор за текуща роля
+ *
+ * @param {'host'|'guest'|'stranger'} role
+ * @param {'bg'|'en'} language
+ * @returns {string}
+ */
+function getRoleIdentityReply(role, language = 'bg') {
+    if (language === 'en') {
+        if (role === 'host') return 'You are authenticated as host.';
+        if (role === 'guest') return 'You are authenticated as guest.';
+        return 'You are currently unauthenticated.';
+    }
+
+    if (role === 'host') return 'В момента сте идентифициран като домакин.';
+    if (role === 'guest') return 'В момента сте идентифициран като гост.';
+    return 'В момента сте неоторизиран потребител.';
+}
+
 // ============================================================================
 // ОБРАБОТКА НА ИЗВЕСТУВАНИЯ
 // ============================================================================
@@ -1096,12 +1179,27 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
 
     // 2. ОПРЕДЕЛЯНЕ НА РОЛЯ И ДАННИ (Поправка: добавено е ", data")
     const { role, data } = await determineUserRole(authCode, userMessage);
+    const preferredLanguage = detectPreferredLanguage(userMessage, history);
+
+    // 2.3. ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА РОЛЯТА (без Gemini)
+    if (isRoleIdentityRequest(userMessage)) {
+        return getRoleIdentityReply(role, preferredLanguage);
+    }
 
     // 2.5. ТВЪРДА АВТОРИЗАЦИОННА БАРИЕРА ЗА УПРАВЛЕНИЕ НА ТОК
     // Ако няма валидна роля (guest/host), никога не допускай AI да обещава действие.
     const requestedPowerCommand = isPowerCommandRequest(userMessage);
     if (requestedPowerCommand && role !== 'guest' && role !== 'host') {
         console.warn('[SECURITY] 🚫 Блокирана команда за ток от неоторизиран потребител');
+        if (preferredLanguage === 'en') {
+            return `I cannot execute power commands because you are not authorized.
+
+To get access:
+- Host: sign in with a valid token.
+- Guest: send a valid reservation code from an active booking.
+
+After successful verification, I will execute the command immediately.`;
+        }
         return `Не мога да изпълня команда за тока, защото не сте оторизиран.
 
 За достъп:
@@ -1113,15 +1211,20 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     
     // 3. ПОЛУЧАВАНЕ НА СТАТУС НА ТОКА
     const powerStatus = await automationClient.getPowerStatus();
-    const currentDateTime = new Date().toLocaleString('bg-BG', { timeZone: 'Europe/Sofia' });
+    const locale = preferredLanguage === 'en' ? 'en-GB' : 'bg-BG';
+    const currentDateTime = new Date().toLocaleString(locale, { timeZone: 'Europe/Sofia' });
 
     // 3.5 КРАТЪК ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА СТАТУС НА ТОКА
     // Изискване: без час, само кратка информация
     if (isPowerStatusRequest(userMessage) && !requestedPowerCommand) {
         if (!powerStatus?.online) {
-            return 'В момента нямам връзка със системата за ток.';
+            return preferredLanguage === 'en'
+                ? 'I currently have no connection to the power system.'
+                : 'В момента нямам връзка със системата за ток.';
         }
-        return powerStatus?.isOn ? 'Да, има ток.' : 'Не, няма ток.';
+        return powerStatus?.isOn
+            ? (preferredLanguage === 'en' ? 'Yes, there is electricity.' : 'Да, има ток.')
+            : (preferredLanguage === 'en' ? 'No, there is no electricity.' : 'Не, няма ток.');
     }
 
     // 4. ЧЕТЕНЕ НА МАНУАЛА (РАЗДЕЛЕН НА ПУБЛИЧЕН И ЧАСТЕН)
@@ -1153,7 +1256,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 5. ИНСТРУКЦИИ ЗА ИКО (Вече 'data' съществува и няма да гърми)
-    const systemInstruction = buildSystemInstruction(role, data, powerStatus, manualContent, currentDateTime);
+    const systemInstruction = buildSystemInstruction(role, data, powerStatus, manualContent, currentDateTime, preferredLanguage);
 
     // 5.5. ПРОВЕРКА ЗА КОМАНДИ НА ТОК ПРЕДИ AI ГЕНЕРИРАНЕ
     // Ако домакинът или гост командва управление на тока, изпълни го веднага
