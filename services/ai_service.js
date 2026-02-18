@@ -35,7 +35,6 @@ import { validateToken } from './sessionManager.js';
  */
 const MODELS = [
     "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-3-flash-preview",
@@ -44,6 +43,127 @@ const MODELS = [
 const MODEL_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_MODEL_TIMEOUT_MS || 12000);
 const MODEL_COOLDOWN_MS = Number(process.env.GEMINI_MODEL_COOLDOWN_MS || 60000);
 const modelCooldownUntil = new Map();
+const GROQ_ROUTER_ENABLED = (process.env.GROQ_ROUTER_ENABLED || 'true').toLowerCase() !== 'false';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || null;
+const GROQ_API_URL = (process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS || 8000);
+const GROQ_DELEGATE_TOKEN = '[[DELEGATE_TO_GEMINI]]';
+const BACKUP_API_KEY = process.env.BACKUP_API_KEY || null;
+const BACKUP_API_URL = (process.env.BACKUP_API_URL || '').replace(/\/$/, '');
+const BACKUP_MODEL = process.env.BACKUP_MODEL || '';
+const BACKUP_TIMEOUT_MS = Number(process.env.BACKUP_TIMEOUT_MS || 15000);
+
+function isManualLikeQuestion(userMessage = '') {
+    const text = String(userMessage || '').toLowerCase();
+    if (!text.trim()) return false;
+
+    const manualHints = [
+        'паркинг', 'wifi', 'wi-fi', 'интернет', 'парола', 'климатик', 'клима',
+        'отопление', 'бойлер', 'пералня', 'сушилня', 'печка', 'фурна', 'хладилник',
+        'check-in', 'check in', 'check-out', 'check out', 'самонастаняване',
+        'адрес', 'локация', 'инструкция', 'инструкции', 'наръчник', 'врата', 'брава',
+        'tv', 'телевизор', 'дистанционно', 'гараж', 'асансьор', 'код за вход',
+        'parking', 'address', 'manual', 'instructions', 'apartment', 'property',
+        'heater', 'boiler', 'washing machine', 'fridge', 'oven', 'stove', 'door',
+        'lock', 'checkin', 'checkout', 'how to', 'where is'
+    ];
+
+    return manualHints.some(token => text.includes(token));
+}
+
+function canUseGroqRouter() {
+    return GROQ_ROUTER_ENABLED && Boolean(GROQ_API_KEY) && Boolean(GROQ_MODEL) && Boolean(genAI);
+}
+
+function buildGroqRouterInstruction(role, preferredLanguage, manualContent) {
+    const languageRule = preferredLanguage === 'en'
+        ? 'Answer in English only.'
+        : 'Отговаряй само на български.';
+    const roleRule = role === 'stranger'
+        ? 'You are speaking with a stranger. Never reveal private or operational-sensitive details.'
+        : 'You are speaking with an authenticated user (guest or host).';
+
+    const manualSnippet = String(manualContent || '').slice(0, 12000);
+
+    return `You are Smart-Stay Groq Router. ${languageRule}
+
+CRITICAL ROUTING RULES:
+1) If the user asks a property/manual/house-operation question and the answer exists in MANUAL_CONTEXT, answer directly and briefly.
+2) If the question is broad/general/off-topic and needs general reasoning or knowledge outside MANUAL_CONTEXT, reply with exactly ${GROQ_DELEGATE_TOKEN}
+3) Never output both an answer and ${GROQ_DELEGATE_TOKEN}.
+4) Keep answers concise and operational.
+
+SECURITY RULE:
+${roleRule}
+
+MANUAL_CONTEXT:
+${manualSnippet}`;
+}
+
+async function generateWithGroqRouter(role, preferredLanguage, manualContent, history, userMessage) {
+    if (!canUseGroqRouter()) return null;
+
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
+
+    try {
+        const routerInstruction = buildGroqRouterInstruction(role, preferredLanguage, manualContent);
+        const compactHistory = (Array.isArray(history) ? history : [])
+            .filter(msg => msg && typeof msg.content === 'string')
+            .slice(-8)
+            .map(msg => ({
+                role: msg.role === 'assistant' ? 'assistant' : 'user',
+                content: msg.content
+            }));
+
+        const response = await fetch(`${GROQ_API_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${GROQ_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: GROQ_MODEL,
+                messages: [
+                    { role: 'system', content: routerInstruction },
+                    ...compactHistory,
+                    { role: 'user', content: userMessage }
+                ],
+                temperature: 0.1,
+                max_tokens: 700
+            }),
+            signal: controller.signal
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`[GROQ_ROUTER] ${response.status} ${response.statusText} - ${errText}`);
+        }
+
+        const data = await response.json();
+        const text = data?.choices?.[0]?.message?.content?.trim();
+        if (!text) throw new Error('[GROQ_ROUTER] Empty response content');
+
+        if (text === GROQ_DELEGATE_TOKEN) {
+            console.log('[GROQ_ROUTER] ↪️ Делегирам към Gemini');
+            return { delegated: true, reply: null };
+        }
+
+        if (text.includes(GROQ_DELEGATE_TOKEN)) {
+            console.log('[GROQ_ROUTER] ↪️ Смесен отговор с delegate token, делегирам към Gemini');
+            return { delegated: true, reply: null };
+        }
+
+        console.log('[GROQ_ROUTER] ✅ Отговорено директно от Groq router');
+        return { delegated: false, reply: text };
+    } catch (error) {
+        console.warn('[GROQ_ROUTER] ⚠️ Грешка, продължавам към Gemini:', error.message);
+        return null;
+    } finally {
+        clearTimeout(timeoutHandle);
+    }
+}
 
 function parseRetryDelayMs(errorMessage = '') {
     const text = String(errorMessage || '');
@@ -86,6 +206,58 @@ async function sendMessageWithTimeout(chat, userMessage, modelName) {
             }, MODEL_REQUEST_TIMEOUT_MS);
         })
     ]);
+}
+
+async function generateWithBackupProvider(systemInstruction, history, userMessage) {
+    if (!BACKUP_API_KEY || !BACKUP_API_URL || !BACKUP_MODEL) return null;
+
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), BACKUP_TIMEOUT_MS);
+
+    try {
+        const messages = [
+            { role: 'system', content: systemInstruction },
+            ...((Array.isArray(history) ? history : [])
+                .filter(msg => msg && typeof msg.content === 'string')
+                .map(msg => ({
+                    role: msg.role === 'assistant' ? 'assistant' : 'user',
+                    content: msg.content
+                }))),
+            { role: 'user', content: userMessage }
+        ];
+
+        console.log(`[BACKUP] 🤖 Опит с backup модел: ${BACKUP_MODEL}`);
+        const response = await fetch(`${BACKUP_API_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${BACKUP_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: BACKUP_MODEL,
+                messages,
+                temperature: 0.3
+            }),
+            signal: controller.signal
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`[BACKUP] ${response.status} ${response.statusText} - ${errText}`);
+        }
+
+        const data = await response.json();
+        const text = data?.choices?.[0]?.message?.content?.trim();
+        if (!text) throw new Error('[BACKUP] Empty response content');
+
+        console.log('[BACKUP] ✅ Успешен fallback отговор');
+        return text;
+    } catch (error) {
+        console.error('[BACKUP] 🔴 Грешка:', error.message);
+        return null;
+    } finally {
+        clearTimeout(timeoutHandle);
+    }
 }
 
 /**
@@ -1570,8 +1742,8 @@ function formatHistory(history) {
  */
 export async function getAIResponse(userMessage, history = [], authCode = null) {
     // 1. ПРОВЕРКА НА API KEY
-    if (!genAI) {
-        console.error('🔴 ГРЕШКА: Липсва GEMINI_API_KEY');
+    if (!genAI && !(BACKUP_API_KEY && BACKUP_API_URL && BACKUP_MODEL)) {
+        console.error('🔴 ГРЕШКА: Липсват Gemini и backup API конфигурации');
         return "В момента имам техническо затруднение (API Key Error).";
     }
 
@@ -1705,46 +1877,77 @@ After successful verification, I will execute the command immediately.`;
         return powerCommandResult;
     }
 
-    // 6. ГЕНЕРИРАНЕ С GEMINI (С Loop през моделите)
+    // 6. SAFE ROUTER: GROQ ПЪРВО (manual/property), GEMINI ПРИ DELEGATE
     let finalReply = "В момента имам техническо затруднение. Моля, опитайте след малко.";
+    let generatedByModel = false;
 
-    for (const modelName of MODELS) {
-        if (isModelCoolingDown(modelName)) {
-            console.log(`⏭️ Пропускам ${modelName} (cooldown активен)`);
-            continue;
-        }
+    if (canUseGroqRouter()) {
+        const manualLike = isManualLikeQuestion(userMessage);
+        console.log(`[GROQ_ROUTER] Старт на router проверка (manualLike=${manualLike})`);
 
-        try {
-            const model = genAI.getGenerativeModel({ 
-                model: modelName, 
-                systemInstruction: systemInstruction 
-            });
+        const routerResult = await generateWithGroqRouter(
+            role,
+            preferredLanguage,
+            manualContent,
+            history,
+            userMessage
+        );
 
-            const chat = model.startChat({
-                history: (Array.isArray(history) ? history : []).map(msg => ({
-                    role: msg.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: msg.content }]
-                })),
-                generationConfig: { maxOutputTokens: 4000 } // ПОПРАВЕНО: увеличен лимит за пълни отговори
-            });
-
-            console.log(`🤖 Опит за генериране с модел: ${modelName}`);
-            const result = await sendMessageWithTimeout(chat, userMessage, modelName);
-            finalReply = result.response.text();
-            
-            // Ако стигнем тук, значи е успешно
-            break; 
-        } catch (modelError) {
-            console.warn(`⚠️ Модел ${modelName} отказа:`, modelError.message);
-
-            if (isQuotaError(modelError?.message)) {
-                setModelCooldown(modelName, modelError.message);
-            }
-            continue; // Пробвай следващия модел
+        if (routerResult?.reply) {
+            finalReply = routerResult.reply;
+            generatedByModel = true;
         }
     }
 
-    // 7. АВАРИЙНО УПРАВЛЕНИЕ НА ТОКА
+    // 6.5. ГЕНЕРИРАНЕ С GEMINI (ако няма финален отговор от Groq)
+
+    if (!generatedByModel && genAI) {
+        for (const modelName of MODELS) {
+            if (isModelCoolingDown(modelName)) {
+                console.log(`⏭️ Пропускам ${modelName} (cooldown активен)`);
+                continue;
+            }
+
+            try {
+                const model = genAI.getGenerativeModel({ 
+                    model: modelName, 
+                    systemInstruction: systemInstruction 
+                });
+
+                const chat = model.startChat({
+                    history: (Array.isArray(history) ? history : []).map(msg => ({
+                        role: msg.role === 'assistant' ? 'model' : 'user',
+                        parts: [{ text: msg.content }]
+                    })),
+                    generationConfig: { maxOutputTokens: 4000 }
+                });
+
+                console.log(`🤖 Опит за генериране с модел: ${modelName}`);
+                const result = await sendMessageWithTimeout(chat, userMessage, modelName);
+                finalReply = result.response.text();
+                generatedByModel = true;
+                break;
+            } catch (modelError) {
+                console.warn(`⚠️ Модел ${modelName} отказа:`, modelError.message);
+
+                if (isQuotaError(modelError?.message)) {
+                    setModelCooldown(modelName, modelError.message);
+                }
+                continue;
+            }
+        }
+    }
+
+    // 7 BACKUP PROVIDER FALLBACK (DeepSeek/Groq/Mistral)
+    if (!generatedByModel) {
+        const backupReply = await generateWithBackupProvider(systemInstruction, history, userMessage);
+        if (backupReply) {
+            finalReply = backupReply;
+            generatedByModel = true;
+        }
+    }
+
+    // 8. АВАРИЙНО УПРАВЛЕНИЕ НА ТОКА
     // Ако е гост, няма ток и се оплаква -> пускаме го
     if (role === 'guest' && !powerStatus.isOn && /няма ток|спря ток|токът не работи/i.test(userMessage)) {
         console.log('🚨 АВАРИЯ: Гост докладва липса на ток. Опит за възстановяване...');

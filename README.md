@@ -76,11 +76,10 @@
 Ако липсва достъп/квота за конкретен модел, системата автоматично минава към следващия по ред.
 
 1. `gemini-2.5-flash-lite`
-2. `gemini-2.0-flash`
-3. `gemini-2.5-flash`
-4. `gemini-2.5-pro`
-5. `gemini-3-flash-preview`
-6. `gemini-3-pro-preview`
+2. `gemini-2.5-flash`
+3. `gemini-2.5-pro`
+4. `gemini-3-flash-preview`
+5. `gemini-3-pro-preview`
 
 Правила:
 - Не добавяй `TTS`/`Image` варианти в чат fallback списъка.
@@ -689,6 +688,27 @@ DATABASE_URL=postgresql://user:pass@ep-xxxx.neon.tech/neondb?sslmode=require
 # === AI (Google Gemini) ===
 GEMINI_API_KEY=AIzaSyD...
 
+# === OPTIONAL GROQ ROUTER (SAFE ROUTING BEFORE GEMINI) ===
+# Groq отговаря на manual/property въпроси.
+# При общи въпроси делегира към Gemini.
+GROQ_ROUTER_ENABLED=true
+GROQ_API_KEY=
+# По подразбиране е https://api.groq.com/openai/v1
+# GROQ_API_URL=https://api.groq.com/openai/v1
+# Пример: llama-3.3-70b-versatile / llama-3.1-8b-instant
+# GROQ_MODEL=llama-3.3-70b-versatile
+# GROQ_TIMEOUT_MS=8000
+
+# === OPTIONAL BACKUP LLM (OpenAI-compatible, LAST FALLBACK) ===
+# Използва се само ако няма отговор нито от Groq router, нито от Gemini.
+# Примери:
+# DeepSeek -> BACKUP_API_URL=https://api.deepseek.com/v1 , BACKUP_MODEL=deepseek-chat
+# Groq     -> BACKUP_API_URL=https://api.groq.com/openai/v1 , BACKUP_MODEL=llama-3.1-8b-instant
+BACKUP_API_KEY=
+BACKUP_API_URL=
+BACKUP_MODEL=
+# BACKUP_TIMEOUT_MS=15000
+
 # === EMAIL (Gmail OAuth2) ===
 GMAIL_CLIENT_ID=xxx...
 GMAIL_CLIENT_SECRET=xxx...
@@ -741,7 +761,7 @@ npm start
 # Test chat endpoint
 curl -X POST http://localhost:10000/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message":"Hello","guestInfo":{"guest_name":"Test"}}'
+  -d '{"message":"Hello","history":[]}'
 
 # Test power status
 curl http://localhost:10000/api/power-status
@@ -755,7 +775,7 @@ curl http://localhost:10000/api/power-history?days=7
 # Simulate Tasker feedback
 curl -X POST http://localhost:10000/api/power/status \
   -H "Content-Type: application/json" \
-  -d '{"is_on":true,"booking_id":null}'
+  -d '{"is_on":true,"source":"tasker_direct"}'
 ```
 
 ### Production Deployment (Render)
@@ -861,8 +881,8 @@ export async function getAIResponse(message, guestInfo, context) {
 
 ### 🟥 КРИТИЧНИ (Нужни за работа)
 
-- [ ] **psql инсталация** - Създаване на power_history таблица в Neon
-  - Сървъра пытается да я създаде на старт, но трябва manual проверка
+- [ ] **DB sanity check** - Потвърждение на schema след deployment
+  - Проверка на `bookings.power_status`, `power_status_updated_at`, `pin_depot`
   
 - [ ] **Tasker конфигурация** - Setup на Android phone
   - Инсталирай: Tasker, AutoRemote, AutoInput, Smart Life
@@ -889,9 +909,9 @@ export async function getAIResponse(message, guestInfo, context) {
   - Запиши координати: x, y за ON/OFF бутон
   - Обнови в Tasker автоматизацията
   
-- [ ] **Database pins таблица** - Проверка дали съществува
-  - Query: `SELECT * FROM pins;`
-  - Ако не, createTable при server старт (като power_history)
+- [ ] **PIN depot governance** - Оперативна поддръжка
+  - Добавяне/премахване на PIN кодове според наличност
+  - Периодичен преглед на `is_used` и ротация на кодове
   
 - [ ] **Guest PIN система** - Интеграция с ключалката
   - Генериране на нови PIN при check-in
@@ -1082,6 +1102,7 @@ Actions:
 ### Power history не се логва
 - ✅ Дали DATABASE_URL е верен?
 - ✅ Дали power_history таблица съществува?
+- ✅ Дали Tasker праща към `/api/power/status` или `/api/power-status`
 - ✅ Проверяй `[DB]` логове в консола
 
 ### Gmail sync не работи
@@ -1092,6 +1113,8 @@ Actions:
 ### AI отговара неправилно
 - ✅ Дали manual.txt има информацията?
 - ✅ Дали GEMINI_API_KEY е верен?
+- ✅ Дали role е правилно разпозната (host/guest/stranger)
+- ✅ За host reports: дали има активен host token/код в сесията
 - ✅ Проверяй AI response в Dashboard
 
 ---
@@ -1138,59 +1161,18 @@ Actions:
 ---
 
 ## 🤖 Tasker Integration Implementation
-
-### Backend Implementation (server.js)
-
-Endpoint `/api/power/status` трябва да обработвам POST запити от Tasker:
-
-```javascript
-app.post('/api/power/status', async (req, res) => {
-    const { is_on, source, booking_id } = req.body;
-    
-    try {
-        console.log(`[TASKER] 📱 Статус: ${is_on ? 'ON' : 'OFF'} (от ${source})`);
-        
-        // Записване в power_history таблица
-        await db.query(
-            `INSERT INTO power_history (is_on, timestamp, source, booking_id)
-             VALUES ($1, NOW(), $2, $3)`,
-            [is_on, source || 'tasker_direct', booking_id]
-        );
-        
-        // Обновяване на глобално состояние
-        globalPowerState = {
-            is_on: is_on,
-            last_update: new Date(),
-            source: source || 'tasker_direct',
-            last_switch: 'just now'
-        };
-        
-        // Успешен отговор
-        res.json({ success: true, message: 'Статът е записан успешно' });
-        
-    } catch (error) {
-        console.error('[DB] ❌ Грешка при запис на състояние:', error);
-        res.status(500).json({ error: 'Грешка при запис' });
-    }
-});
-```
-
-### Data Flow
+### Runtime Flow (актуален)
 
 ```
-Tasker Action (Smart Life State Change)
-        ↓
-   HTTP POST /api/power/status
-        ↓
-   Backend приема { is_on, source, booking_id }
-        ↓
-   INSERT INTO power_history
-        ↓
-   Обновяване на globalPowerState
-        ↓
-   Dashboard refresh (WebSocket или polling)
-        ↓
-   Показване на real-time updates
+Tasker/AutoRemote → POST /api/power/status (или /api/power-status)
+     ↓
+server.js нормализира state (on/off) и source
+     ↓
+UPDATE global.powerState + INSERT в power_history (само при промяна)
+     ↓
+UPDATE bookings.power_status за активните резервации
+     ↓
+Dashboard polling + AI bookings-first status
 ```
 
 ### Sources Mapping
@@ -1200,7 +1182,7 @@ Tasker Action (Smart Life State Change)
 | `tasker_direct` | Потребител управлява от Smart Life или физически бутон | Гост включва от app |
 | `scheduler_checkin` | Автоматично включване при check-in | 14:00 - 2h преди резервация |
 | `scheduler_checkout` | Автоматично изключване при check-out | 15:00 + 1h след резервация |
-| `ai_command` | AI команда от гост | "включи тока" по чат |
+| `guest_command` / `host_command` | AI команда от гост/домакин | "включи тока" по чат |
 | `api_meter` | Външни API запит | Интеграция със трети системи |
 
 ---
