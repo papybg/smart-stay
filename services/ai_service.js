@@ -134,8 +134,8 @@ const automationClient = {
             if (sql) {
                 try {
                     await sql`
-                        INSERT INTO power_history (is_on, timestamp, source)
-                        VALUES (${state}, ${timestamp}, ${source})
+                        INSERT INTO power_history (is_on, timestamp, source, booking_id)
+                        VALUES (${state}, ${timestamp}, ${source}, ${source})
                     `;
                     console.log('[DB] ✅ Команда записана в power_history (is_on=' + state + ', source=' + source + ')');
                 } catch (dbError) {
@@ -847,13 +847,14 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
     // Ако има ясна команда за управление на тока, изпълни я независимо от роля
     if (isPowerCommand) {
         console.log('[POWER] 🎯 КОМАНДА ЗА УПРАВЛЕНИЕ НА ТОК РАЗПОЗНАТА (role=' + role + ')');
+        const commandSource = role === 'host' ? 'host_command' : 'guest_command';
         
         const isInclude = /включи|пусни|включ/i.test(userMessage);
         const isExclude = /изключи|спри|изключ/i.test(userMessage);
         
         if (isInclude) {
             console.log('[POWER] ⚡ КОМАНДА: ВКЛЮЧИ ТОКА');
-            await automationClient.controlPower(true, bookingData?.id, 'ai_command');
+            await automationClient.controlPower(true, bookingData?.id, commandSource);
             
             // ⏳ ИЗЧАКАЙ РЕАЛНОТО ПОТВЪРЖДЕНИЕ ОТ TASKER
             const confirmation = await waitForPowerConfirmation(true, 20000);
@@ -864,7 +865,7 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
                 : 'Изпратих команда за включване на тока, но още нямам потвърждение от Tasker. Провери след 20-30 секунди.';
         } else if (isExclude) {
             console.log('[POWER] ⚡ КОМАНДА: ИЗКЛЮЧИ ТОКА');
-            await automationClient.controlPower(false, bookingData?.id, 'ai_command');
+            await automationClient.controlPower(false, bookingData?.id, commandSource);
             
             // ⏳ ИЗЧАКАЙ РЕАЛНОТО ПОТВЪРЖДЕНИЕ ОТ TASKER
             const confirmation = await waitForPowerConfirmation(false, 20000);
@@ -943,6 +944,19 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
         
         return 'Опитах да включа тока, но автоматичното възстановяване не успя. Уведомих домакина за спешна проверка.';
     }
+}
+
+/**
+ * Разпознава дали потребителят иска директно управление на тока
+ * Използва се за твърда авторизационна бариера преди AI отговор
+ *
+ * @param {string} userMessage
+ * @returns {boolean}
+ */
+function isPowerCommandRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const powerCommandKeywords = /включи тока|включи ток|пусни тока|пусни ток|изключи тока|изключи ток|спри тока|спри ток|включ|изключ|turn on power|turn off power|power on|power off/i;
+    return powerCommandKeywords.test(userMessage);
 }
 
 // ============================================================================
@@ -1069,6 +1083,20 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
 
     // 2. ОПРЕДЕЛЯНЕ НА РОЛЯ И ДАННИ (Поправка: добавено е ", data")
     const { role, data } = await determineUserRole(authCode, userMessage);
+
+    // 2.5. ТВЪРДА АВТОРИЗАЦИОННА БАРИЕРА ЗА УПРАВЛЕНИЕ НА ТОК
+    // Ако няма валидна роля (guest/host), никога не допускай AI да обещава действие.
+    const requestedPowerCommand = isPowerCommandRequest(userMessage);
+    if (requestedPowerCommand && role !== 'guest' && role !== 'host') {
+        console.warn('[SECURITY] 🚫 Блокирана команда за ток от неоторизиран потребител');
+        return `Не мога да изпълня команда за тока, защото не сте оторизиран.
+
+За достъп:
+- Домакин: влезте с валиден token.
+- Гост: изпратете валиден HM код от активна резервация.
+
+След успешна верификация ще изпълня командата веднага.`;
+    }
     
     // 3. ПОЛУЧАВАНЕ НА СТАТУС НА ТОКА
     const powerStatus = await automationClient.getPowerStatus();
