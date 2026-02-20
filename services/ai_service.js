@@ -57,6 +57,7 @@ const ACCESS_START_BEFORE_CHECKIN_HOURS = Number(process.env.ACCESS_START_BEFORE
 const ACCESS_END_AFTER_CHECKOUT_HOURS = Number(process.env.ACCESS_END_AFTER_CHECKOUT_HOURS || 1);
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || null;
 const GOOGLE_PLACES_MAX_RESULTS = Number(process.env.GOOGLE_PLACES_MAX_RESULTS || 3);
+const GOOGLE_PLACES_STRICT_MODE = (process.env.GOOGLE_PLACES_STRICT_MODE || 'true').toLowerCase() !== 'false';
 
 function isManualLikeQuestion(userMessage = '') {
     const text = String(userMessage || '').toLowerCase();
@@ -1462,8 +1463,8 @@ async function getLivePlacesReply(userMessage, language = 'bg') {
 
         if (!places.length) {
             return language === 'en'
-                ? 'I could not find reliable live map results for this request in Bansko/Razlog right now.'
-                : 'Не открих надеждни live резултати в картите за тази заявка в района на Банско/Разлог.';
+                ? '✅ SOURCE: Google Maps Places API (live)\nI could not find reliable live map results for this request in Bansko/Razlog right now.'
+                : '✅ ИЗТОЧНИК: Google Maps Places API (live)\nНе открих надеждни live резултати в картите за тази заявка в района на Банско/Разлог.';
         }
 
         const lines = places.map((place, index) => {
@@ -1476,8 +1477,8 @@ async function getLivePlacesReply(userMessage, language = 'bg') {
         });
 
         return language === 'en'
-            ? `Live map results in Bansko/Razlog:\n\n${lines.join('\n\n')}`
-            : `Live резултати от карти за Банско/Разлог:\n\n${lines.join('\n\n')}`;
+            ? `✅ SOURCE: Google Maps Places API (live)\nLive map results in Bansko/Razlog:\n\n${lines.join('\n\n')}`
+            : `✅ ИЗТОЧНИК: Google Maps Places API (live)\nLive резултати от карти за Банско/Разлог:\n\n${lines.join('\n\n')}`;
     } catch (error) {
         console.warn('[PLACES] ⚠️ Exception:', error.message);
         return null;
@@ -2121,6 +2122,11 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         const livePlacesReply = await getLivePlacesReply(userMessage, preferredLanguage);
         if (livePlacesReply) {
             return livePlacesReply;
+        }
+        if (GOOGLE_PLACES_STRICT_MODE) {
+            return preferredLanguage === 'en'
+                ? 'I cannot provide verified map results right now because live Google Maps access is unavailable. Please try again later.'
+                : 'Не мога да дам проверени резултати от карти в момента, защото live достъпът до Google Maps не е наличен. Опитайте отново след малко.';
         }
     }
 
