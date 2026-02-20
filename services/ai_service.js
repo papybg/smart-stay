@@ -1422,6 +1422,17 @@ function isLivePlacesLookupRequest(userMessage) {
     return (hasServiceIntent && hasLocalBusinessKeyword) || (hasLocalBusinessKeyword && hasAreaContext);
 }
 
+function isMapStyleQuestion(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const text = String(userMessage).toLowerCase();
+
+    const hasMapIntent = /къде|адрес|наблизо|в\s+района|карти|where|nearby|map|maps|address|location/i.test(text);
+    const hasServiceOrPlace = /под\s+наем|наем|rent|car|кола|аптека|такси|ресторант|хотел|магазин|банкомат|голф|ски|service|pharmacy|taxi|restaurant|hotel|supermarket|atm|golf|ski/i.test(text);
+    const hasArea = /банско|разлог|bansko|razlog/i.test(text);
+
+    return (hasMapIntent && hasServiceOrPlace) || (hasServiceOrPlace && hasArea);
+}
+
 function buildPlacesSearchQuery(userMessage) {
     const text = String(userMessage || '').trim();
     if (!text) return 'services in Bansko and Razlog';
@@ -2118,15 +2129,15 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 2.47. LIVE MAP LOOKUP (Google Places) за локални услуги около Банско/Разлог
-    if (isLivePlacesLookupRequest(userMessage)) {
+    if (isLivePlacesLookupRequest(userMessage) || isMapStyleQuestion(userMessage)) {
         const livePlacesReply = await getLivePlacesReply(userMessage, preferredLanguage);
         if (livePlacesReply) {
             return livePlacesReply;
         }
         if (GOOGLE_PLACES_STRICT_MODE) {
             return preferredLanguage === 'en'
-                ? 'I cannot provide verified map results right now because live Google Maps access is unavailable. Please try again later.'
-                : 'Не мога да дам проверени резултати от карти в момента, защото live достъпът до Google Maps не е наличен. Опитайте отново след малко.';
+                ? '❌ SOURCE: Google Maps Places API (live) not available. I cannot provide verified map results right now.'
+                : '❌ ИЗТОЧНИК: Google Maps Places API (live) не е наличен. Не мога да дам проверени резултати от карти в момента.';
         }
     }
 
