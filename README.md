@@ -688,6 +688,11 @@ DATABASE_URL=postgresql://user:pass@ep-xxxx.neon.tech/neondb?sslmode=require
 # === AI (Google Gemini) ===
 GEMINI_API_KEY=AIzaSyD...
 
+# === OPTIONAL LIVE MAP SEARCH (Google Places API) ===
+# Използва се за въпроси тип "къде има ..." в района на Банско/Разлог
+GOOGLE_PLACES_API_KEY=
+# GOOGLE_PLACES_MAX_RESULTS=3
+
 # === OPTIONAL GROQ ROUTER (SAFE ROUTING BEFORE GEMINI) ===
 # Groq отговаря на manual/property въпроси.
 # При общи въпроси делегира към Gemini.

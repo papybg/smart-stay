@@ -55,6 +55,8 @@ const BACKUP_MODEL = process.env.BACKUP_MODEL || '';
 const BACKUP_TIMEOUT_MS = Number(process.env.BACKUP_TIMEOUT_MS || 15000);
 const ACCESS_START_BEFORE_CHECKIN_HOURS = Number(process.env.ACCESS_START_BEFORE_CHECKIN_HOURS || 2);
 const ACCESS_END_AFTER_CHECKOUT_HOURS = Number(process.env.ACCESS_END_AFTER_CHECKOUT_HOURS || 1);
+const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || null;
+const GOOGLE_PLACES_MAX_RESULTS = Number(process.env.GOOGLE_PLACES_MAX_RESULTS || 3);
 
 function isManualLikeQuestion(userMessage = '') {
     const text = String(userMessage || '').toLowerCase();
@@ -1408,6 +1410,80 @@ function isDatabaseSnapshotRequest(userMessage) {
     return /прочети\s+базата|чети\s+базата|покажи\s+базата|какво\s+има\s+в\s+базата|покажи\s+данните\s+от\s+bookings|дай\s+справка\s+от\s+базата|статус\s+на\s+базата|резюме\s+от\s+базата|използвай\s+базата|database\s+snapshot|database\s+report|read\s+the\s+database|show\s+database\s+status|bookings\s+database\s+summary/i.test(userMessage);
 }
 
+function isLivePlacesLookupRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const text = String(userMessage).toLowerCase();
+
+    const hasServiceIntent = /къде\s+мога\s+да|къде\s+има|адрес|телефон|работно\s+време|препоръчай|where\s+can\s+i|where\s+is|address|phone|opening\s+hours|recommend/i.test(text);
+    const hasLocalBusinessKeyword = /кола\s+под\s+наем|rent\s*a\s*car|car\s*rental|аптека|pharmacy|такси|taxi|ресторант|restaurant|магазин|supermarket|банкомат|atm|сервиз|car\s*service|ски\s*под\s*наем|ski\s*rental|голф|golf/i.test(text);
+    const hasAreaContext = /банско|разлог|в\s+района|наблизо|nearby|in\s+the\s+area|around/i.test(text);
+
+    return (hasServiceIntent && hasLocalBusinessKeyword) || (hasLocalBusinessKeyword && hasAreaContext);
+}
+
+function buildPlacesSearchQuery(userMessage) {
+    const text = String(userMessage || '').trim();
+    if (!text) return 'services in Bansko and Razlog';
+
+    if (/банско|разлог|bansko|razlog/i.test(text)) {
+        return text;
+    }
+
+    return `${text} near Bansko and Razlog`;
+}
+
+async function getLivePlacesReply(userMessage, language = 'bg') {
+    if (!GOOGLE_PLACES_API_KEY) return null;
+
+    try {
+        const textQuery = buildPlacesSearchQuery(userMessage);
+        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+                'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.googleMapsUri'
+            },
+            body: JSON.stringify({
+                textQuery,
+                pageSize: Math.max(1, Math.min(GOOGLE_PLACES_MAX_RESULTS, 5)),
+                languageCode: language === 'en' ? 'en' : 'bg'
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.warn('[PLACES] ⚠️ Грешка при търсене:', response.status, errText);
+            return null;
+        }
+
+        const data = await response.json();
+        const places = Array.isArray(data?.places) ? data.places : [];
+
+        if (!places.length) {
+            return language === 'en'
+                ? 'I could not find reliable live map results for this request in Bansko/Razlog right now.'
+                : 'Не открих надеждни live резултати в картите за тази заявка в района на Банско/Разлог.';
+        }
+
+        const lines = places.map((place, index) => {
+            const name = place?.displayName?.text || (language === 'en' ? `Place ${index + 1}` : `Локация ${index + 1}`);
+            const address = place?.formattedAddress || (language === 'en' ? 'Address unavailable' : 'Няма адрес');
+            const mapsUrl = place?.googleMapsUri || '';
+            return mapsUrl
+                ? `${index + 1}. ${name}\n   ${address}\n   ${mapsUrl}`
+                : `${index + 1}. ${name}\n   ${address}`;
+        });
+
+        return language === 'en'
+            ? `Live map results in Bansko/Razlog:\n\n${lines.join('\n\n')}`
+            : `Live резултати от карти за Банско/Разлог:\n\n${lines.join('\n\n')}`;
+    } catch (error) {
+        console.warn('[PLACES] ⚠️ Exception:', error.message);
+        return null;
+    }
+}
+
 function isHostDbCatchAllRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     return /(база(та)?|database|bookings)/i.test(userMessage) && /(резервац|регистрац|активни|днес|утре|анулиран|справка|статус|summary|report)/i.test(userMessage);
@@ -2038,6 +2114,14 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
     if (role === 'host' && isHostDbCatchAllRequest(userMessage)) {
         return await getDatabaseSnapshotReply(role, preferredLanguage);
+    }
+
+    // 2.47. LIVE MAP LOOKUP (Google Places) за локални услуги около Банско/Разлог
+    if (isLivePlacesLookupRequest(userMessage)) {
+        const livePlacesReply = await getLivePlacesReply(userMessage, preferredLanguage);
+        if (livePlacesReply) {
+            return livePlacesReply;
+        }
     }
 
     // 2.5. ТВЪРДА АВТОРИЗАЦИОННА БАРИЕРА ЗА УПРАВЛЕНИЕ НА ТОК
