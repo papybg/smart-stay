@@ -74,6 +74,30 @@ function isManualLikeQuestion(userMessage = '') {
     return manualHints.some(token => text.includes(token));
 }
 
+function shouldUseGroqRouterForMessage(userMessage = '') {
+    const text = String(userMessage || '').toLowerCase();
+    if (!text.trim()) return false;
+
+    // Ако няма ясен property/manual сигнал -> директно Gemini.
+    if (!isManualLikeQuestion(text)) return false;
+
+    // Външни услуги/препоръки/общи въпроси -> Gemini, дори да има частични съвпадения.
+    const outOfScopePatterns = [
+        /кола\s+под\s+наем/i,
+        /наем\s+на\s+кола/i,
+        /rent\s*a\s*car/i,
+        /car\s+rental/i,
+        /автомобил\s+под\s+наем/i,
+        /къде\s+мога\s+да\s+наема\s+кола/i,
+        /препоръча(й|йте)|recommend|best\s+place|най\s*доб(ър|ра|ро)/i,
+        /къде\s+мога\s+да|where\s+can\s+i/i
+    ];
+
+    if (outOfScopePatterns.some(pattern => pattern.test(text))) return false;
+
+    return true;
+}
+
 function canUseGroqRouter() {
     return GROQ_ROUTER_ENABLED && Boolean(GROQ_API_KEY) && Boolean(GROQ_MODEL) && Boolean(genAI);
 }
@@ -165,6 +189,24 @@ async function generateWithGroqRouter(role, preferredLanguage, manualContent, hi
     } finally {
         clearTimeout(timeoutHandle);
     }
+}
+
+function buildGeminiCompositionInstruction(systemInstruction, preferredLanguage, manualDraft = '') {
+    const languageRule = preferredLanguage === 'en'
+        ? 'Write in English.'
+        : 'Пиши на български.';
+
+    return `${systemInstruction}
+
+COMPOSITION MODE (MANUAL-FIRST):
+- You receive a MANUAL_DRAFT prepared from property manual context.
+- Build the final answer primarily from MANUAL_DRAFT.
+- You may add extra helpful context from general knowledge ONLY if it does not conflict with MANUAL_DRAFT.
+- If you add extra context, keep it short and practical.
+- Never invent property-specific facts (codes, contacts, facilities, timings) beyond MANUAL_DRAFT/manual.
+- If MANUAL_DRAFT is empty or missing key data, ask a short clarifying question or provide a safe generic recommendation.
+
+${languageRule}`;
 }
 
 function parseRetryDelayMs(errorMessage = '') {
@@ -2090,9 +2132,10 @@ After successful verification, I will execute the command immediately.`;
     // 6. SAFE ROUTER: GROQ ПЪРВО (manual/property), GEMINI ПРИ DELEGATE
     let finalReply = "В момента имам техническо затруднение. Моля, опитайте след малко.";
     let generatedByModel = false;
+    let manualDraftFromRouter = null;
 
     if (canUseGroqRouter()) {
-        const manualLike = isManualLikeQuestion(userMessage);
+        const manualLike = shouldUseGroqRouterForMessage(userMessage);
         console.log(`[GROQ_ROUTER] Старт на router проверка (manualLike=${manualLike})`);
 
         if (manualLike) {
@@ -2105,11 +2148,11 @@ After successful verification, I will execute the command immediately.`;
             );
 
             if (routerResult?.reply) {
-                finalReply = routerResult.reply;
-                generatedByModel = true;
+                manualDraftFromRouter = routerResult.reply;
+                console.log('[GROQ_ROUTER] 🧩 Получен MANUAL_DRAFT, предавам към Gemini за финален отговор');
             }
         } else {
-            console.log('[GROQ_ROUTER] ⏭️ Не е имотен/manual въпрос, директно към Gemini');
+            console.log('[GROQ_ROUTER] ⏭️ Bypass към Gemini (въпрос извън имотния/manual обхват)');
         }
     }
 
@@ -2123,9 +2166,16 @@ After successful verification, I will execute the command immediately.`;
             }
 
             try {
+                const effectiveSystemInstruction = manualDraftFromRouter
+                    ? buildGeminiCompositionInstruction(systemInstruction, preferredLanguage, manualDraftFromRouter)
+                    : systemInstruction;
+                const effectiveUserMessage = manualDraftFromRouter
+                    ? `USER_QUESTION:\n${userMessage}\n\nMANUAL_DRAFT:\n${manualDraftFromRouter}\n\nTASK:\nСъздай финален отговор за потребителя.`
+                    : userMessage;
+
                 const model = genAI.getGenerativeModel({ 
                     model: modelName, 
-                    systemInstruction: systemInstruction 
+                    systemInstruction: effectiveSystemInstruction 
                 });
 
                 const chat = model.startChat({
@@ -2137,7 +2187,7 @@ After successful verification, I will execute the command immediately.`;
                 });
 
                 console.log(`🤖 Опит за генериране с модел: ${modelName}`);
-                const result = await sendMessageWithTimeout(chat, userMessage, modelName);
+                const result = await sendMessageWithTimeout(chat, effectiveUserMessage, modelName);
                 finalReply = result.response.text();
                 generatedByModel = true;
                 break;
@@ -2150,6 +2200,12 @@ After successful verification, I will execute the command immediately.`;
                 continue;
             }
         }
+    }
+
+    // 6.8 Ако Gemini не отговори, но имаме manual draft от router -> върни го като безопасен fallback
+    if (!generatedByModel && manualDraftFromRouter) {
+        finalReply = manualDraftFromRouter;
+        generatedByModel = true;
     }
 
     // 7 BACKUP PROVIDER FALLBACK (DeepSeek/Groq/Mistral)
