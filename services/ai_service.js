@@ -2080,6 +2080,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     // 2. ОПРЕДЕЛЯНЕ НА РОЛЯ И ДАННИ (Поправка: добавено е ", data")
     const { role, data } = await determineUserRole(authCode, userMessage, history);
     const preferredLanguage = detectPreferredLanguage(userMessage, history);
+    let forceGeminiDirect = false;
 
     // 2.3. ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА РОЛЯТА (без Gemini)
     if (isRoleIdentityRequest(userMessage)) {
@@ -2139,6 +2140,9 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
                 ? '❌ SOURCE: Google Maps Places API (live) not available. Verified map lookup is blocked in strict mode. Set GOOGLE_PLACES_API_KEY or disable strict mode.'
                 : '❌ ИЗТОЧНИК: Google Maps Places API (live) не е наличен. В strict режим провереното търсене е блокирано. Задайте GOOGLE_PLACES_API_KEY или изключете strict режима.';
         }
+
+        forceGeminiDirect = true;
+        console.log('[PLACES] ↪️ Няма live maps резултат. Форсирам Gemini direct (без Groq/manual router).');
     }
 
     // 2.5. ТВЪРДА АВТОРИЗАЦИОННА БАРИЕРА ЗА УПРАВЛЕНИЕ НА ТОК
@@ -2235,7 +2239,7 @@ After successful verification, I will execute the command immediately.`;
     let generatedByModel = false;
     let manualDraftFromRouter = null;
 
-    if (canUseGroqRouter()) {
+    if (!forceGeminiDirect && canUseGroqRouter()) {
         const manualLike = shouldUseGroqRouterForMessage(userMessage);
         console.log(`[GROQ_ROUTER] Старт на router проверка (manualLike=${manualLike})`);
 
@@ -2255,6 +2259,8 @@ After successful verification, I will execute the command immediately.`;
         } else {
             console.log('[GROQ_ROUTER] ⏭️ Bypass към Gemini (въпрос извън имотния/manual обхват)');
         }
+    } else if (forceGeminiDirect) {
+        console.log('[ROUTING] ⏭️ Force Gemini direct за map-style въпрос');
     }
 
     // 6.5. ГЕНЕРИРАНЕ С GEMINI (ако няма финален отговор от Groq)
