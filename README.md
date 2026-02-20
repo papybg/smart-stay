@@ -692,7 +692,8 @@ GEMINI_API_KEY=AIzaSyD...
 # Използва се за въпроси тип "къде има ..." в района на Банско/Разлог
 GOOGLE_PLACES_API_KEY=
 # GOOGLE_PLACES_MAX_RESULTS=3
-# GOOGLE_PLACES_STRICT_MODE=true
+# GOOGLE_PLACES_STRICT_MODE=false
+# Ако е true: без live Google Places резултат системата НЕ връща непроверен отговор
 
 # === OPTIONAL GROQ ROUTER (SAFE ROUTING BEFORE GEMINI) ===
 # Groq отговаря на manual/property въпроси.

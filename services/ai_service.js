@@ -57,7 +57,7 @@ const ACCESS_START_BEFORE_CHECKIN_HOURS = Number(process.env.ACCESS_START_BEFORE
 const ACCESS_END_AFTER_CHECKOUT_HOURS = Number(process.env.ACCESS_END_AFTER_CHECKOUT_HOURS || 1);
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || null;
 const GOOGLE_PLACES_MAX_RESULTS = Number(process.env.GOOGLE_PLACES_MAX_RESULTS || 3);
-const GOOGLE_PLACES_STRICT_MODE = (process.env.GOOGLE_PLACES_STRICT_MODE || 'true').toLowerCase() !== 'false';
+const GOOGLE_PLACES_STRICT_MODE = (process.env.GOOGLE_PLACES_STRICT_MODE || 'false').toLowerCase() !== 'false';
 
 function isManualLikeQuestion(userMessage = '') {
     const text = String(userMessage || '').toLowerCase();
@@ -2136,8 +2136,8 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         }
         if (GOOGLE_PLACES_STRICT_MODE) {
             return preferredLanguage === 'en'
-                ? '❌ SOURCE: Google Maps Places API (live) not available. I cannot provide verified map results right now.'
-                : '❌ ИЗТОЧНИК: Google Maps Places API (live) не е наличен. Не мога да дам проверени резултати от карти в момента.';
+                ? '❌ SOURCE: Google Maps Places API (live) not available. Verified map lookup is blocked in strict mode. Set GOOGLE_PLACES_API_KEY or disable strict mode.'
+                : '❌ ИЗТОЧНИК: Google Maps Places API (live) не е наличен. В strict режим провереното търсене е блокирано. Задайте GOOGLE_PLACES_API_KEY или изключете strict режима.';
         }
     }
 
