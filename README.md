@@ -704,7 +704,10 @@ GOOGLE_PLACES_API_KEY=
 # https://api.search.brave.com/ -> вземи API ключ
 BRAVE_SEARCH_API_KEY=
 # BRAVE_SEARCH_TIMEOUT_MS=6000
+# BRAVE_SEARCH_MONTHLY_QUOTA=1000
 # 1000 заявки/месец в free плана (достатъчно за среден volume)
+# Soft warning логове при ~70%, ~85%, ~95% usage
+# При изчерпан лимит: автоматичен fallback към Gemini без web search
 
 # === OPTIONAL GROQ ROUTER (SAFE ROUTING BEFORE GEMINI) ===
 # Groq отговаря на manual/property въпроси.

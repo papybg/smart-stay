@@ -93,6 +93,45 @@ function shouldTripPlacesCircuitBreaker(statusCode, errorBody = '') {
 
 const BRAVE_SEARCH_API_KEY = process.env.BRAVE_SEARCH_API_KEY || null;
 const BRAVE_SEARCH_TIMEOUT_MS = Number(process.env.BRAVE_SEARCH_TIMEOUT_MS || 6000);
+const BRAVE_SEARCH_MONTHLY_QUOTA = Number(process.env.BRAVE_SEARCH_MONTHLY_QUOTA || 1000);
+const BRAVE_SEARCH_WARNING_LEVELS = [70, 85, 95];
+
+let braveQuotaMonth = '';
+let braveQuotaUsed = 0;
+let braveWarnedLevels = new Set();
+
+function getCurrentQuotaMonth() {
+    const now = new Date();
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function ensureBraveQuotaWindow() {
+    const currentMonth = getCurrentQuotaMonth();
+    if (braveQuotaMonth !== currentMonth) {
+        braveQuotaMonth = currentMonth;
+        braveQuotaUsed = 0;
+        braveWarnedLevels = new Set();
+        console.log(`[BRAVE] 🔄 Нов месечен quota прозорец: ${braveQuotaMonth}`);
+    }
+}
+
+function canUseBraveQuota() {
+    ensureBraveQuotaWindow();
+    return braveQuotaUsed < BRAVE_SEARCH_MONTHLY_QUOTA;
+}
+
+function consumeBraveQuota() {
+    ensureBraveQuotaWindow();
+    braveQuotaUsed += 1;
+
+    const usagePercent = Math.floor((braveQuotaUsed / BRAVE_SEARCH_MONTHLY_QUOTA) * 100);
+    for (const level of BRAVE_SEARCH_WARNING_LEVELS) {
+        if (usagePercent >= level && !braveWarnedLevels.has(level)) {
+            braveWarnedLevels.add(level);
+            console.warn(`[BRAVE] ⚠️ Месечен usage достигна ${usagePercent}% (${braveQuotaUsed}/${BRAVE_SEARCH_MONTHLY_QUOTA})`);
+        }
+    }
+}
 
 function isSearchEligibleQuery(userMessage = '') {
     if (!userMessage || typeof userMessage !== 'string') return false;
@@ -117,11 +156,17 @@ function isSearchEligibleQuery(userMessage = '') {
 
 async function searchBrave(query, language = 'bg') {
     if (!BRAVE_SEARCH_API_KEY) return null;
+    if (!canUseBraveQuota()) {
+        console.warn(`[BRAVE] ⛔ Месечният лимит е изчерпан (${braveQuotaUsed}/${BRAVE_SEARCH_MONTHLY_QUOTA}). Fallback към Gemini без web search.`);
+        return null;
+    }
 
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(), BRAVE_SEARCH_TIMEOUT_MS);
 
     try {
+        consumeBraveQuota();
+
         const searchParams = new URLSearchParams({
             q: query,
             count: '5',
