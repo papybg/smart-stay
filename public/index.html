@@ -101,7 +101,9 @@
 </div>
 
 <script>
-    const API_URL = window.location.origin;
+    const API_URL = window.__SMART_STAY_API_URL
+        || localStorage.getItem('smart-stay-api-url')
+        || (window.location.hostname.includes('onrender.com') ? window.location.origin : 'https://smart-stay.onrender.com');
     const chatMessages = document.getElementById('chat-messages');
     const chatForm = document.getElementById('chat-form');
     const userInput = document.getElementById('user-input');
@@ -215,9 +217,26 @@
                 body: JSON.stringify(payload)
             });
 
-            const data = await response.json();
+            const contentType = response.headers.get('content-type') || '';
+            const rawText = await response.text();
+
+            let data = null;
+            if (contentType.includes('application/json')) {
+                try {
+                    data = JSON.parse(rawText);
+                } catch {
+                    throw new Error('Невалиден JSON от сървъра.');
+                }
+            }
+
             if (!response.ok) {
-                throw new Error(data?.error || 'Грешка при отговор от сървъра');
+                const fallbackMessage = rawText?.slice(0, 120) || `HTTP ${response.status}`;
+                throw new Error((data && (data.error || data.message)) || fallbackMessage);
+            }
+
+            if (!data) {
+                const snippet = (rawText || '').slice(0, 120);
+                throw new Error(`Сървърът върна не-JSON отговор: ${snippet}`);
             }
 
             const rawReply = data?.response || 'Съжалявам, не успях да отговоря в момента.';
