@@ -3,6 +3,45 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
 import { assignPinFromDepot } from './ai_service.js';
 
+export async function syncBookingsPowerFromLatestHistory() {
+    try {
+        if (!process.env.DATABASE_URL) {
+            return { success: false, updatedCount: 0, reason: 'DATABASE_URL missing' };
+        }
+
+        const sql = neon(process.env.DATABASE_URL);
+        const latestRows = await sql`
+            SELECT is_on, timestamp
+            FROM power_history
+            ORDER BY timestamp DESC
+            LIMIT 1
+        `;
+
+        if (!latestRows.length) {
+            return { success: true, updatedCount: 0, reason: 'no history rows' };
+        }
+
+        const latest = latestRows[0];
+        const state = latest.is_on ? 'on' : 'off';
+        const statusTs = latest.timestamp || new Date();
+
+        const updated = await sql`
+            UPDATE bookings
+            SET power_status = ${state},
+                power_status_updated_at = ${statusTs}
+            WHERE check_in <= ${statusTs}
+              AND check_out > ${statusTs}
+              AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+            RETURNING id
+        `;
+
+        return { success: true, updatedCount: updated.length, state, timestamp: statusTs };
+    } catch (error) {
+        console.error('[DETECTIVE] 🔴 Power sync error:', error.message);
+        return { success: false, updatedCount: 0, reason: error.message };
+    }
+}
+
 async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
     for (let i = 0; i < maxRetries; i++) {
         try { return await queryFn(); } 

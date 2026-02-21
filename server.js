@@ -39,12 +39,16 @@ import { neon } from '@neondatabase/serverless';
 import { getAIResponse, assignPinFromDepot } from './services/ai_service.js';
 import { controlPower, controlMeterByAction } from './services/autoremote.js';
 import { generateToken, validateToken, invalidateToken, SESSION_DURATION } from './services/sessionManager.js';
-import { syncBookingsFromGmail } from './services/detective.js';
+import { syncBookingsFromGmail, syncBookingsPowerFromLatestHistory } from './services/detective.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 10000;
+const TASKER_NOISE_WINDOW_MS = Number(process.env.TASKER_NOISE_WINDOW_MS || 45000);
+const REQUEST_LOG_SUPPRESS_MS = Number(process.env.REQUEST_LOG_SUPPRESS_MS || 30000);
+let lastPowerStatusRequestLogTs = 0;
+const recentTaskerStatusBySource = new Map();
 
 // ============================================================================
 // ИНИЦИАЛИЗАЦИЯ
@@ -154,6 +158,18 @@ app.use((req, res, next) => {
     const method = req.method.padEnd(6);
     const ip = req.ip || req.connection.remoteAddress || 'UNKNOWN';
     const payloadSize = req.body ? JSON.stringify(req.body).length : 0;
+
+    const isTaskerStatusRoute = req.url.startsWith('/api/power-status') || req.url.startsWith('/api/power/status');
+    if (isTaskerStatusRoute) {
+        const now = Date.now();
+        if (now - lastPowerStatusRequestLogTs < REQUEST_LOG_SUPPRESS_MS) {
+            return next();
+        }
+        lastPowerStatusRequestLogTs = now;
+        console.log(`[${timestamp}] 📨 ${method} ${req.url.padEnd(25)} | IP: ${ip.padEnd(15)} | Payload: ${payloadSize} B | throttled`);
+        return next();
+    }
+
     console.log(`[${timestamp}] 📨 ${method} ${req.url.padEnd(25)} | IP: ${ip.padEnd(15)} | Payload: ${payloadSize} B`);
     next();
 });
@@ -361,8 +377,9 @@ async function handlePowerStatusUpdate(req, res) {
         const timestamp = new Date();
         let dbLogged = false;
         let dbLogError = null;
+        let detectiveSync = null;
 
-        console.log(`[TASKER] 📨 Получени данни:`, JSON.stringify(req.body));
+        console.log(`[TASKER] 📨 update from ${source}`);
         const newState = normalizePowerState(rawState);
         if (newState === null) {
             console.warn(`[TASKER] ⚠️ Невалидно състояние: ${rawState}`);
@@ -383,10 +400,41 @@ async function handlePowerStatusUpdate(req, res) {
             }
         }
 
+        const recent = recentTaskerStatusBySource.get(source);
+        const isDuplicateNoise = Boolean(
+            !forceLog
+            && recent
+            && recent.state === newState
+            && (Date.now() - recent.ts) < TASKER_NOISE_WINDOW_MS
+        );
+
+        if (isDuplicateNoise) {
+            global.powerState.is_on = newState;
+            global.powerState.last_update = timestamp;
+            global.powerState.source = source;
+
+            return res.status(200).json({
+                success: true,
+                message: 'Duplicate status suppressed',
+                received: {
+                    is_on: newState,
+                    source,
+                    battery: batteryValue,
+                    booking_id,
+                    stateChanged: false,
+                    duplicateSuppressed: true,
+                    dbLogged: false,
+                    dbLogError: null,
+                    note: 'Потиснат дублиран периодичен update'
+                }
+            });
+        }
+
         // 1) Обновяване на глобално състояние
         global.powerState.is_on = newState;
         global.powerState.last_update = timestamp;
         global.powerState.source = source;
+        recentTaskerStatusBySource.set(source, { state: newState, ts: Date.now() });
 
         // 2) Запис в БД само при промяна
         if (sql && (prevState !== newState || forceLog)) {
@@ -403,19 +451,7 @@ async function handlePowerStatusUpdate(req, res) {
                 console.error('[DB] 🔴 Грешка при логване:', dbError.message);
             }
 
-            // 3) Обнови bookings.power_status за активните резервации
-            try {
-                await sql`
-                    UPDATE bookings
-                    SET power_status = ${newState ? 'on' : 'off'},
-                        power_status_updated_at = ${timestamp}
-                    WHERE check_in <= ${timestamp}
-                      AND check_out > ${timestamp}
-                      AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
-                `;
-            } catch (bookingErr) {
-                console.error('[DB] 🔴 Грешка при update на bookings.power_status:', bookingErr.message);
-            }
+            detectiveSync = await syncBookingsPowerFromLatestHistory();
         } else if (sql && prevState === newState && !forceLog) {
             console.log(`[TASKER] ℹ️ Състоянието е същото (${newState ? 'ON' : 'OFF'}), без запис`);
         } else if (!sql) {
@@ -435,6 +471,7 @@ async function handlePowerStatusUpdate(req, res) {
                 forceLog,
                 dbLogged,
                 dbLogError,
+                detectiveSync,
                 note: prevState === newState && !forceLog ? 'Състояние без промяна' : (dbLogged ? 'Записано в power_history' : 'Записът не е потвърден')
             }
         });
@@ -449,29 +486,8 @@ app.post('/api/power/status', handlePowerStatusUpdate);
 app.post('/api/power-status', handlePowerStatusUpdate);
 
 async function executeMeterAction(action, sourceTag, res) {
-    const timestamp = new Date();
-    const willTurnOn = action === 'on';
-    const dbSource = sourceTag || 'api_meter';
-
     let dbLogged = false;
     let dbError = null;
-
-    if (sql) {
-        try {
-            await sql`
-                INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                VALUES (${willTurnOn}, ${timestamp}, ${dbSource}, ${dbSource})
-            `;
-            dbLogged = true;
-            console.log('[DB] ✅ API команда записана в power_history');
-        } catch (err) {
-            dbError = err.message;
-            console.error('[DB] 🔴 Грешка при запис API meter:', err.message);
-        }
-    } else {
-        dbError = 'Database not connected';
-    }
-
     const commandResult = await controlMeterByAction(action);
 
     if (!commandResult.success) {
@@ -490,7 +506,8 @@ async function executeMeterAction(action, sourceTag, res) {
         action,
         command: commandResult.command,
         dbLogged,
-        dbError
+        dbError,
+        note: 'Очаква се Tasker feedback за запис в power_history'
     });
 }
 

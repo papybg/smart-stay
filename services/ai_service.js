@@ -568,23 +568,10 @@ const automationClient = {
     async controlPower(state, bookingId = null, source = 'ai_command') {
         try {
             const command = state ? 'meter_on' : 'meter_off';
-            const timestamp = new Date();
             console.log('[AUTOMATION] 📡 Управление на тока чрез Samsung API:', command);
-            
-            // 🔴 ШАГ 1: ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
-            if (sql) {
-                try {
-                    await sql`
-                        INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                        VALUES (${state}, ${timestamp}, ${source}, ${source})
-                    `;
-                    console.log('[DB] ✅ Команда записана в power_history (is_on=' + state + ', source=' + source + ')');
-                } catch (dbError) {
-                    console.error('[DB] 🔴 Грешка при запис:', dbError.message);
-                }
-            }
-            
-            // 🟢 ШАГ 2: ПРАЩА КЪМ SAMSUNG SMARTTHINGS API
+
+            // 🟢 ПРАЩА КОМАНДА КЪМ SAMSUNG SMARTTHINGS API
+            // ℹ️ Историята се записва само от Tasker feedback endpoint (/api/power-status)
             const success = await sendPowerCommand(state);
             if (success) {
                 console.log('[AUTOMATION] ✅ Команда успешно изпратена към Samsung');
@@ -1208,6 +1195,8 @@ ${strictInstructions}
 🚫 НЕПОЗНАТ (stranger):
    • Учтив и кратък
    • Само публична информация
+    • САМО от manual-public
+    • БЕЗ външни търсения (Google Places / Directions / Brave)
 
 ════════════════════════════════════════════════════════════════════════
 ⚠️ ОГРАНИЧЕНИЯ НА ФУНКЦИИТЕ (НЕ на общите познания):
@@ -2426,8 +2415,10 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         return await getDatabaseSnapshotReply(role, preferredLanguage);
     }
 
+    const allowExternalLookups = role !== 'stranger';
+
     // 2.465. LIVE DIRECTIONS (Google Directions API) за маршрутни въпроси
-    if (isDirectionsRequest(userMessage)) {
+    if (allowExternalLookups && isDirectionsRequest(userMessage)) {
         const directionsReply = await getDirectionsReply(userMessage, preferredLanguage);
         if (directionsReply) {
             return directionsReply;
@@ -2444,7 +2435,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 2.47. LIVE MAP LOOKUP (Google Places) за локални услуги около Банско/Разлог
-    if (isLivePlacesLookupRequest(userMessage) || isMapStyleQuestion(userMessage)) {
+    if (allowExternalLookups && (isLivePlacesLookupRequest(userMessage) || isMapStyleQuestion(userMessage))) {
         const livePlacesReply = await getLivePlacesReply(userMessage, preferredLanguage);
         if (livePlacesReply) {
             return livePlacesReply;
@@ -2461,7 +2452,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 2.48. WEB SEARCH (Brave) за ресторанти, наем, туристически маршрути
-    if (!manualScopeQuestion && isSearchEligibleQuery(userMessage)) {
+    if (allowExternalLookups && !manualScopeQuestion && isSearchEligibleQuery(userMessage)) {
         const searchQuery = preferredLanguage === 'en'
             ? userMessage
             : `${userMessage} near Bansko Razlog Bulgaria`;
