@@ -96,72 +96,73 @@ const BRAVE_SEARCH_TIMEOUT_MS = Number(process.env.BRAVE_SEARCH_TIMEOUT_MS || 60
 
 function isSearchEligibleQuery(userMessage = '') {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    const text = String(userMessage).toLowerCase();
+    const text = String(userMessage).trim();
+    const lowered = text.toLowerCase();
 
-    // Избliga елиминирани разговори
-    if (text.length < 5) return false;
+    if (text.length < 8) return false;
 
-    const manualKeywords = ['код', 'брава', 'lock', 'wifi', 'интернет', 'паркинг', 'check-in', 'check-out', 'резервация', 'booking'];
-    if (manualKeywords.some(k => text.includes(k))) return false;
-
-    // Търсим web-relevant въпроси
-    const searchKeywords = [
-        /къде\s+(мога\s+)?да.*наема|наем\s+на|car\s+rental|rent\s+a\s+car/,
-        /ресторант|restaurant|хранене|dining/,
-        /туристически|маршрут|route|туризъм|tourism|висок|hiking|скиране|ski/,
-        /какво\s+(да|видя|посетя)|what\s+to\s+see|что\s+посмотреть/,
-        /препоръчай|recommend/,
-        /цена|price|cost|цена/,
-        /отворено|open|часове|hours|работно\s+време/
+    const shortChatPatterns = [
+        /^(здра(вей|сти)|hello|hi|hey|ok|okei|thanks|благодаря|мерси)[!.\s]*$/i,
+        /^\d+$/,
+        /^(yes|no|да|не)[!.\s]*$/i
     ];
 
-    return searchKeywords.some(pattern => pattern.test(text));
+    if (shortChatPatterns.some(pattern => pattern.test(lowered))) return false;
+
+    const infoIntentPatterns = [
+        /\?/,
+        /\b(къде|как|какво|кой|кои|кога|защо|къйде|where|what|how|when|why|which)\b/i,
+        /\b(препоръч|recommend|best|цена|price|отворен|open|часове|hours|маршрут|route|адрес|address)\b/i
+    ];
+
+    return infoIntentPatterns.some(pattern => pattern.test(text));
 }
 
 async function searchBrave(query, language = 'bg') {
     if (!BRAVE_SEARCH_API_KEY) return null;
 
-    try {
-        const controller = new AbortController();
-        const timeoutHandle = setTimeout(() => controller.abort(), BRAVE_SEARCH_TIMEOUT_MS);
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), BRAVE_SEARCH_TIMEOUT_MS);
 
-        const response = await fetch('https://api.search.brave.com/res/v1/web/search', {
-            method: 'POST',
+    try {
+        const searchParams = new URLSearchParams({
+            q: query,
+            count: '5',
+            result_filter: 'web',
+            search_lang: language === 'en' ? 'en' : 'bg'
+        });
+
+        const response = await fetch(`https://api.search.brave.com/res/v1/web/search?${searchParams.toString()}`, {
+            method: 'GET',
             headers: {
-                'Accept-Encoding': 'gzip',
                 'X-Subscription-Token': BRAVE_SEARCH_API_KEY,
-                'Content-Type': 'application/json'
+                'Accept': 'application/json'
             },
-            body: JSON.stringify({
-                q: query,
-                count: 5,
-                text_format: 'plaintext'
-            }),
             signal: controller.signal
         });
 
-        clearTimeout(timeoutHandle);
-
         if (!response.ok) {
-            console.warn(`[BRAVE] Грешка при търсене: ${response.status}`);
+            const errText = await response.text();
+            console.warn(`[BRAVE] Грешка при търсене: ${response.status} ${errText}`);
             return null;
         }
 
         const data = await response.json();
-        const results = Array.isArray(data?.web) ? data.web : [];
+        const results = Array.isArray(data?.web?.results)
+            ? data.web.results
+            : (Array.isArray(data?.results) ? data.results : []);
 
         if (!results.length) {
-            console.log('[BRAVE] Нямa резултати');
+            console.log('[BRAVE] Няма резултати');
             return null;
         }
 
-        // Форматирай резултатите
         const formatted = results
             .slice(0, 4)
             .map(r => {
                 const title = r.title || '';
                 const url = r.url || '';
-                const description = r.description || '';
+                const description = r.description || (Array.isArray(r.extra_snippets) ? r.extra_snippets.join(' ') : '');
                 return `📌 ${title}\n${url}\n${description}`;
             })
             .join('\n\n');
@@ -175,6 +176,8 @@ async function searchBrave(query, language = 'bg') {
             console.warn('[BRAVE] Грешка:', error.message);
         }
         return null;
+    } finally {
+        clearTimeout(timeoutHandle);
     }
 }
 
@@ -2213,6 +2216,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     // 2. ОПРЕДЕЛЯНЕ НА РОЛЯ И ДАННИ (Поправка: добавено е ", data")
     const { role, data } = await determineUserRole(authCode, userMessage, history);
     const preferredLanguage = detectPreferredLanguage(userMessage, history);
+    const manualScopeQuestion = shouldUseGroqRouterForMessage(userMessage);
     let forceGeminiDirect = false;
     let braveSearchResults = null;
 
@@ -2281,7 +2285,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 2.48. WEB SEARCH (Brave) за ресторанти, наем, туристически маршрути
-    if (isSearchEligibleQuery(userMessage)) {
+    if (!manualScopeQuestion && isSearchEligibleQuery(userMessage)) {
         const searchQuery = preferredLanguage === 'en'
             ? userMessage
             : `${userMessage} near Bansko Razlog Bulgaria`;
@@ -2396,10 +2400,9 @@ After successful verification, I will execute the command immediately.`;
     let manualDraftFromRouter = null;
 
     if (!forceGeminiDirect && canUseGroqRouter()) {
-        const manualLike = shouldUseGroqRouterForMessage(userMessage);
-        console.log(`[GROQ_ROUTER] Старт на router проверка (manualLike=${manualLike})`);
+        console.log(`[GROQ_ROUTER] Старт на router проверка (manualLike=${manualScopeQuestion})`);
 
-        if (manualLike) {
+        if (manualScopeQuestion) {
             const routerResult = await generateWithGroqRouter(
                 role,
                 preferredLanguage,
@@ -2416,7 +2419,7 @@ After successful verification, I will execute the command immediately.`;
             console.log('[GROQ_ROUTER] ⏭️ Bypass към Gemini (въпрос извън имотния/manual обхват)');
         }
     } else if (forceGeminiDirect) {
-        console.log('[ROUTING] ⏭️ Force Gemini direct за map-style въпрос');
+        console.log('[ROUTING] ⏭️ Force Gemini direct (live web/maps context)');
     }
 
     // 6.5. ГЕНЕРИРАНЕ С GEMINI (ако няма финален отговор от Groq)
@@ -2499,6 +2502,24 @@ After successful verification, I will execute the command immediately.`;
 ⚠️ Ако нищо не се случи и аз не потвърдя: Това означава, че комуникацията с апартамента е прекъсната. В 99% от случаите това значи ЦЕНТРАЛНА АВАРИЯ в района.
 
 🔗 Проверете тук: https://info.electrohold.bg (Община Разлог)`;
+        }
+    }
+
+    if (braveSearchResults && typeof finalReply === 'string' && finalReply.trim()) {
+        const bravePrefix = preferredLanguage === 'en'
+            ? '✅ SOURCE: Brave Web Search (live)'
+            : '✅ ИЗТОЧНИК: Brave Web Search (live)';
+
+        if (!finalReply.startsWith(bravePrefix)) {
+            finalReply = `${bravePrefix}\n${finalReply}`;
+        }
+    } else if (manualDraftFromRouter && typeof finalReply === 'string' && finalReply.trim()) {
+        const groqPrefix = preferredLanguage === 'en'
+            ? '✅ SOURCE: Groq Manual Router + Property Manual'
+            : '✅ ИЗТОЧНИК: Groq Manual Router + Наръчник на имота';
+
+        if (!finalReply.startsWith(groqPrefix)) {
+            finalReply = `${groqPrefix}\n${finalReply}`;
         }
     }
 
