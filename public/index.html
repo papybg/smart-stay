@@ -1,130 +1,255 @@
 <!DOCTYPE html>
-<html lang="bg">
+<html class="light" lang="bg">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Stay - Виртуален Иконом</title>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Iko AI Concierge</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#13ec5b',
+                        'forest-green': '#1b3a27',
+                        'background-light': '#f3f0e9',
+                        'background-dark': '#101813'
+                    },
+                    fontFamily: {
+                        display: ['Manrope', 'sans-serif']
+                    }
+                }
+            }
+        };
+    </script>
     <style>
-        .chat-container { height: calc(100vh - 160px); }
-        .message-bubble { max-width: 85%; border-radius: 18px; }
-        .user-message { background-color: #3b82f6; color: white; border-bottom-right-radius: 4px; }
-        .ai-message { background-color: #f3f4f6; color: #1f2937; border-bottom-left-radius: 4px; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        .glass-header {
+            background: rgba(243, 240, 233, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        .organic-texture {
+            background-image: url(https://lh3.googleusercontent.com/aida-public/AB6AXuB0iuCGuYFpT5A-M0pSMAvcZP_ZlrF13PhSaECYWI0fOTQ7_LzG4Nh2jkDmG8G1ace9W8dHNXJLtHAQqw983bA-NMM-d-SfUA7RgVRsZq5ZNXuFnFM7hEX4RJRv1ZnY3SW4bimd6OFh0sH2uGtxxFzNeJjDkFGw4zhdUdEYgW_0eTL2YA77gQ-XgN0BmHU9FW6E1rKDGyBRSky_i_Y0zO8_ks4cfPU2kFWdsCaybKtVQInu-bSKN-Juy5tuHUlH5_Yj5DRMDOvHVOQ);
+        }
+        .glass-input {
+            background: rgba(255, 255, 255, 0.86);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .ios-safe-area { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
-<body class="bg-gray-50 flex flex-col h-screen">
-    <header class="bg-white shadow-sm p-4 flex items-center justify-between">
+<body class="font-display bg-background-light text-[#111813] transition-colors duration-300">
+<div class="relative flex h-screen w-full flex-col overflow-hidden organic-texture">
+    <header class="glass-header sticky top-0 z-50 flex items-center p-4 pb-3 justify-between">
         <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-xl">И</div>
-            <div>
-                <h1 class="font-bold text-gray-800">Ико</h1>
-                <p class="text-xs text-green-500 flex items-center gap-1">
-                    <span class="w-2 h-2 bg-green-500 rounded-full"></span> На линия
-                </p>
+            <div class="flex size-10 items-center justify-center rounded-full bg-white/50">
+                <span class="material-symbols-outlined text-[#1b3a27]">terrain</span>
             </div>
+            <div>
+                <h2 class="text-sm font-bold leading-tight tracking-tight">Apartment D105</h2>
+                <p class="text-[11px] font-medium uppercase tracking-widest text-[#61896f]">Smart Stay | Aspen Valley</p>
+            </div>
+        </div>
+        <div class="flex items-center">
+            <div class="size-2 rounded-full bg-primary animate-pulse mr-2"></div>
+            <span class="text-[12px] font-semibold text-[#61896f]">Iko Online</span>
         </div>
     </header>
 
-    <main id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4 chat-container">
-        <div class="ai-message message-bubble p-4 shadow-sm animate-fade-in">
-            Добре дошли в нашия апартамент! 🏠<br>
-            Аз съм Ико, вашият личен помощник. Питайте ме за всичко - от удобства до туристически съвети.
+    <main id="chat-messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+        <div class="flex justify-center">
+            <span class="text-[11px] font-bold uppercase tracking-widest text-[#a1a8a3] bg-white/30 px-3 py-1 rounded-full">Today</span>
         </div>
     </main>
 
-    <footer class="p-4 bg-white border-t">
-        <form id="chat-form" class="max-w-4xl mx-auto flex gap-2">
-            <input type="text" id="user-input" 
-                   class="flex-1 border-gray-300 rounded-full px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                   placeholder="Напишете съобщение...">
-            <button type="submit" 
-                    class="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
+    <footer class="ios-safe-area w-full bg-gradient-to-t from-background-light via-background-light/95 to-transparent pt-4">
+        <div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar" id="quick-chips">
+            <button data-message="Каква е WiFi паролата?" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">wifi</span>
+                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">WiFi</p>
             </button>
-        </form>
+            <button data-message="Как се прави check-in?" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">key</span>
+                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Check-in</p>
+            </button>
+            <button data-message="Какви са правилата в апартамента?" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">menu_book</span>
+                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Правила</p>
+            </button>
+            <button data-message="Препоръчай ресторанти и маршрути в района" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">explore</span>
+                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Local Tips</p>
+            </button>
+        </div>
+
+        <div class="px-4 pb-6">
+            <form id="chat-form" class="glass-input flex items-center rounded-full p-2 pr-2 pl-5 shadow-xl border border-white/50">
+                <input id="user-input" class="flex-1 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#61896f]/60 text-[#111813]" placeholder="Попитайте Ико..." type="text"/>
+                <button type="submit" class="flex size-10 items-center justify-center rounded-full bg-primary text-forest-green shadow-lg">
+                    <span class="material-symbols-outlined font-bold">arrow_upward</span>
+                </button>
+            </form>
+        </div>
     </footer>
+</div>
 
-    <script>
-        const API_URL = 'https://smart-stay.onrender.com';
-        
-        const chatMessages = document.getElementById('chat-messages');
-        const chatForm = document.getElementById('chat-form');
-        const userInput = document.getElementById('user-input');
-        
-        let chatHistory = [];
+<script>
+    const API_URL = window.location.origin;
+    const chatMessages = document.getElementById('chat-messages');
+    const chatForm = document.getElementById('chat-form');
+    const userInput = document.getElementById('user-input');
+    const quickChips = document.getElementById('quick-chips');
 
-        // 💬 ПОКАЗВАНЕ НА CHAT - БЕЗ ВХОД
-        function initializeChat() {
-            chatForm.style.display = 'flex';
-            userInput.disabled = false;
+    const chatHistory = [];
+
+    function getSessionToken() {
+        const token = localStorage.getItem('smart-stay-token');
+        const expiry = Number(localStorage.getItem('smart-stay-expiry') || 0);
+        if (!token || !expiry || Date.now() > expiry) return null;
+        return token;
+    }
+
+    function escapeAndFormat(text) {
+        const span = document.createElement('span');
+        span.textContent = text || '';
+        return span.innerHTML.replace(/\n/g, '<br>');
+    }
+
+    function createMessage(role, content) {
+        const isUser = role === 'user';
+        const wrapper = document.createElement('div');
+        wrapper.className = isUser
+            ? 'flex items-end gap-3 justify-end ml-auto max-w-[85%]'
+            : 'flex items-end gap-3 max-w-[85%]';
+
+        if (!isUser) {
+            const avatar = document.createElement('div');
+            avatar.className = 'bg-white flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50';
+            avatar.innerHTML = '<span class="material-symbols-outlined text-[#1b3a27] text-[20px]">terrain</span>';
+            wrapper.appendChild(avatar);
         }
 
-        // 💬 ДОБАВЯНЕ НА СЪОБЩЕНИЕ
-        function addMessage(content, isUser = false) {
-            const wrapper = document.createElement('div');
-            wrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`;
-            
-            const text = content || "Съжалявам, не успях да генерирам отговор.";
-            
-            wrapper.innerHTML = `
-                <div class="message-bubble p-4 shadow-sm ${isUser ? 'user-message' : 'ai-message'}">
-                    ${text.replace(/\n/g, '<br>')}
-                </div>
-            `;
-            
-            chatMessages.appendChild(wrapper);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            
-            chatHistory.push({
-                role: isUser ? "user" : "assistant",
-                content: text
+        const contentCol = document.createElement('div');
+        contentCol.className = isUser ? 'flex flex-col gap-1 items-end' : 'flex flex-col gap-1 items-start';
+
+        const label = document.createElement('p');
+        label.className = isUser
+            ? 'text-[#61896f] text-[11px] font-bold uppercase tracking-wider mr-2'
+            : 'text-[#61896f] text-[11px] font-bold uppercase tracking-wider ml-2';
+        label.textContent = isUser ? 'Guest' : 'Iko AI';
+
+        const bubble = document.createElement('div');
+        bubble.className = isUser
+            ? 'text-[15px] font-normal leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-forest-green text-white shadow-md whitespace-pre-wrap'
+            : 'text-[15px] font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white text-[#111813] shadow-sm border border-white/40 whitespace-pre-wrap';
+        bubble.innerHTML = escapeAndFormat(content);
+
+        contentCol.appendChild(label);
+        contentCol.appendChild(bubble);
+        wrapper.appendChild(contentCol);
+
+        chatMessages.appendChild(wrapper);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function addTyping() {
+        const typing = document.createElement('div');
+        typing.id = 'typing-indicator';
+        typing.className = 'flex items-end gap-3 max-w-[85%]';
+        typing.innerHTML = `
+            <div class="bg-white flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50">
+                <span class="material-symbols-outlined text-[#1b3a27] text-[20px]">terrain</span>
+            </div>
+            <div class="text-[14px] italic rounded-2xl rounded-bl-none px-4 py-3 bg-white text-[#61896f] shadow-sm border border-white/40 animate-pulse">Ико пише...</div>
+        `;
+        chatMessages.appendChild(typing);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function removeTyping() {
+        const typing = document.getElementById('typing-indicator');
+        if (typing) typing.remove();
+    }
+
+    function extractSource(responseText) {
+        const lines = String(responseText || '').split('\n');
+        const first = (lines[0] || '').trim();
+        if (first.startsWith('✅ ИЗТОЧНИК:') || first.startsWith('✅ SOURCE:') || first.startsWith('❌ ИЗТОЧНИК:') || first.startsWith('❌ SOURCE:')) {
+            return { badge: first, body: lines.slice(1).join('\n').trim() };
+        }
+        return { badge: null, body: String(responseText || '') };
+    }
+
+    function addSourceBadge(badgeText) {
+        const row = document.createElement('div');
+        row.className = 'flex justify-center';
+        row.innerHTML = `<span class="text-[10px] font-bold uppercase tracking-widest text-[#4f6f5b] bg-white/70 px-3 py-1 rounded-full">${escapeAndFormat(badgeText)}</span>`;
+        chatMessages.appendChild(row);
+    }
+
+    async function sendMessage(message) {
+        if (!message || !message.trim()) return;
+
+        createMessage('user', message);
+        chatHistory.push({ role: 'user', content: message });
+        addTyping();
+
+        try {
+            const token = getSessionToken();
+            const payload = {
+                message,
+                history: chatHistory.slice(-20)
+            };
+            if (token) payload.token = token;
+
+            const response = await fetch(`${API_URL}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
-        }
 
-        // 📤 ИЗПРАЩАНЕ НА СЪОБЩЕНИЕ КЪМ AI
-        chatForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const message = userInput.value.trim();
-            if (!message) return;
-
-            userInput.value = '';
-            addMessage(message, true);
-
-            // Индикатор за писане
-            const typingDiv = document.createElement('div');
-            typingDiv.className = 'ai-message message-bubble p-3 shadow-sm italic text-gray-400 animate-pulse';
-            typingDiv.innerText = 'Ико пише...';
-            chatMessages.appendChild(typingDiv);
-
-            try {
-                const response = await fetch(`${API_URL}/api/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message: message, 
-                        history: chatHistory
-                    })
-                });
-
-                if (!response.ok) throw new Error('Network response was not ok');
-
-                const data = await response.json();
-                chatMessages.removeChild(typingDiv);
-                addMessage(data.response);
-
-            } catch (error) {
-                console.error('Error:', error);
-                if (typingDiv.parentNode) chatMessages.removeChild(typingDiv);
-                addMessage("⚠️ Грешка при връзката. Моля, проверете интернета си.");
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data?.error || 'Грешка при отговор от сървъра');
             }
-        });
 
-        // 🔧 ИНИЦИАЛИЗАЦИЯ НА ПРИЛОЖЕНИЕТО
-        initializeChat();
-    </script>
+            const rawReply = data?.response || 'Съжалявам, не успях да отговоря в момента.';
+            const parsed = extractSource(rawReply);
+
+            removeTyping();
+            if (parsed.badge) addSourceBadge(parsed.badge);
+            createMessage('assistant', parsed.body || rawReply);
+            chatHistory.push({ role: 'assistant', content: parsed.body || rawReply });
+        } catch (error) {
+            removeTyping();
+            createMessage('assistant', `⚠️ ${error.message || 'Проблем с връзката. Опитайте отново.'}`);
+            chatHistory.push({ role: 'assistant', content: '⚠️ Проблем с връзката. Опитайте отново.' });
+        }
+    }
+
+    chatForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const message = userInput.value.trim();
+        if (!message) return;
+        userInput.value = '';
+        await sendMessage(message);
+    });
+
+    quickChips.addEventListener('click', async (event) => {
+        const btn = event.target.closest('button[data-message]');
+        if (!btn) return;
+        await sendMessage(btn.dataset.message || '');
+    });
+
+    createMessage('assistant', 'Добре дошли в Aspen Valley! Аз съм Ико – вашият AI асистент. Мога да помогна с информация за престоя, района и полезни препоръки.');
+    chatHistory.push({ role: 'assistant', content: 'Добре дошли в Aspen Valley! Аз съм Ико – вашият AI асистент. Мога да помогна с информация за престоя, района и полезни препоръки.' });
+</script>
 </body>
 </html>
