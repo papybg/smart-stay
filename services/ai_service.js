@@ -101,6 +101,9 @@ function isSearchEligibleQuery(userMessage = '') {
 
     if (text.length < 8) return false;
 
+    if (containsReservationCode(text)) return false;
+    if (isPowerCommandRequest(text)) return false;
+
     const shortChatPatterns = [
         /^(здра(вей|сти)|hello|hi|hey|ok|okei|thanks|благодаря|мерси)[!.\s]*$/i,
         /^\d+$/,
@@ -109,13 +112,7 @@ function isSearchEligibleQuery(userMessage = '') {
 
     if (shortChatPatterns.some(pattern => pattern.test(lowered))) return false;
 
-    const infoIntentPatterns = [
-        /\?/,
-        /\b(къде|как|какво|кой|кои|кога|защо|къйде|where|what|how|when|why|which)\b/i,
-        /\b(препоръч|recommend|best|цена|price|отворен|open|часове|hours|маршрут|route|адрес|address)\b/i
-    ];
-
-    return infoIntentPatterns.some(pattern => pattern.test(text));
+    return true;
 }
 
 async function searchBrave(query, language = 'bg') {
