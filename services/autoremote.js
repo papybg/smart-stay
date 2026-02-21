@@ -18,17 +18,27 @@ const SMARTTHINGS_DEVICE_ID = process.env.SMARTTHINGS_DEVICE_ID
     || '';
 const SMARTTHINGS_DEVICE_ID_ON = process.env.SMARTTHINGS_DEVICE_ID_ON || SMARTTHINGS_DEVICE_ID;
 const SMARTTHINGS_DEVICE_ID_OFF = process.env.SMARTTHINGS_DEVICE_ID_OFF || SMARTTHINGS_DEVICE_ID;
+const SMARTTHINGS_BUTTON_DEVICE_ID = process.env.SMARTTHINGS_BUTTON_DEVICE_ID || '';
+const SMARTTHINGS_BUTTON_DEVICE_ID_ON = process.env.SMARTTHINGS_BUTTON_DEVICE_ID_ON || SMARTTHINGS_BUTTON_DEVICE_ID;
+const SMARTTHINGS_BUTTON_DEVICE_ID_OFF = process.env.SMARTTHINGS_BUTTON_DEVICE_ID_OFF || SMARTTHINGS_BUTTON_DEVICE_ID;
 const SMARTTHINGS_COMPONENT = process.env.SMARTTHINGS_COMPONENT || 'main';
+const SMARTTHINGS_BUTTON_COMPONENT = process.env.SMARTTHINGS_BUTTON_COMPONENT || SMARTTHINGS_COMPONENT;
 const SMARTTHINGS_API_URL = process.env.SMARTTHINGS_API_URL || 'https://api.smartthings.com/v1';
 const SMARTTHINGS_COMMAND_ON = process.env.SMARTTHINGS_COMMAND_ON || 'on';
 const SMARTTHINGS_COMMAND_OFF = process.env.SMARTTHINGS_COMMAND_OFF || 'off';
 const SMARTTHINGS_SCENE_COMMAND = process.env.SMARTTHINGS_SCENE_COMMAND || 'on';
+const SMARTTHINGS_SCENE_COMMAND_ON = process.env.SMARTTHINGS_SCENE_COMMAND_ON || SMARTTHINGS_SCENE_COMMAND || 'on';
+const SMARTTHINGS_SCENE_COMMAND_OFF = process.env.SMARTTHINGS_SCENE_COMMAND_OFF || SMARTTHINGS_SCENE_COMMAND || 'on';
+const SMARTTHINGS_BUTTON_COMMAND_ON = process.env.SMARTTHINGS_BUTTON_COMMAND_ON || 'push';
+const SMARTTHINGS_BUTTON_COMMAND_OFF = process.env.SMARTTHINGS_BUTTON_COMMAND_OFF || 'push';
+const SMARTTHINGS_SCENE_BUTTON_MODE = (process.env.SMARTTHINGS_SCENE_BUTTON_MODE || 'true').toLowerCase() !== 'false';
+const SMARTTHINGS_SCENE_PULSE_DELAY_MS = Number(process.env.SMARTTHINGS_SCENE_PULSE_DELAY_MS || 250);
 const USE_SPLIT_SCENE_DEVICES =
     Boolean(SMARTTHINGS_DEVICE_ID_ON)
     && Boolean(SMARTTHINGS_DEVICE_ID_OFF)
     && SMARTTHINGS_DEVICE_ID_ON !== SMARTTHINGS_DEVICE_ID_OFF;
 
-if (!SMARTTHINGS_TOKEN || (!SMARTTHINGS_DEVICE_ID_ON && !SMARTTHINGS_DEVICE_ID_OFF)) {
+if (!SMARTTHINGS_TOKEN || (!SMARTTHINGS_DEVICE_ID_ON && !SMARTTHINGS_DEVICE_ID_OFF && !SMARTTHINGS_BUTTON_DEVICE_ID_ON && !SMARTTHINGS_BUTTON_DEVICE_ID_OFF)) {
     console.warn('[SMARTTHINGS] ⚠️ Липсват SMARTTHINGS token/device id в env');
 }
 
@@ -86,6 +96,64 @@ export async function sendCommandToSamsung(switchCommand, targetDeviceId = SMART
     }
 }
 
+async function sendButtonCommandToSamsung(buttonCommand, targetDeviceId) {
+    if (!SMARTTHINGS_TOKEN || !targetDeviceId) {
+        console.error('[SMARTTHINGS] ❌ Липсва SMARTTHINGS_TOKEN или SMARTTHINGS_BUTTON_DEVICE_ID');
+        return false;
+    }
+
+    const normalized = String(buttonCommand || '').trim().toLowerCase() || 'push';
+    const url = `${SMARTTHINGS_API_URL}/devices/${targetDeviceId}/commands`;
+
+    try {
+        console.log(`[SMARTTHINGS] 🔘 Изпращам BUTTON ${normalized.toUpperCase()} към device ${targetDeviceId}`);
+
+        const response = await axios.post(url, {
+            commands: [
+                {
+                    component: SMARTTHINGS_BUTTON_COMPONENT,
+                    capability: 'button',
+                    command: normalized
+                }
+            ]
+        }, {
+            headers: {
+                Authorization: `Bearer ${SMARTTHINGS_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 8000
+        });
+
+        if (response.status >= 200 && response.status < 300) {
+            console.log(`[SMARTTHINGS] ✅ BUTTON команда ${normalized.toUpperCase()} изпратена успешно`);
+            return true;
+        }
+
+        console.warn('[SMARTTHINGS] ⚠️ Неочакван BUTTON отговор:', response.status);
+        return false;
+    } catch (error) {
+        const details = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
+        console.error('[SMARTTHINGS] ❌ Грешка при BUTTON команда:', details);
+        return false;
+    }
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function sendSceneButtonCommand(targetDeviceId, triggerCommand) {
+    const normalizedTrigger = String(triggerCommand || '').trim().toLowerCase();
+    if (!SMARTTHINGS_SCENE_BUTTON_MODE || normalizedTrigger !== 'on') {
+        return await sendCommandToSamsung(normalizedTrigger, targetDeviceId);
+    }
+
+    console.log('[SMARTTHINGS] 🔘 Scene button mode: pulse OFF → ON');
+    await sendCommandToSamsung('off', targetDeviceId);
+    await sleep(Math.max(0, SMARTTHINGS_SCENE_PULSE_DELAY_MS));
+    return await sendCommandToSamsung('on', targetDeviceId);
+}
+
 /**
  * Управление на тока (директно през Samsung)
  * @async
@@ -93,10 +161,19 @@ export async function sendCommandToSamsung(switchCommand, targetDeviceId = SMART
  * @returns {Promise<boolean>}
  */
 export async function controlPower(turnOn) {
+    const buttonDeviceId = turnOn ? SMARTTHINGS_BUTTON_DEVICE_ID_ON : SMARTTHINGS_BUTTON_DEVICE_ID_OFF;
+    if (buttonDeviceId) {
+        const buttonCommand = turnOn ? SMARTTHINGS_BUTTON_COMMAND_ON : SMARTTHINGS_BUTTON_COMMAND_OFF;
+        return await sendButtonCommandToSamsung(buttonCommand, buttonDeviceId);
+    }
+
     const command = USE_SPLIT_SCENE_DEVICES
-        ? SMARTTHINGS_SCENE_COMMAND
+        ? (turnOn ? SMARTTHINGS_SCENE_COMMAND_ON : SMARTTHINGS_SCENE_COMMAND_OFF)
         : (turnOn ? SMARTTHINGS_COMMAND_ON : SMARTTHINGS_COMMAND_OFF);
     const targetDeviceId = turnOn ? SMARTTHINGS_DEVICE_ID_ON : SMARTTHINGS_DEVICE_ID_OFF;
+    if (USE_SPLIT_SCENE_DEVICES) {
+        return await sendSceneButtonCommand(targetDeviceId, command);
+    }
     return await sendCommandToSamsung(command, targetDeviceId);
 }
 
@@ -112,11 +189,20 @@ export async function controlMeterByAction(action) {
     }
 
     const turnOn = normalized === 'on';
+    const buttonDeviceId = turnOn ? SMARTTHINGS_BUTTON_DEVICE_ID_ON : SMARTTHINGS_BUTTON_DEVICE_ID_OFF;
+    if (buttonDeviceId) {
+        const buttonCommand = turnOn ? SMARTTHINGS_BUTTON_COMMAND_ON : SMARTTHINGS_BUTTON_COMMAND_OFF;
+        const success = await sendButtonCommandToSamsung(buttonCommand, buttonDeviceId);
+        return { success, command: buttonCommand };
+    }
+
     const command = USE_SPLIT_SCENE_DEVICES
-        ? SMARTTHINGS_SCENE_COMMAND
+        ? (turnOn ? SMARTTHINGS_SCENE_COMMAND_ON : SMARTTHINGS_SCENE_COMMAND_OFF)
         : (turnOn ? SMARTTHINGS_COMMAND_ON : SMARTTHINGS_COMMAND_OFF);
     const targetDeviceId = turnOn ? SMARTTHINGS_DEVICE_ID_ON : SMARTTHINGS_DEVICE_ID_OFF;
-    const success = await sendCommandToSamsung(command, targetDeviceId);
+    const success = USE_SPLIT_SCENE_DEVICES
+        ? await sendSceneButtonCommand(targetDeviceId, command)
+        : await sendCommandToSamsung(command, targetDeviceId);
     return { success, command };
 }
 

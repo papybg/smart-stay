@@ -530,23 +530,56 @@ const PUBLIC_INFO_FALLBACK = `
  * Управлява управление на тока, известувания и заявки за резервации
  */
 const automationClient = {
+    normalizePowerStateFromStatus(rawStatus) {
+        if (typeof rawStatus === 'boolean') return rawStatus;
+        if (typeof rawStatus === 'number') {
+            if (rawStatus === 1) return true;
+            if (rawStatus === 0) return false;
+            return null;
+        }
+        if (typeof rawStatus === 'string') {
+            const value = rawStatus.trim().toLowerCase();
+            if (['on', 'true', '1', 'вкл', 'включен', 'active'].includes(value)) return true;
+            if (['off', 'false', '0', 'изкл', 'изключен', 'inactive'].includes(value)) return false;
+        }
+        return null;
+    },
+
     /**
      * Получава текущия статус на системата за тока от услугата за автоматизация
      * @async
      * @returns {Promise<{online: boolean, isOn: boolean}>} Обект със статус на тока
      * @throws Мълчаливо връща офлайн статус при мрежова грешка
      */
-    async getPowerStatus() {
+    async getPowerStatus(options = {}) {
+        const { silent = false } = options;
         try {
-            console.log('[AUTOMATION] Получавам статус на тока от услугата за автоматизация...');
+            if (!silent) {
+                console.log('[AUTOMATION] Получавам статус на тока от услугата за автоматизация...');
+            }
             const res = await fetch(`${AUTOMATION_URL}/api/power-status`);
             if (!res.ok) {
                 console.warn('[AUTOMATION] Крайната точка върна статус, различен от 200:', res.status);
                 return { online: false, isOn: false };
             }
             const status = await res.json();
-            console.log('[AUTOMATION] Статус на тока получен:', status);
-            return status;
+            const normalizedIsOn =
+                typeof status?.isOn === 'boolean'
+                    ? status.isOn
+                    : automationClient.normalizePowerStateFromStatus(
+                        status?.is_on ?? status?.state ?? status?.status ?? status?.received?.is_on
+                    );
+
+            const normalized = {
+                ...status,
+                online: status?.online !== false,
+                isOn: typeof normalizedIsOn === 'boolean' ? normalizedIsOn : false
+            };
+
+            if (!silent) {
+                console.log('[AUTOMATION] Статус на тока получен:', normalized);
+            }
+            return normalized;
         } catch (e) {
             console.error('[AUTOMATION] Проверката на статус на тока не успя:', e.message);
             return { online: false, isOn: false };
@@ -729,6 +762,29 @@ function isHostVerifiedInHistory(history = []) {
     }
 
     return false;
+}
+
+function detectPowerCommandIntent(rawMessage = '') {
+    const normalizedText = String(rawMessage || '').toLowerCase();
+    if (!normalizedText.trim()) {
+        return { isInclude: false, isExclude: false };
+    }
+
+    const cleaned = normalizedText.replace(/[^\p{L}\p{N}\s]+/gu, ' ');
+    const tokens = new Set(cleaned.split(/\s+/).filter(Boolean));
+
+    const excludeTokenHits = ['изключи', 'изключ', 'спри', 'спирай', 'off'];
+    const includeTokenHits = ['включи', 'включ', 'пусни', 'възстанови', 'on'];
+
+    const hasExcludeToken = excludeTokenHits.some(token => tokens.has(token));
+    const hasExcludePhrase = /power\s*off|turn\s*off|cut\s*power/i.test(normalizedText);
+    const isExclude = hasExcludeToken || hasExcludePhrase;
+
+    const hasIncludeToken = includeTokenHits.some(token => tokens.has(token)) || /дай\s+ток/i.test(normalizedText);
+    const hasIncludePhrase = /power\s*on|turn\s*on|restore\s*power/i.test(normalizedText);
+    const isInclude = !isExclude && (hasIncludeToken || hasIncludePhrase);
+
+    return { isInclude, isExclude };
 }
 
 /**
@@ -1249,7 +1305,7 @@ async function waitForPowerConfirmation(expectedState, timeoutMs = 20000) {
     const pollInterval = 500; // Проверка всеки 500ms
     
     while (Date.now() - startTime < timeoutMs) {
-        const latestStatus = await automationClient.getPowerStatus();
+        const latestStatus = await automationClient.getPowerStatus({ silent: true });
         const currentState = latestStatus?.isOn;
         const hasChanged = currentState === expectedState;
         
@@ -1325,8 +1381,7 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
         console.log('[POWER] 🎯 КОМАНДА ЗА УПРАВЛЕНИЕ НА ТОК РАЗПОЗНАТА (role=' + role + ')');
         const commandSource = role === 'host' ? 'host_command' : 'guest_command';
         
-        const isInclude = /включи|пусни|включ/i.test(userMessage);
-        const isExclude = /изключи|спри|изключ/i.test(userMessage);
+        const { isInclude, isExclude } = detectPowerCommandIntent(userMessage);
         
         if (isInclude) {
             console.log('[POWER] ⚡ КОМАНДА: ВКЛЮЧИ ТОКА');

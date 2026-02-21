@@ -40,6 +40,7 @@ import { getAIResponse, assignPinFromDepot } from './services/ai_service.js';
 import { controlPower, controlMeterByAction } from './services/autoremote.js';
 import { generateToken, validateToken, invalidateToken, SESSION_DURATION } from './services/sessionManager.js';
 import { syncBookingsFromGmail, syncBookingsPowerFromLatestHistory } from './services/detective.js';
+import { createApiKeyGuard, createSimpleRateLimiter } from './middlewares/security.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -148,6 +149,27 @@ async function initializeDatabase() {
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+const chatRateLimiter = createSimpleRateLimiter({ windowMs: 60_000, maxRequests: 25, methods: ['POST'] });
+const meterRateLimiter = createSimpleRateLimiter({ windowMs: 60_000, maxRequests: 20, methods: ['POST'] });
+const powerStatusRateLimiter = createSimpleRateLimiter({ windowMs: 60_000, maxRequests: 60, methods: ['POST'] });
+
+const meterApiKeyGuard = createApiKeyGuard({
+    envVar: 'METER_API_KEY',
+    headerName: 'x-meter-api-key',
+    methods: ['POST']
+});
+
+const taskerFeedbackGuard = createApiKeyGuard({
+    envVar: 'TASKER_STATUS_API_KEY',
+    headerName: 'x-tasker-api-key',
+    optional: true,
+    methods: ['POST']
+});
+
+app.use('/api/chat', chatRateLimiter);
+app.use(['/api/meter', '/api/meter/on', '/api/meter/off'], meterApiKeyGuard, meterRateLimiter);
+app.use(['/api/power/status', '/api/power-status'], taskerFeedbackGuard, powerStatusRateLimiter);
 
 /**
  * 📊 REQUEST ЛОГВАНЕ - Timestamp + Method + URL + IP + Payload Size
