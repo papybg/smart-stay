@@ -1,6 +1,13 @@
 # 🏠 Smart Stay - AI Property Management System
 
-**Интелигентна система за автоматизация на ваканционни имоти с Tasker, AutoRemote и AI асистент**
+**Интелигентна система за автоматизация на ваканционни имоти с директен Samsung SmartThings контрол и AI асистент**
+
+> ⚠️ **CURRENT HANDOFF STATE (Feb 2026)**
+> - Командите за ток са **директно**: AI/Dashboard → Render → SmartThings → Tuya
+> - Tasker е **само feedback** към `POST /api/power-status`
+> - `power_history` е event log (пише Tasker feedback)
+> - Detective синхронизира `bookings.power_status` от latest `power_history` (event-driven)
+> - За `stranger` роля AI ползва само `manual-public` (без Places/Directions/Brave)
 
 ---
 
@@ -20,38 +27,30 @@
 
 ## 🚀 Как работи?
 
-### Основен поток (Check-in/Check-out автоматизация)
+### Основен поток (актуален)
 
 ```
-1. GMAIL SYNC (Всеки 15 минути)
+1. GMAIL SYNC (Render Cron / on-demand)
    ├─ detective.js сканира Gmail за Airbnb потвърждения
    ├─ Gemini AI извлича: име, дата check-in/out, резервационен код
    └─ Данни се записват в Neon DB (bookings таблица)
 
-2. CRON SCHEDULER (Всеки 10 минути)
-   ├─ Проверява дали има гост за check-in (2 часа преди)
-   ├─ Ако ДА → Изпраща команда "meter_on" към Tasker
-   ├─ Проверява дали има гост за check-out (1 час след)
-   └─ Ако ДА → Изпраща команда "meter_off" към Tasker
+2. POWER COMMAND (AI / Dashboard / API)
+  ├─ Render endpoint (`/api/meter`, `/api/meter/on`, `/api/meter/off`)
+  ├─ Директно към Samsung SmartThings API
+  └─ SmartThings управлява Tuya/SmartLife интегрирания електромер
 
-3. AUTOREMOTE → TASKER → SMART LIFE → TUYA
-   ├─ Backend (server.js) → AutoRemote (cloud service)
-   ├─ AutoRemote → Push notification към телефона
-   ├─ Tasker слуша за "meter_on"/"meter_off"
-   ├─ Tasker стартира Smart Life сцена
-   └─ Smart Life控制 Tuya Smart Switch (физично изключва/включва ток)
+3. FEEDBACK LOOP (Tasker → Backend, only on change)
+  ├─ Tasker праща `POST /api/power/status` само при реална промяна
+  ├─ Backend записва в `power_history`
+  ├─ Detective sync обновява `bookings.power_status`
+  └─ Dashboard/AI четат текущ статус от `bookings`
 
-4. FEEDBACK LOOP (Tasker → Backend)
-   ├─ Tasker изпраща POST /api/power/status със ново състояние
-  ├─ Backend обновява глобално състояние + логва в power_history
-  ├─ Backend обновява bookings.power_status за активните резервации
-   └─ Dashboard показва история в реално време
-
-5. GUEST SUPPORT (AI Assistant)
+4. GUEST SUPPORT (AI Assistant)
    ├─ Гостите пишат чат съобщения (index.html)
   ├─ AI използва bookings-first логика за резервации и power status
   ├─ Host справките са детерминистични (read-only към базата)
-  └─ Свободни отговори от Gemini се ползват само извън тези фиксирани intents
+  └─ Stranger: само `manual-public` (без live външни lookup-и)
 ```
 
 ---
@@ -63,11 +62,11 @@
 | **Backend** | Node.js + Express | ^4.21.2 |
 | **Database** | PostgreSQL (Neon Cloud) | Serverless |
 | **AI** | Google Gemini (allowlist 2.0/2.5/3) | Current |
-| **Scheduling** | node-cron | ^4.2.1 |
+| **Scheduling** | Render Cron Jobs | Managed |
 | **HTTP Client** | axios | ^1.13.4 |
 | **Email** | Gmail API + OAuth2 | googleapis ^144.0.0 |
-| **Push Notifications** | AutoRemote | Cloud |
-| **Phone Automation** | Tasker + AutoInput | Android |
+| **Device Control** | Samsung SmartThings API | Cloud |
+| **Feedback** | Tasker (state callback only) | Android |
 | **IoT Device** | Tuya Smart Switch | 220V |
 
 ### 🤖 AI модели (фиксиран allowlist)
@@ -95,74 +94,37 @@
 ## 🏗 Архитектура
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    SMART STAY SYSTEM                             │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                    ┌───────────┼───────────┐
-                    ▼           ▼           ▼
-            ┌─────────────┐ ┌────────────┐ ┌──────────────┐
-            │ server.js   │ │ai_service  │ │autoremote.js │
-            │ (Express)   │ │(Gemini AI) │ │(Phone cmd)   │
-            └──────┬──────┘ └──────┬─────┘ └───────┬──────┘
-                   │              │               │
-        ┌──────────┴──────────┬───┴──────┬────────┴─────────┐
-        ▼                     ▼          ▼                  ▼
-    ┌────────────┐      ┌───────────┐  ┌──────────────┐ ┌──────────┐
-    │ HTTP/REST  │      │   Gmail   │  │ AutoRemote   │ │ Neon DB  │
-    │ (Guest API)│      │  (OAuth2) │  │  (Cloud)     │ │(Postgres)│
-    └──────┬─────┘      └─────┬─────┘  └──────┬───────┘ └────┬─────┘
-           │                  │               │             │
-    ┌──────▼──────┐    ┌──────▼──────┐  ┌────▼──────────┐  │
-    │ Dashboard   │    │ Detective   │  │ Tasker        │  │
-    │ (HTML/JS)   │    │ (Gmail Sync)│  │ (Android)     │  │
-    └─────────────┘    └─────────────┘  │               │  │
-                                         │  ┌──────────┐ │  │
-                                         │  │AutoInput │ │  │
-                                         │  │(UI Auto) │ │  │
-                                         │  └────┬─────┘ │  │
-                                         │       ▼       │  │
-                                         │  ┌─────────┐  │  │
-                                         └──│Smart Life  │  │
-                                            └────┬──────┘  │
-                                                 ▼         │
-                                         ┌─────────────────┘
-                                         ▼
-                                    ┌─────────────┐
-                                    │  Tuya Smart │
-                                    │   Switch    │
-                                    │  220V Power │
-                                    └─────────────┘
+AI / Dashboard / API
+  │
+  ▼
+server.js (Express)
+  │
+  ▼
+services/autoremote.js
+  │
+  ▼
+Samsung SmartThings API
+  │
+  ▼
+Tuya/SmartLife integrated device (meter)
+
+Tasker (feedback only) ──► POST /api/power-status
+          │
+          ▼
+      power_history
+          │
+          ▼
+      Detective sync -> bookings.power_status
 ```
 
 ### Данни flow
 ```
 Gmail (Airbnb) → detective.js → Gemini AI → DB (bookings)
 AI queries → bookings (read-only for reports/status)
-                                    ↓
-                            Cron Scheduler
-                                    ↓
-                        Check-in/Check-out?
-                             ↙            ↘
-                        ДА              НЕ
-                        ↓                ↓
-                   autoremote.js    (чакане)
-                        ↓
-                  AutoRemote API
-                        ↓
-                  Tasker (phone)
-                        ↓
-                  Smart Life (UI)
-                        ↓
-                  Tuya Device ← ↘
-                        ↓        ↓
-                  Power ON/OFF  AutoInput (tap automation)
-                        ↓
-                   POST /api/power/status
-                        ↓
-                  power_history (events log) + bookings.power_status (current state)
-                        ↓
-                   Dashboard (live visualization)
+Power command → server.js → autoremote.js → SmartThings → device ON/OFF
+Tasker feedback (only on state change) → POST /api/power/status → power_history
+power_history (latest) → detective sync → bookings.power_status
+Dashboard / AI reports → read from bookings (+ power_history for audit/history)
 ```
 
 ---
@@ -171,14 +133,14 @@ AI queries → bookings (read-only for reports/status)
 
 ```
 smart-stay/
-├── server.js                    # Express API мост + Cron scheduler
+├── server.js                    # Express API мост + power/status endpoints
 ├── package.json                 # Dependencies
 ├── .env                         # Environment variables (local)
 │
 ├── services/
 │   ├── ai_service.js           # Gemini AI + Manual базирана система
 │   ├── detective.js            # Gmail sync + Airbnb detection
-│   ├── autoremote.js           # AutoRemote → Tasker комуникация
+│   ├── autoremote.js           # SmartThings direct control (Tasker legacy commented)
 │   ├── manual-private.txt      # Property info (за гостите)
 │   └── manual-public.txt       # General knowledge (за всички)
 │
@@ -189,18 +151,17 @@ smart-stay/
 │   ├── aaadmin.html            # Legacy admin panel
 │   └── dddesign.html           # UI design reference
 │
-├── README.md                    # Original README
-├── README_CURRENT.md           # This file (detailed current state)
+├── README.md                    # Main documentation (current state)
 └── [cache files]
 
 ```
 
 ### Ключови файлове
 
-#### `server.js` (394 lines)
+#### `server.js`
 - Express API мост
 - Глобално управление на ток статус
-- Cron scheduler за check-in/check-out
+- Meter endpoints + Tasker feedback endpoint
 - Endpoints за API
 
 #### `services/ai_service.js` (1000+ lines) - **НЕЗАВИСИМ МОДУЛ**
@@ -217,10 +178,10 @@ smart-stay/
 - Airbnb detection (парсира потвърждения)
 - автоматично добавяне в базата
 
-#### `services/autoremote.js` (63 lines)
-- HTTP запитване към AutoRemote облак
-- Преводи `meter_on`/`meter_off` команди
-- Retry логика и error handling
+#### `services/autoremote.js`
+- HTTP запитване към Samsung SmartThings API
+- Поддържа single-device или split ON/OFF scene device IDs
+- Legacy Tasker command flow е оставен само като коментар
 
 ---
 
@@ -315,50 +276,11 @@ curl -X POST http://localhost:10000/api/power/status \
 Response: 200 OK
 ```
 
-**🎯 TASKER CONFIGURATION (ВАЖНО)**
-
-Трябва да настроиш Tasker да отправя POST запит, когато се промени состоянието на тока. Това може да е от:
-- 🤖 Scheduler команда (meter_on/meter_off)
-- 👤 Manual управление от Smart Life app
-- 🔘 Физически бутон на устройството
-
-**Стъпки в Tasker:**
-
-1. **Създай нов Profile:**
-   ```
-   Trigger: Device → Power → [Smart Life Power State Change]
-   (или друг trigger за промяна на состояние)
-   ```
-
-2. **Създай нова Task с HTTP POST:**
-   ```
-   Action: Internet → HTTP Post
-   
-   Server:Port: https://smart-stay.onrender.com/api/power/status
-   (или твоя домейн)
-   
-   Body (JSON):
-   {
-     "is_on": %power_state,
-     "source": "tasker_direct",
-     "booking_id": %current_booking_id
-   }
-   
-   Content Type: application/json
-   Timeout: 10 seconds
-   ```
-
-3. **Alternative (ако използваш обичайния HTTP GET):**
-   ```
-   Если го используешь вместо POST за простота:
-   URL: https://smart-stay.onrender.com/api/power/status?is_on=true&source=tasker_direct
-   ```
-
-**💡 Резултат:**
-- Tasker праща актуално состояние на тока
-- Backend записва в `power_history` таблица
-- Dashboard се обновява в реално време
-- Логът показва кой контролира тока (scheduler, manual, tasker_direct)
+**Tasker feedback (само при промяна):**
+- Trigger: реална промяна на state
+- Action: `POST /api/power/status`
+- Body пример: `{"is_on": true, "source": "tasker_direct", "booking_id": "tasker_direct"}`
+- Без периодичен ping
 
 #### `GET /api/power-status`
 Проверка на текущо състояние на тока
@@ -658,8 +580,8 @@ Complete documentation available:
 | ✅ AI Assistant (Gemini) | DONE | Intelligent mode със SSoT |
 | ✅ Автоматичен check-in контрол | DONE | 2 часа преди |
 | ✅ Автоматичен check-out контрол | DONE | 1 час след |
-| ✅ AutoRemote интеграция | DONE | Phone push commands |
-| ✅ Tasker слушане | DONE | `meter_on`/`meter_off` |
+| ✅ SmartThings direct control | DONE | Render → SmartThings → Device |
+| ✅ Tasker feedback only | DONE | `POST /api/power-status` on change |
 | ✅ Power history logging | DONE | Всяка промяна логвана |
 | ✅ Dashboard visualization | DONE | История в таблица |
 | ✅ pin_depot (брава кодове) | DONE | CRUD операции |
@@ -669,7 +591,7 @@ Complete documentation available:
 | 🟡 SMS уведомления | PENDING | Nodemailer ready |
 | 🟡 Persistent chat history | PENDING | Needs guest_chats table |
 | 🔴 Mobile app | NOT PLANNED | Web-only solution |
-| 🔴 Tuya API direct | NOT USED | Too expensive + Tasker can't control |
+| 🟡 SmartThings state readback | PARTIAL | Команда е директна, status идва от feedback |
 
 ---
 
@@ -742,12 +664,26 @@ GMAIL_CLIENT_ID=xxx...
 GMAIL_CLIENT_SECRET=xxx...
 GMAIL_REFRESH_TOKEN=xxx...
 
-# === MESSAGING (Telegram) ===
-TELEGRAM_BOT_TOKEN=123456:ABC...
-TELEGRAM_CHAT_ID=987654
+# === DIRECT DEVICE CONTROL (Samsung SmartThings) ===
+SMARTTHINGS_API_TOKEN=
+# Single device mode (switch):
+# SMARTTHINGS_DEVICE_ID=
+# Split scene mode (recommended for START/STOP scenes):
+SMARTTHINGS_DEVICE_ID_ON=
+SMARTTHINGS_DEVICE_ID_OFF=
+# Optional overrides:
+# SMARTTHINGS_COMPONENT=main
+# SMARTTHINGS_API_URL=https://api.smartthings.com/v1
+# SMARTTHINGS_SCENE_COMMAND=on
+# SMARTTHINGS_COMMAND_ON=on
+# SMARTTHINGS_COMMAND_OFF=off
 
-# === PHONE CONTROL (AutoRemote) ===
-AUTOREMOTE_KEY=ezBgKK...
+# === API SECURITY ===
+METER_API_KEY=
+
+# === TASKER FEEDBACK TUNING (optional) ===
+# TASKER_NOISE_WINDOW_MS=45000
+# REQUEST_LOG_SUPPRESS_MS=30000
 
 # === OPTIONAL: Tuya (НЕ ИЗПОЛЗВАМ) ===
 # TUYA_ACCESS_ID=...
@@ -820,8 +756,9 @@ curl -X POST http://localhost:10000/api/power/status \
    - DATABASE_URL (Neon connection string)
    - GEMINI_API_KEY
    - GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN
-   - TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-   - AUTOREMOTE_KEY
+  - SMARTTHINGS_API_TOKEN
+  - SMARTTHINGS_DEVICE_ID_ON, SMARTTHINGS_DEVICE_ID_OFF (or SMARTTHINGS_DEVICE_ID)
+  - METER_API_KEY
    - NODE_ENV=production
    - PORT=10000
 
@@ -905,63 +842,13 @@ export async function getAIResponse(message, guestInfo, context) {
 
 ---
 
-## 📋 TODO - Незавършено до окончателен проект
+## 📋 Next TODO (актуално)
 
-### 🟥 КРИТИЧНИ (Нужни за работа)
-
-- [ ] **DB sanity check** - Потвърждение на schema след deployment
-  - Проверка на `bookings.power_status`, `power_status_updated_at`, `pin_depot`
-  
-- [ ] **Tasker конфигурация** - Setup на Android phone
-  - Инсталирай: Tasker, AutoRemote, AutoInput, Smart Life
-  - Създай profiles за meter_on/meter_off
-  - Test POST към /api/power/status
-  
-- [ ] **AutoRemote ключ верификация** - AUTOREMOTE_KEY в .env
-  - Проверяй дали ключа работи
-  - Test: `curl https://autoremotejoaomgcd.appspot.com/sendmessage?key=YOUR_KEY&message=test`
-
-- [ ] **Tuya Smart Life сцени** - Създай OFF и ON сцени
-  - OFF сцена: изключва тока
-  - ON сцена: включва тока
-  - Test всяка сцена ръчно преди AutoInput integration
-
-- [ ] **Gmail OAuth2 refresh токен** - GMAIL_REFRESH_TOKEN в .env
-  - Генерирай нов refresh token от Google Cloud Console
-  - Test детектив функцията
-
-### 🟡 ВАЖНИ (Функционални)
-
-- [ ] **Smart Life AutoInput координати** - Намери точни позиции на бутоните
-  - Скрийнширни на Smart Life при ON и OFF сцена
-  - Запиши координати: x, y за ON/OFF бутон
-  - Обнови в Tasker автоматизацията
-  
-- [ ] **PIN depot governance** - Оперативна поддръжка
-  - Добавяне/премахване на PIN кодове според наличност
-  - Периодичен преглед на `is_used` и ротация на кодове
-  
-- [ ] **Guest PIN система** - Интеграция с ключалката
-  - Генериране на нови PIN при check-in
-  - Отправяне на PIN към гост (SMS/Email - TODO)
-  - Управление на използвани vs неиспользувани кодове
-
-- [ ] **SMS/Email уведомления** - Уведомяване на гостите
-  - Изпрати PIN код при arrival
-  - Изпрати check-out напомняне
-  - Изпрати emergency alert ако има проблем
-  - Nodemailer е инсталиран, нужна е конфигурация
-
-- [ ] **Persistent chat history** - Съхранение на разговори
-  - Създай `guest_chats` таблица
-  - Store всеки chat message с timestamp
-  - Allow guests да видят history на техния stay
-
-### 🟠 ДОПЪЛНЕНИ (Полезни за production)
-
-- [ ] **Monitoring & Alerting** - Real-time дашбор на системата
-  - Status page на всеки компонент
-  - Alert quando AutoRemote/Tasker фейлват
+- [ ] Добави SmartThings state readback (GET status) за двойна верификация
+- [ ] Добави централен rate-limit за чувствителни endpoint-и
+- [ ] Раздели `server.js` на модули (`power`, `auth`, `bookings`)
+- [ ] Добави `guest_chats` persistence (по резервация)
+- [ ] Добави monitoring/alerts за SmartThings и Gmail sync
   - Email/SMS на admin при грешки
   
 - [ ] **Backup & Recovery** - Защита на данните
@@ -1035,11 +922,10 @@ export async function getAIResponse(message, guestInfo, context) {
 
 ### Phase 1: CORE FUNCTIONALITY (В момента)
 ```
-1. ✅ AutoRemote + Tasker integration (DONE)
-2. ✅ Power history logging (DONE) 
-3. ⏳ Tasker phone setup (IN PROGRESS - USER)
-4. ⏳ Smart Life сцени creation (IN PROGRESS - USER)
-5. ⏳ AutoInput координати (IN PROGRESS - USER)
+1. ✅ SmartThings direct control (DONE)
+2. ✅ Tasker feedback-only loop (DONE)
+3. ✅ Bookings-first status for AI (DONE)
+4. ⏳ SmartThings status readback (IN PROGRESS)
 ```
 
 ### Phase 2: USER EXPERIENCE (Next)
@@ -1068,64 +954,26 @@ export async function getAIResponse(message, guestInfo, context) {
 ```
 
 ---
-
-
-
-### 1. Install Required Apps
-- **Tasker** - Task automation
-- **AutoRemote** - Push notifications (by João Dias)
-- **AutoInput** - UI automation
-- **Smart Life** - Tuya device control
-
-### 2. Create AutoRemote Profile in Tasker
+### Tasker Feedback Profile (кратко)
 ```
-Profile: "AutoRemote Listener"
-Event → System → AutoRemote (Add Plugin) → Listen
-Variable: %ar_message (contains the command)
-
-Linked Tasks:
-- IF %ar_message ~ meter_on → Task "Turn Power ON"
-- IF %ar_message ~ meter_off → Task "Turn Power OFF"
-```
-
-### 3. Create "Turn Power ON" Task
-```
-Actions:
-1. Variable Set: %command = meter_on
-2. AutoInput Tap: [Smart Life button position for ON scene]
-3. HTTP POST: 
-   URL: https://smart-stay-api.onrender.com/api/power/status
-   Body: {"is_on": true}
-   Headers: Content-Type: application/json
-4. Toast: "Ток ВКЛ ✅"
-```
-
-### 4. Create "Turn Power OFF" Task
-```
-Actions:
-1. Variable Set: %command = meter_off
-2. AutoInput Tap: [Smart Life button position for OFF scene]
-3. HTTP POST:
-   URL: https://smart-stay-api.onrender.com/api/power/status
-   Body: {"is_on": false}
-   Headers: Content-Type: application/json
-4. Toast: "Ток ИЗКЛ ❌"
+Trigger: state changed (не периодично)
+Action: HTTP POST -> /api/power/status
+Body: {"is_on": true|false, "source": "tasker_direct"}
 ```
 
 ---
 
 ## 🐛 Troubleshooting
 
-### AutoRemote не работи
-- ✅ Проверя дали AUTOREMOTE_KEY е верен в .env
-- ✅ AutoRemote app е отворен на телефона?
-- ✅ Интернет връзка е налична?
-- ✅ Проверяй logs: `[AUTOREMOTE]` в консола
+### SmartThings не приема команда
+- ✅ Проверяй `SMARTTHINGS_API_TOKEN`
+- ✅ Проверяй `SMARTTHINGS_DEVICE_ID_ON/OFF`
+- ✅ Проверяй logs: `[SMARTTHINGS]` в консола
 
-### Tasker не получава команди
-- ✅ Дали AutoRemote Profile е активен?
-- ✅ Дали %ar_message условието е правилно?
-- ✅ Проверяй AutoRemote история на команди
+### Tasker feedback не идва
+- ✅ Trigger да е only-on-change (без периодичен profile)
+- ✅ POST към `/api/power/status`
+- ✅ Проверяй `[TASKER]` логове
 
 ### Power history не се логва
 - ✅ Дали DATABASE_URL е верен?
@@ -1152,23 +1000,20 @@ Actions:
 ### Console Output Format
 
 ```
-[TASKER] 📱 Статус: ON (от OFF)
-[DB] ✅ power_history записан
-[AUTOREMOTE] 📤 Изпращам команда към Tasker: meter_on
-[DETECTIVE] 🔍 Сканиране на имейли...
-[SCHEDULER] ⏰ CHECK-IN за John Doe в 120 минути
-[ALERT] 🚨 EMERGENCY: болен гост!
-[API] 🟢 POST /api/chat 200 OK
+[SMARTTHINGS] 📤 Изпращам ON към device ...
+[SMARTTHINGS] ✅ Команда ON изпратена успешно
+[TASKER] 📨 update from tasker_direct
+[DB] ✅ Промяна записана в power_history
+[DETECTIVE] ✅ Power sync към bookings
 ```
 
 ### Key Logs to Monitor
 
-1. **[SCHEDULER]** - Cron job проверки
-2. **[AUTOREMOTE]** - Phone command status
+1. **[SMARTTHINGS]** - Device command status
+2. **[TASKER]** - Feedback updates
 3. **[DB]** - Database операции
-4. **[DETECTIVE]** - Email sync status
+4. **[DETECTIVE]** - Gmail + power sync status
 5. **[ALERT]** - Emergency situations
-6. **[TASKER]** - Feedback от телефона
 
 ---
 
@@ -1176,7 +1021,7 @@ Actions:
 
 ⚠️ **ВАЖНО:**
 - `.env` файла никога НЕ пушай в Git
-- AutoRemote ключа е личен - пази го!
+- SmartThings token-ът е чувствителен - пази го!
 - Gmail OAuth2 токени са чувствителни данни
 - Database connection string е конфиденциален
 
@@ -1188,17 +1033,17 @@ Actions:
 
 ---
 
-## 🤖 Tasker Integration Implementation
+## 🤖 Power Feedback Integration
 ### Runtime Flow (актуален)
 
 ```
-Tasker/AutoRemote → POST /api/power/status (или /api/power-status)
+Tasker feedback → POST /api/power/status (или /api/power-status)
      ↓
 server.js нормализира state (on/off) и source
      ↓
 UPDATE global.powerState + INSERT в power_history (само при промяна)
      ↓
-UPDATE bookings.power_status за активните резервации
+Detective sync -> UPDATE bookings.power_status за активните резервации
      ↓
 Dashboard polling + AI bookings-first status
 ```
@@ -1208,8 +1053,8 @@ Dashboard polling + AI bookings-first status
 | Source | Значение | Пример |
 |--------|----------|--------|
 | `tasker_direct` | Потребител управлява от Smart Life или физически бутон | Гост включва от app |
-| `scheduler_checkin` | Автоматично включване при check-in | 14:00 - 2h преди резервация |
-| `scheduler_checkout` | Автоматично изключване при check-out | 15:00 + 1h след резервация |
+| `samsung_meter_on` | Команда ON през API/SmartThings | POST /api/meter/on |
+| `samsung_meter_off` | Команда OFF през API/SmartThings | POST /api/meter/off |
 | `guest_command` / `host_command` | AI команда от гост/домакин | "включи тока" по чат |
 | `api_meter` | Външни API запит | Интеграция със трети системи |
 
@@ -1247,7 +1092,7 @@ Dashboard polling + AI bookings-first status
 ## 👤 Contributors
 
 - **PapyBG** - Original creator
-- **Latest Updates** - February 2026 (Smart Power Control + AutoRemote)
+- **Latest Updates** - February 2026 (SmartThings direct + feedback-only Tasker)
 
 ---
 
@@ -1267,5 +1112,5 @@ For issues or questions:
 
 ---
 
-**Last Updated:** February 10, 2026
-**Version:** 2.1 (AutoRemote + Power History + Dashboard)
+**Last Updated:** February 21, 2026
+**Version:** 2.3 (SmartThings Direct + Event-Driven Feedback)
