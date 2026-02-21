@@ -1542,6 +1542,12 @@ function isPowerStatusRequest(userMessage) {
 async function getBookingsPowerStatus(role, bookingData) {
     if (!sql) return { available: false, state: null };
 
+    const normalizeStatus = (value) => {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'on' || normalized === 'off') return normalized;
+        return null;
+    };
+
     try {
         // За гост: статус от неговата резервация
         if (role === 'guest' && bookingData?.booking_id) {
@@ -1551,32 +1557,53 @@ async function getBookingsPowerStatus(role, bookingData) {
                 WHERE id = ${bookingData.booking_id}
                 LIMIT 1
             `;
-            const status = rows[0]?.power_status || null;
-            if (status === 'on' || status === 'off') {
+            const status = normalizeStatus(rows[0]?.power_status);
+            if (status) {
                 return { available: true, state: status };
+            }
+
+            if (bookingData?.reservation_code) {
+                const fallbackRows = await sql`
+                    SELECT power_status
+                    FROM bookings
+                    WHERE reservation_code = ${bookingData.reservation_code}
+                    ORDER BY check_in DESC
+                    LIMIT 1
+                `;
+                const fallbackStatus = normalizeStatus(fallbackRows[0]?.power_status);
+                if (fallbackStatus) {
+                    return { available: true, state: fallbackStatus };
+                }
             }
             return { available: true, state: null };
         }
 
-        // За домакин/други: вземи активна резервация в момента
-        const activeRows = await sql`
+        // За домакин/други: първо опитай активна резервация, после последно обновен power_status
+        const candidateRows = await sql`
             SELECT power_status
             FROM bookings
-            WHERE check_in <= NOW()
-              AND check_out > NOW()
-              AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
-            ORDER BY check_in ASC
-            LIMIT 1
+            WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+            ORDER BY
+                CASE
+                    WHEN check_in <= NOW() AND check_out > NOW() THEN 0
+                    ELSE 1
+                END,
+                power_status_updated_at DESC NULLS LAST,
+                check_in DESC
+            LIMIT 3
         `;
 
-        if (activeRows.length === 0) {
+        if (candidateRows.length === 0) {
             return { available: true, state: null };
         }
 
-        const status = activeRows[0]?.power_status || null;
-        if (status === 'on' || status === 'off') {
-            return { available: true, state: status };
+        for (const row of candidateRows) {
+            const status = normalizeStatus(row?.power_status);
+            if (status) {
+                return { available: true, state: status };
+            }
         }
+
         return { available: true, state: null };
     } catch (error) {
         console.error('[DB] 🔴 Грешка при четене на bookings.power_status:', error.message);
