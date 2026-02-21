@@ -36,10 +36,9 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
-import cron from 'node-cron';
 import { getAIResponse, assignPinFromDepot } from './services/ai_service.js';
-import { controlPower } from './services/autoremote.js';
-import { generateToken, validateToken, cleanupExpiredTokens, invalidateToken, SESSION_DURATION } from './services/sessionManager.js';
+import { controlPower, controlMeterByAction } from './services/autoremote.js';
+import { generateToken, validateToken, invalidateToken, SESSION_DURATION } from './services/sessionManager.js';
 import { syncBookingsFromGmail } from './services/detective.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -344,14 +343,24 @@ function normalizePowerState(rawValue) {
     return null;
 }
 
+function normalizeMeterAction(rawAction) {
+    const value = String(rawAction || '').trim().toLowerCase();
+    if (['on', '1', 'true', 'вкл', 'включи', 'start'].includes(value)) return 'on';
+    if (['off', '0', 'false', 'изкл', 'изключи', 'stop'].includes(value)) return 'off';
+    return null;
+}
+
 async function handlePowerStatusUpdate(req, res) {
     try {
         const rawState = req.body?.is_on ?? req.body?.isOn ?? req.body?.status ?? req.body?.state;
         const source = req.body?.source || 'tasker_direct';
         const booking_id = req.body?.booking_id ?? source;
         const rawBattery = req.body?.battery;
+        const forceLog = req.body?.force_log === true || String(req.body?.force_log || '').toLowerCase() === 'true';
         const prevState = global.powerState.is_on;
         const timestamp = new Date();
+        let dbLogged = false;
+        let dbLogError = null;
 
         console.log(`[TASKER] 📨 Получени данни:`, JSON.stringify(req.body));
         const newState = normalizePowerState(rawState);
@@ -380,15 +389,17 @@ async function handlePowerStatusUpdate(req, res) {
         global.powerState.source = source;
 
         // 2) Запис в БД само при промяна
-        if (sql && prevState !== newState) {
+        if (sql && (prevState !== newState || forceLog)) {
             try {
                 console.log(`[DB] 📝 Inserting: is_on=${newState}, source=${source}, battery=${batteryValue}, booking_id=${booking_id}`);
                 await sql`
                     INSERT INTO power_history (is_on, source, timestamp, battery, booking_id)
                     VALUES (${newState}, ${source}, ${timestamp}, ${batteryValue}, ${booking_id})
                 `;
+                dbLogged = true;
                 console.log(`[DB] ✅ Промяна записана: ${prevState ? 'ON' : 'OFF'} → ${newState ? 'ON' : 'OFF'}`);
             } catch (dbError) {
+                dbLogError = dbError.message;
                 console.error('[DB] 🔴 Грешка при логване:', dbError.message);
             }
 
@@ -405,9 +416,10 @@ async function handlePowerStatusUpdate(req, res) {
             } catch (bookingErr) {
                 console.error('[DB] 🔴 Грешка при update на bookings.power_status:', bookingErr.message);
             }
-        } else if (sql && prevState === newState) {
+        } else if (sql && prevState === newState && !forceLog) {
             console.log(`[TASKER] ℹ️ Състоянието е същото (${newState ? 'ON' : 'OFF'}), без запис`);
         } else if (!sql) {
+            dbLogError = 'Database not connected';
             console.error(`[DB] 🔴 КРИТИЧНО: sql е NULL/undefined - База недостъпна!`);
         }
         
@@ -420,7 +432,10 @@ async function handlePowerStatusUpdate(req, res) {
                 battery: batteryValue,
                 booking_id,
                 stateChanged: prevState !== newState,
-                note: prevState === newState ? 'Състояние без промяна' : 'Записано в power_history'
+                forceLog,
+                dbLogged,
+                dbLogError,
+                note: prevState === newState && !forceLog ? 'Състояние без промяна' : (dbLogged ? 'Записано в power_history' : 'Записът не е потвърден')
             }
         });
     } catch (error) {
@@ -433,6 +448,52 @@ async function handlePowerStatusUpdate(req, res) {
 app.post('/api/power/status', handlePowerStatusUpdate);
 app.post('/api/power-status', handlePowerStatusUpdate);
 
+async function executeMeterAction(action, sourceTag, res) {
+    const timestamp = new Date();
+    const willTurnOn = action === 'on';
+    const dbSource = sourceTag || 'api_meter';
+
+    let dbLogged = false;
+    let dbError = null;
+
+    if (sql) {
+        try {
+            await sql`
+                INSERT INTO power_history (is_on, timestamp, source, booking_id)
+                VALUES (${willTurnOn}, ${timestamp}, ${dbSource}, ${dbSource})
+            `;
+            dbLogged = true;
+            console.log('[DB] ✅ API команда записана в power_history');
+        } catch (err) {
+            dbError = err.message;
+            console.error('[DB] 🔴 Грешка при запис API meter:', err.message);
+        }
+    } else {
+        dbError = 'Database not connected';
+    }
+
+    const commandResult = await controlMeterByAction(action);
+
+    if (!commandResult.success) {
+        return res.status(500).json({
+            success: false,
+            error: 'Неуспешна команда към Samsung SmartThings',
+            action,
+            dbLogged,
+            dbError
+        });
+    }
+
+    return res.status(200).json({
+        success: true,
+        message: `Команда "${commandResult.command}" изпратена към телефона`,
+        action,
+        command: commandResult.command,
+        dbLogged,
+        dbError
+    });
+}
+
 /**
  * POST /api/meter
  * 🔌 Управление на електромера от Tasker или админ панел
@@ -440,52 +501,29 @@ app.post('/api/power-status', handlePowerStatusUpdate);
  */
 app.post('/api/meter', async (req, res) => {
     try {
-        const { action } = req.body;
+        const action = normalizeMeterAction(req.body?.action);
 
         // Валидирай action параметъра
-        if (action !== 'on' && action !== 'off') {
+        if (!action) {
             return res.status(400).json({ error: 'Невалидна действие. Очаква: "on" или "off"' });
         }
 
-        // Преведи action към команда
-        const command = action === 'on' ? 'meter_on' : 'meter_off';
-        const willTurnOn = action === 'on';
-        const timestamp = new Date();
-
         console.log(`[METER API] 🎛️  Управление на ток: ${action.toUpperCase()}`);
-
-        // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
-        if (sql) {
-            try {
-                await sql`
-                    INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                    VALUES (${willTurnOn}, ${timestamp}, 'api_meter', 'api_meter')
-                `;
-                console.log('[DB] ✅ API команда записана в power_history');
-            } catch (dbErr) {
-                console.error('[DB] 🔴 Грешка при запис API meter:', dbErr.message);
-            }
-        }
-
-        // 2. ПРАЩА КЪМ TASKER
-        const success = await controlPower(willTurnOn);
-
-        if (success) {
-            res.status(200).json({ 
-                success: true, 
-                message: `Команда "${command}" изпратена към телефона`,
-                action: action 
-            });
-        } else {
-            res.status(500).json({ 
-                success: false, 
-                error: 'Неуспешна връзка с AutoRemote' 
-            });
-        }
+        return await executeMeterAction(action, 'api_meter', res);
     } catch (error) {
         console.error('[METER API] 🔴 Грешка:', error.message);
         res.status(500).json({ error: error.message });
     }
+});
+
+app.post('/api/meter/on', async (_req, res) => {
+    console.log('[METER API] 🎛️ Samsung ON команда');
+    return await executeMeterAction('on', 'samsung_meter_on', res);
+});
+
+app.post('/api/meter/off', async (_req, res) => {
+    console.log('[METER API] 🎛️ Samsung OFF команда');
+    return await executeMeterAction('off', 'samsung_meter_off', res);
 });
 
 /**
@@ -689,6 +727,128 @@ app.delete('/bookings/:id', async (req, res) => {
  * GET /sync
  * 🔄 Legacy endpoint за ръчно стартиране на Detective sync
  */
+
+async function runReservationsSync() {
+    if (!sql) {
+        return { checkinCount: 0, checkoutCount: 0, dbAvailable: false };
+    }
+
+    const now = new Date();
+    const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+
+    const checkinBookings = await sql`
+        SELECT id, guest_name FROM bookings
+        WHERE check_in <= ${twoHoursFromNow} AND check_in >= ${now} AND check_out > ${now}
+        LIMIT 10
+    `;
+
+    for (const booking of checkinBookings) {
+        if (!global.powerState.is_on) {
+            console.log(`[SCHEDULER] 🚨 CHECK-IN за ${booking.guest_name} - ВКЛ`);
+            try {
+                await sql`
+                    INSERT INTO power_history (is_on, timestamp, source, booking_id)
+                    VALUES (true, ${now}, 'scheduler_checkin', ${String(booking.id)})
+                `;
+            } catch (dbErr) {
+                console.error('[DB] 🔴 Грешка при запис scheduler check-in:', dbErr.message);
+            }
+
+            global.powerState.is_on = true;
+            global.powerState.source = 'scheduler-checkin';
+            global.powerState.last_update = now;
+
+            try {
+                await sql`
+                    UPDATE bookings
+                    SET power_status = 'on', power_status_updated_at = ${now}
+                    WHERE id = ${booking.id}
+                `;
+            } catch (bookingErr) {
+                console.error('[DB] 🔴 Грешка при scheduler check-in power_status:', bookingErr.message);
+            }
+
+            await controlPower(true);
+        }
+    }
+
+    const checkoutBookings = await sql`
+        SELECT id, guest_name FROM bookings
+        WHERE check_out <= ${now} AND check_out >= ${oneHourAgo}
+        LIMIT 10
+    `;
+
+    for (const booking of checkoutBookings) {
+        if (global.powerState.is_on) {
+            console.log(`[SCHEDULER] 🚨 CHECK-OUT ${booking.guest_name} - ИЗКЛ`);
+            try {
+                await sql`
+                    INSERT INTO power_history (is_on, timestamp, source, booking_id)
+                    VALUES (false, ${now}, 'scheduler_checkout', ${String(booking.id)})
+                `;
+            } catch (dbErr) {
+                console.error('[DB] 🔴 Грешка при запис scheduler check-out:', dbErr.message);
+            }
+
+            global.powerState.is_on = false;
+            global.powerState.source = 'scheduler-checkout';
+            global.powerState.last_update = now;
+
+            try {
+                await sql`
+                    UPDATE bookings
+                    SET power_status = 'off', power_status_updated_at = ${now}
+                    WHERE id = ${booking.id}
+                `;
+            } catch (bookingErr) {
+                console.error('[DB] 🔴 Грешка при scheduler check-out power_status:', bookingErr.message);
+            }
+
+            await controlPower(false);
+        }
+    }
+
+    return {
+        checkinCount: checkinBookings.length,
+        checkoutCount: checkoutBookings.length,
+        dbAvailable: true
+    };
+}
+
+/**
+ * POST /api/reservations/sync
+ * ⏰ Render Cron Job endpoint: Check-in/check-out автоматизация
+ */
+app.post('/api/reservations/sync', async (req, res) => {
+    try {
+        if (!sql) {
+            return res.status(503).json({ error: 'Database not connected' });
+        }
+        console.log(`[SCHEDULER] ⏰ ${new Date().toISOString()} - Reservations sync`);
+        const result = await runReservationsSync();
+        return res.status(200).json({ success: true, ...result });
+    } catch (error) {
+        console.error('[SCHEDULER] 🔴 Грешка:', error.message);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/email/sync
+ * 📧 Render Cron Job endpoint: Gmail sync
+ */
+app.post('/api/email/sync', async (req, res) => {
+    try {
+        console.log('[DETECTIVE] 📧 Email sync стартиран');
+        await syncBookingsFromGmail();
+        return res.status(200).json({ success: true, message: '✅ Email sync завършен' });
+    } catch (error) {
+        console.error('[DETECTIVE] 🔴 Грешка при email sync:', error.message);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/sync', async (_req, res) => {
     try {
         console.log('[DETECTIVE] 🔄 Ръчен sync стартиран от dashboard');
@@ -701,151 +861,60 @@ app.get('/sync', async (_req, res) => {
 });
 
 // ============================================================================
-// CRON SCHEDULER - Всеки 10 минути
+// CRON SCHEDULER - Преместен в Render Cron Jobs
+// ============================================================================
+// Използвайте Render Cron Jobs и извиквайте:
+//   POST /api/reservations/sync (на всеки 10 мин)
+//   POST /api/email/sync        (на всеки 15 мин)
+
+// ============================================================================
+// GRACEFUL SHUTDOWN - Чисто затваряне на DB връзки при SIGTERM/SIGINT
 // ============================================================================
 
-function initializeScheduler() {
-    if (!sql) {
-        console.warn('[SCHEDULER] ⚠️ Липсват зависимости - Scheduler е ИЗКЛЮЧЕН');
-        return;
+async function closeConnections() {
+    try {
+        if (sql && typeof sql.end === 'function') {
+            console.log('[SHUTDOWN] Затваряне на DB пул...');
+            await sql.end();
+            console.log('[SHUTDOWN] ✅ DB конекции затворени');
+        }
+    } catch (err) {
+        console.error('[SHUTDOWN] ⚠️ Грешка при затваряне:', err.message);
     }
-
-    cron.schedule('*/10 * * * *', async () => {
-        try {
-            console.log(`[SCHEDULER] ⏰ ${new Date().toISOString()}`);
-            const now = new Date();
-            const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-            const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
-
-            // 🔌 CHECK-IN: Ток за гост за 2 часа
-            const checkinBookings = await sql`
-                SELECT id, guest_name FROM bookings 
-                WHERE check_in <= ${twoHoursFromNow} AND check_in >= ${now} AND check_out > ${now}
-                LIMIT 10
-            `;
-            for (const booking of checkinBookings) {
-                if (!global.powerState.is_on) {
-                    console.log(`[SCHEDULER] 🚨 CHECK-IN за ${booking.guest_name} - ВКЛ`);
-                    
-                    // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
-                    try {
-                        await sql`
-                            INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                            VALUES (true, ${now}, 'scheduler_checkin', 'scheduler_checkin')
-                        `;
-                        console.log('[DB] ✅ Check-in включване записано');
-                    } catch (dbErr) {
-                        console.error('[DB] 🔴 Грешка при запис scheduler check-in:', dbErr.message);
-                    }
-                    
-                    global.powerState.is_on = true;
-                    global.powerState.source = 'scheduler-checkin';
-
-                    // Обнови bookings.power_status за тази резервация
-                    try {
-                        await sql`
-                            UPDATE bookings
-                            SET power_status = 'on',
-                                power_status_updated_at = ${now}
-                            WHERE id = ${booking.id}
-                        `;
-                    } catch (bookingErr) {
-                        console.error('[DB] 🔴 Грешка при scheduler check-in power_status:', bookingErr.message);
-                    }
-                    
-                    // 2. ПРАЩА КЪМ TASKER
-                    await controlPower(true); // Праща команда към Tasker через AutoRemote
-                }
-            }
-
-            // 🔌 CHECK-OUT: Выключи ток 1 час след check-out
-            const checkoutBookings = await sql`
-                SELECT id, guest_name FROM bookings 
-                WHERE check_out <= ${now} AND check_out >= ${oneHourAgo}
-                LIMIT 10
-            `;
-            for (const booking of checkoutBookings) {
-                if (global.powerState.is_on) {
-                    console.log(`[SCHEDULER] 🚨 CHECK-OUT ${booking.guest_name} - ИЗКЛ`);
-                    
-                    // 1. ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
-                    try {
-                        await sql`
-                            INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                            VALUES (false, ${now}, 'scheduler_checkout', 'scheduler_checkout')
-                        `;
-                        console.log('[DB] ✅ Check-out изключване записано');
-                    } catch (dbErr) {
-                        console.error('[DB] 🔴 Грешка при запис scheduler check-out:', dbErr.message);
-                    }
-                    
-                    global.powerState.is_on = false;
-                    global.powerState.source = 'scheduler-checkout';
-
-                    // Обнови bookings.power_status за тази резервация
-                    try {
-                        await sql`
-                            UPDATE bookings
-                            SET power_status = 'off',
-                                power_status_updated_at = ${now}
-                            WHERE id = ${booking.id}
-                        `;
-                    } catch (bookingErr) {
-                        console.error('[DB] 🔴 Грешка при scheduler check-out power_status:', bookingErr.message);
-                    }
-                    
-                    // 2. ПРАЩА КЪМ TASKER
-                    await controlPower(false); // Праща команда към Tasker през AutoRemote
-                }
-            }
-        } catch (error) {
-            console.error('[SCHEDULER] 🔴 Грешка:', error.message);
-        }
-    });
-    console.log('[SCHEDULER] ✅ Cron job е активен (всеки 10 минути)');
 }
 
-function initializeDetectiveScheduler() {
-    console.log('[DETECTIVE] ✅ Gmail sync cron е активен (всеки 15 минути)');
+process.on('SIGTERM', async () => {
+    console.log('[SIGTERM] 📴 Сървърът спира по команда на Render...');
+    await closeConnections();
+    process.exit(0);
+});
 
-    setTimeout(async () => {
-        try {
-            console.log('[DETECTIVE] 🚀 Начален sync...');
-            await syncBookingsFromGmail();
-        } catch (error) {
-            console.error('[DETECTIVE] 🔴 Начален sync грешка:', error.message);
-        }
-    }, 5000);
-
-    cron.schedule('*/15 * * * *', async () => {
-        try {
-            await syncBookingsFromGmail();
-        } catch (error) {
-            console.error('[DETECTIVE] 🔴 Cron sync грешка:', error.message);
-        }
-    });
-}
+process.on('SIGINT', async () => {
+    console.log('[SIGINT] 📴 Сървърът спира...');
+    await closeConnections();
+    process.exit(0);
+});
 
 // ============================================================================
 // СТАРТИРАНЕ НА СЪРВЪРА
 // ============================================================================
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
     console.log('\n🚀 SMART-STAY LEAN CONTROLLER STARTED');
     console.log(`   🌐 http://localhost:${PORT}`);
     // console.log(`   📤 Telegram: ${TELEGRAM_BOT_TOKEN ? '✅' : '⚠️'}`);
     console.log(`   🗄️  Database: ${sql ? '✅' : '⚠️'}`);
-    console.log(`   📅 Scheduler: Инициализиране...\n`);
+    console.log(`   📅 CRON JOBS: Преместени в Render (не работят локално)\n`);
     
     // Инициализирай базата и съедини power_history таблица
     await initializeDatabase();
     
-    initializeScheduler();
-    initializeDetectiveScheduler();
+    // ❌ ИЗКЛЮЧЕНО: initializeScheduler(); - използвайте Render Cron Jobs
+    // ❌ ИЗКЛЮЧЕНО: initializeDetectiveScheduler(); - използвайте Render Cron Jobs
 
-    // Периодично почистване на изтекли сесии
-    setInterval(cleanupExpiredTokens, 5 * 60 * 1000);
-    console.log('[SESSION] ✅ Периодичното почистване на токени е активно (на всеки 5 минути)');
+    // ❌ ИЗКЛЮЧЕНО: setInterval за cleanupExpiredTokens
+    // console.log('[SESSION] ✅ Периодичното почистване на токени е активно (на всеки 5 минути)');
+    console.log('[SESSION] ℹ️ Token cleanup сега е ON-DEMAND (извиква се при заявки за вход)');
 });
 
 /**
@@ -970,13 +1039,14 @@ app.get('/calendar.ics', async (_req, res) => {
 
 /**
  * GET /status
- * 🩺 Health check (legacy)
+ * 🩺 Health check (БЕЗ DB запит - за да позволи Neon да спи)
+ * ⚡ ОПТИМИЗИРАНО: Не каква DB, само проверка на app процеса
  */
 app.get('/status', (_req, res) => {
     res.json({
         online: true,
-        isOn: global.powerState.is_on,
-        lastUpdate: global.powerState.last_update.toISOString(),
-        source: global.powerState.source
+        timestamp: new Date().toISOString(),
+        uptime: Math.floor(process.uptime()),
+        powerState: global.powerState.is_on ? 'on' : 'off'
     });
 });

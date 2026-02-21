@@ -2,7 +2,7 @@
 import { neon } from '@neondatabase/serverless';
 import fs from 'fs/promises';
 import path from 'path';
-import { sendCommandToPhone } from './autoremote.js';
+import { controlPower as sendPowerCommand } from './autoremote.js';
 import { validateToken } from './sessionManager.js';
 
 /**
@@ -478,6 +478,7 @@ async function generateWithBackupProvider(systemInstruction, history, userMessag
 /**
  * @const {any} sql - Neon клиент на база данни за PostgreSQL заявки
  * Инициализиран от DATABASE_URL променлива на окръжение
+ * ⚡ ОПТИМИЗИРАНО: pool с намален idle време за спане на Neon (0 CU при неактивност)
  */
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
@@ -568,7 +569,7 @@ const automationClient = {
         try {
             const command = state ? 'meter_on' : 'meter_off';
             const timestamp = new Date();
-            console.log('[AUTOMATION] 📡 Управление на тока чрез AutoRemote:', command);
+            console.log('[AUTOMATION] 📡 Управление на тока чрез Samsung API:', command);
             
             // 🔴 ШАГ 1: ЗАПИС В БД ПРЕДИ ПРАЩА КЪМ TASKER
             if (sql) {
@@ -583,12 +584,12 @@ const automationClient = {
                 }
             }
             
-            // 🟢 ШАГ 2: ПРАЩА КЪМ TASKER
-            const success = await sendCommandToPhone(command);
+            // 🟢 ШАГ 2: ПРАЩА КЪМ SAMSUNG SMARTTHINGS API
+            const success = await sendPowerCommand(state);
             if (success) {
-                console.log('[AUTOMATION] ✅ Команда успешно изпратена към Tasker');
+                console.log('[AUTOMATION] ✅ Команда успешно изпратена към Samsung');
             } else {
-                console.warn('[AUTOMATION] ⚠️ Неудачна връзка с AutoRemote');
+                console.warn('[AUTOMATION] ⚠️ Неуспешна Samsung команда');
             }
             return success;
         } catch (e) {
