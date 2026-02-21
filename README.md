@@ -699,6 +699,13 @@ GOOGLE_PLACES_API_KEY=
 # При API_KEY_SERVICE_BLOCKED / PERMISSION_DENIED Places заявките се спират временно
 # за да няма излишни 403 заявки до изчистване на API ключа/ограниченията.
 
+# === OPTIONAL LIVE ROUTES (Google Directions API) ===
+# За въпроси тип "как да стигна", "маршрут до", "how to get to"
+# Ако GOOGLE_DIRECTIONS_API_KEY липсва, използва GOOGLE_PLACES_API_KEY
+# GOOGLE_DIRECTIONS_API_KEY=
+# GOOGLE_DIRECTIONS_TIMEOUT_MS=6000
+# GOOGLE_DIRECTIONS_DEFAULT_ORIGIN=Aspen Valley Golf, Ski and Spa Resort, Razlog
+
 # === OPTIONAL BRAVE SEARCH (Live Web Search для ресторанти, наем, маршрути) ===
 # За отговори на въпроси за ресторанти, наем на кола, туристически маршрути
 # https://api.search.brave.com/ -> вземи API ключ

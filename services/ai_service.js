@@ -60,6 +60,9 @@ const GOOGLE_PLACES_MAX_RESULTS = Number(process.env.GOOGLE_PLACES_MAX_RESULTS |
 const GOOGLE_PLACES_STRICT_MODE = (process.env.GOOGLE_PLACES_STRICT_MODE || 'false').toLowerCase() !== 'false';
 const GOOGLE_PLACES_TIMEOUT_MS = Number(process.env.GOOGLE_PLACES_TIMEOUT_MS || 5000);
 const GOOGLE_PLACES_BLOCK_COOLDOWN_MS = Number(process.env.GOOGLE_PLACES_BLOCK_COOLDOWN_MS || 3600000);
+const GOOGLE_DIRECTIONS_API_KEY = process.env.GOOGLE_DIRECTIONS_API_KEY || GOOGLE_PLACES_API_KEY;
+const GOOGLE_DIRECTIONS_TIMEOUT_MS = Number(process.env.GOOGLE_DIRECTIONS_TIMEOUT_MS || 6000);
+const GOOGLE_DIRECTIONS_DEFAULT_ORIGIN = process.env.GOOGLE_DIRECTIONS_DEFAULT_ORIGIN || 'Aspen Valley Golf, Ski and Spa Resort, Razlog';
 let placesBlockedUntilTs = 0;
 let placesBlockedReason = '';
 
@@ -1598,6 +1601,105 @@ function isMapStyleQuestion(userMessage) {
     return (hasMapIntent && hasServiceOrPlace) || (hasServiceOrPlace && hasArea);
 }
 
+function isDirectionsRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const text = String(userMessage).toLowerCase();
+    return /как\s+да\s+стигна|как\s+да\s+отида|маршрут\s+до|маршрут|route\s+to|directions\s+to|how\s+to\s+get\s+to|how\s+do\s+i\s+get\s+to/i.test(text);
+}
+
+function buildDirectionsDestination(userMessage) {
+    const text = String(userMessage || '').trim();
+    if (!text) return null;
+
+    const patterns = [
+        /(?:как\s+да\s+стигна\s+до|как\s+да\s+отида\s+до|маршрут\s+до)\s+(.+)$/i,
+        /(?:route\s+to|directions\s+to|how\s+to\s+get\s+to|how\s+do\s+i\s+get\s+to)\s+(.+)$/i,
+        /\bдо\s+(.+)$/i,
+        /\bto\s+(.+)$/i
+    ];
+
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match && match[1]) {
+            const destination = match[1].trim().replace(/[?.!,]+$/, '').trim();
+            if (destination.length >= 2) return destination;
+        }
+    }
+
+    return text.length >= 3 ? text : null;
+}
+
+function stripHtmlTags(value = '') {
+    return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function getDirectionsReply(userMessage, language = 'bg') {
+    if (!GOOGLE_DIRECTIONS_API_KEY) return null;
+
+    const destination = buildDirectionsDestination(userMessage);
+    if (!destination) return null;
+
+    try {
+        const params = new URLSearchParams({
+            origin: GOOGLE_DIRECTIONS_DEFAULT_ORIGIN,
+            destination,
+            mode: 'driving',
+            language: language === 'en' ? 'en' : 'bg',
+            key: GOOGLE_DIRECTIONS_API_KEY
+        });
+
+        const controller = new AbortController();
+        const timeoutHandle = setTimeout(() => controller.abort(), GOOGLE_DIRECTIONS_TIMEOUT_MS);
+
+        const response = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`, {
+            method: 'GET',
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutHandle);
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.warn('[DIRECTIONS] ⚠️ Грешка при заявка:', response.status, errText);
+            return null;
+        }
+
+        const data = await response.json();
+        if (data?.status !== 'OK' || !Array.isArray(data?.routes) || !data.routes.length) {
+            console.warn('[DIRECTIONS] ⚠️ Няма валиден маршрут:', data?.status || 'UNKNOWN');
+            return language === 'en'
+                ? '✅ SOURCE: Google Directions API (live)\nI could not find a reliable route for this destination right now.'
+                : '✅ ИЗТОЧНИК: Google Directions API (live)\nНе успях да намеря надежден маршрут до тази дестинация в момента.';
+        }
+
+        const leg = data.routes[0]?.legs?.[0];
+        if (!leg) return null;
+
+        const steps = Array.isArray(leg.steps) ? leg.steps.slice(0, 8) : [];
+        const stepLines = steps.map((step, index) => {
+            const instruction = stripHtmlTags(step?.html_instructions || step?.maneuver || '');
+            const distanceText = step?.distance?.text || '';
+            const durationText = step?.duration?.text || '';
+            return `${index + 1}. ${instruction}${distanceText || durationText ? ` (${distanceText}${distanceText && durationText ? ', ' : ''}${durationText})` : ''}`;
+        });
+
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(GOOGLE_DIRECTIONS_DEFAULT_ORIGIN)}&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+
+        if (language === 'en') {
+            return `✅ SOURCE: Google Directions API (live)\nRoute from ${leg.start_address || GOOGLE_DIRECTIONS_DEFAULT_ORIGIN} to ${leg.end_address || destination}:\nDistance: ${leg.distance?.text || 'N/A'}\nEstimated time: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nOpen in Google Maps: ${mapsUrl}`;
+        }
+
+        return `✅ ИЗТОЧНИК: Google Directions API (live)\nМаршрут от ${leg.start_address || GOOGLE_DIRECTIONS_DEFAULT_ORIGIN} до ${leg.end_address || destination}:\nРазстояние: ${leg.distance?.text || 'N/A'}\nОриентировъчно време: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nОтвори в Google Maps: ${mapsUrl}`;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            console.warn(`[DIRECTIONS] ⚠️ Timeout след ${GOOGLE_DIRECTIONS_TIMEOUT_MS}ms`);
+            return null;
+        }
+        console.warn('[DIRECTIONS] ⚠️ Exception:', error.message);
+        return null;
+    }
+}
+
 function buildPlacesSearchQuery(userMessage) {
     const text = String(userMessage || '').trim();
     if (!text) return 'services in Bansko and Razlog';
@@ -2321,6 +2423,23 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
     if (role === 'host' && isHostDbCatchAllRequest(userMessage)) {
         return await getDatabaseSnapshotReply(role, preferredLanguage);
+    }
+
+    // 2.465. LIVE DIRECTIONS (Google Directions API) за маршрутни въпроси
+    if (isDirectionsRequest(userMessage)) {
+        const directionsReply = await getDirectionsReply(userMessage, preferredLanguage);
+        if (directionsReply) {
+            return directionsReply;
+        }
+
+        if (GOOGLE_PLACES_STRICT_MODE) {
+            return preferredLanguage === 'en'
+                ? '❌ SOURCE: Google Directions API (live) not available. Verified route lookup is blocked in strict mode. Set GOOGLE_DIRECTIONS_API_KEY/GOOGLE_PLACES_API_KEY or disable strict mode.'
+                : '❌ ИЗТОЧНИК: Google Directions API (live) не е наличен. В strict режим провереният маршрут е блокиран. Задайте GOOGLE_DIRECTIONS_API_KEY/GOOGLE_PLACES_API_KEY или изключете strict режима.';
+        }
+
+        forceGeminiDirect = true;
+        console.log('[DIRECTIONS] ↪️ Няма live directions резултат. Форсирам Gemini direct.');
     }
 
     // 2.47. LIVE MAP LOOKUP (Google Places) за локални услуги около Банско/Разлог
