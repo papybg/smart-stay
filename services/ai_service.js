@@ -232,8 +232,9 @@ function isManualLikeQuestion(userMessage = '') {
         'отопление', 'бойлер', 'пералня', 'сушилня', 'печка', 'фурна', 'хладилник',
         'check-in', 'check in', 'check-out', 'check out', 'самонастаняване',
         'адрес', 'локация', 'инструкция', 'инструкции', 'наръчник', 'врата', 'брава',
+        'апартамент', 'апартамента', 'комплекс', 'комплекса',
         'tv', 'телевизор', 'дистанционно', 'гараж', 'асансьор', 'код за вход',
-        'parking', 'address', 'manual', 'instructions', 'apartment', 'property',
+        'parking', 'address', 'manual', 'instructions', 'apartment', 'property', 'complex',
         'heater', 'boiler', 'washing machine', 'fridge', 'oven', 'stove', 'door',
         'lock', 'checkin', 'checkout'
     ];
@@ -2215,10 +2216,23 @@ function formatHistory(history) {
         console.log('[HISTORY] Използвам масив история, съобщения:', parsed.length);
     }
 
-    return parsed.map(msg => ({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-    }));
+    const normalized = parsed
+        .filter(msg => msg && typeof msg.content === 'string' && msg.content.trim())
+        .map(msg => ({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: String(msg.content).trim() }]
+        }));
+
+    while (normalized.length && normalized[0].role !== 'user') {
+        normalized.shift();
+    }
+
+    if (!normalized.length) {
+        console.log('[HISTORY] ℹ️ Няма валидна история за Gemini (или започва с assistant) -> изпращам празна history');
+        return [];
+    }
+
+    return normalized;
 }
 
 /**
@@ -2486,11 +2500,10 @@ After successful verification, I will execute the command immediately.`;
                     systemInstruction: effectiveSystemInstruction 
                 });
 
+                const chatHistory = formatHistory(history);
+
                 const chat = model.startChat({
-                    history: (Array.isArray(history) ? history : []).map(msg => ({
-                        role: msg.role === 'assistant' ? 'model' : 'user',
-                        parts: [{ text: msg.content }]
-                    })),
+                    history: chatHistory,
                     generationConfig: { maxOutputTokens: 4000 }
                 });
 
@@ -2547,7 +2560,10 @@ After successful verification, I will execute the command immediately.`;
         }
     }
 
-    if (braveSearchResults && typeof finalReply === 'string' && finalReply.trim()) {
+    const isTechnicalFallbackReply = typeof finalReply === 'string'
+        && /в момента имам техническо затруднение|technical difficulty/i.test(finalReply);
+
+    if (braveSearchResults && generatedByModel && !isTechnicalFallbackReply && typeof finalReply === 'string' && finalReply.trim()) {
         const bravePrefix = preferredLanguage === 'en'
             ? '✅ SOURCE: Brave Web Search (live)'
             : '✅ ИЗТОЧНИК: Brave Web Search (live)';
