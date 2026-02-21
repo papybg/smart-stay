@@ -155,6 +155,7 @@ export function registerPowerRoutes(app, {
     async function executeMeterAction(action, _sourceTag, res) {
         let dbLogged = false;
         let dbError = null;
+        let detectiveSync = null;
         const commandResult = await controlMeterByAction(action);
 
         if (!commandResult.success) {
@@ -167,6 +168,29 @@ export function registerPowerRoutes(app, {
             });
         }
 
+        const newState = action === 'on';
+        const eventTimestamp = new Date();
+
+        global.powerState.is_on = newState;
+        global.powerState.last_update = eventTimestamp;
+        global.powerState.source = 'render_command';
+
+        if (sql) {
+            try {
+                await sql`
+                    INSERT INTO power_history (is_on, source, timestamp, booking_id)
+                    VALUES (${newState}, ${'render_command'}, ${eventTimestamp}, ${'render_command'})
+                `;
+                dbLogged = true;
+                detectiveSync = await syncBookingsPowerFromLatestHistory();
+            } catch (error) {
+                dbError = error.message;
+                console.error('[DB] 🔴 Грешка при fallback логване на Render команда:', error.message);
+            }
+        } else {
+            dbError = 'Database not connected';
+        }
+
         return res.status(200).json({
             success: true,
             message: `Команда "${commandResult.command}" изпратена към телефона`,
@@ -174,7 +198,10 @@ export function registerPowerRoutes(app, {
             command: commandResult.command,
             dbLogged,
             dbError,
-            note: 'Очаква се Tasker feedback за запис в power_history'
+            detectiveSync,
+            note: dbLogged
+                ? 'Fallback запис в power_history е направен; Tasker feedback може да доуточни статуса.'
+                : 'Командата е изпратена, но записът в power_history не е потвърден.'
         });
     }
 
