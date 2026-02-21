@@ -1534,8 +1534,8 @@ function isLivePlacesLookupRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     const text = String(userMessage).toLowerCase();
 
-    const hasServiceIntent = /къде\s+мога\s+да|къде\s+има|адрес|телефон|работно\s+време|препоръчай|where\s+can\s+i|where\s+is|address|phone|opening\s+hours|recommend/i.test(text);
-    const hasLocalBusinessKeyword = /кола\s+под\s+наем|rent\s*a\s*car|car\s*rental|аптека|pharmacy|такси|taxi|ресторант|restaurant|магазин|supermarket|банкомат|atm|сервиз|car\s*service|ски\s*под\s*наем|ski\s*rental|голф|golf/i.test(text);
+    const hasServiceIntent = /къде\s+мога\s+да|къде\s+има|какви|какво\s+има|маршрут|маршрути|колко|как\s+да\s+стигна|адрес|телефон|работно\s+време|препоръчай|where\s+can\s+i|where\s+is|what|which|route|routes|how\s+much|how\s+to\s+get|address|phone|opening\s+hours|recommend/i.test(text);
+    const hasLocalBusinessKeyword = /кола\s+под\s+наем|наем|rent\s*a\s*car|car\s*rental|аптека|pharmacy|такси|taxi|ресторант|restaurant|кафе|cafe|бар|bar|магазин|shop|supermarket|супермаркет|банкомат|atm|сервиз|service|repair|ски\s*училище|ski\s*school|училище|school|ски\s*гардероб|ski\s*locker|locker|storage|ски\s*под\s*наем|ski\s*rental|голф|golf|спа|spa|масаж|massage|фитнес|gym|басейн|pool|лекар|doctor|болница|hospital|дентист|dentist|пекарна|bakery|маршрут|route|екскурзия|excursion|tour|гид|guide|транспорт|transport|автобус|bus|трансфер|transfer/i.test(text);
     const hasAreaContext = /банско|разлог|в\s+района|наблизо|nearby|in\s+the\s+area|around/i.test(text);
 
     return (hasServiceIntent && hasLocalBusinessKeyword) || (hasLocalBusinessKeyword && hasAreaContext);
@@ -1545,8 +1545,8 @@ function isMapStyleQuestion(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     const text = String(userMessage).toLowerCase();
 
-    const hasMapIntent = /къде|адрес|наблизо|в\s+района|карти|where|nearby|map|maps|address|location/i.test(text);
-    const hasServiceOrPlace = /под\s+наем|наем|rent|car|кола|аптека|такси|ресторант|хотел|магазин|банкомат|голф|ски|service|pharmacy|taxi|restaurant|hotel|supermarket|atm|golf|ski/i.test(text);
+    const hasMapIntent = /къде|какви|маршрут|маршрути|колко|как\s+да\s+стигна|адрес|наблизо|в\s+района|карти|where|which|route|routes|how\s+much|how\s+to\s+get|nearby|map|maps|address|location/i.test(text);
+    const hasServiceOrPlace = /под\s+наем|наем|rent|rental|car|кола|аптека|такси|ресторант|кафе|бар|хотел|магазин|банкомат|голф|ски|ски\s*училище|ski\s*school|училище|school|ски\s*гардероб|ski\s*locker|locker|storage|service|pharmacy|taxi|restaurant|hotel|shop|supermarket|atm|golf|ski|spa|massage|gym|pool|doctor|hospital|dentist|bakery|route|excursion|tour|transport|bus|transfer/i.test(text);
     const hasArea = /банско|разлог|bansko|razlog/i.test(text);
 
     return (hasMapIntent && hasServiceOrPlace) || (hasServiceOrPlace && hasArea);
