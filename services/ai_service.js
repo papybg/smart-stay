@@ -58,6 +58,125 @@ const ACCESS_END_AFTER_CHECKOUT_HOURS = Number(process.env.ACCESS_END_AFTER_CHEC
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || null;
 const GOOGLE_PLACES_MAX_RESULTS = Number(process.env.GOOGLE_PLACES_MAX_RESULTS || 3);
 const GOOGLE_PLACES_STRICT_MODE = (process.env.GOOGLE_PLACES_STRICT_MODE || 'false').toLowerCase() !== 'false';
+const GOOGLE_PLACES_TIMEOUT_MS = Number(process.env.GOOGLE_PLACES_TIMEOUT_MS || 5000);
+const GOOGLE_PLACES_BLOCK_COOLDOWN_MS = Number(process.env.GOOGLE_PLACES_BLOCK_COOLDOWN_MS || 3600000);
+let placesBlockedUntilTs = 0;
+let placesBlockedReason = '';
+
+function isPlacesBlockedNow() {
+    return placesBlockedUntilTs > Date.now();
+}
+
+function markPlacesBlocked(reason = '') {
+    placesBlockedUntilTs = Date.now() + GOOGLE_PLACES_BLOCK_COOLDOWN_MS;
+    placesBlockedReason = String(reason || '').trim();
+    console.warn(`[PLACES] 🚫 Places API временно блокиран за ~${Math.ceil(GOOGLE_PLACES_BLOCK_COOLDOWN_MS / 60000)} мин.`);
+}
+
+function getPlacesBlockedHint(language = 'bg') {
+    const reason = placesBlockedReason || 'API_KEY_SERVICE_BLOCKED';
+    return language === 'en'
+        ? `Google Places live lookup is blocked (${reason}). Enable Places API for this API key or adjust API key restrictions in Google Cloud.`
+        : `Google Places live търсенето е блокирано (${reason}). Активирайте Places API за този ключ или коригирайте ограниченията на API ключа в Google Cloud.`;
+}
+
+function shouldTripPlacesCircuitBreaker(statusCode, errorBody = '') {
+    const text = String(errorBody || '').toLowerCase();
+    if (statusCode === 403 && text.includes('api_key_service_blocked')) return true;
+    if (statusCode === 403 && text.includes('permission_denied') && text.includes('places.googleapis.com')) return true;
+    return false;
+}
+
+// ============================================================================
+// BRAVE SEARCH INTEGRATION (Web Search за туризъм, ресторанти, услуги)
+// ============================================================================
+
+const BRAVE_SEARCH_API_KEY = process.env.BRAVE_SEARCH_API_KEY || null;
+const BRAVE_SEARCH_TIMEOUT_MS = Number(process.env.BRAVE_SEARCH_TIMEOUT_MS || 6000);
+
+function isSearchEligibleQuery(userMessage = '') {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const text = String(userMessage).toLowerCase();
+
+    // Избliga елиминирани разговори
+    if (text.length < 5) return false;
+
+    const manualKeywords = ['код', 'брава', 'lock', 'wifi', 'интернет', 'паркинг', 'check-in', 'check-out', 'резервация', 'booking'];
+    if (manualKeywords.some(k => text.includes(k))) return false;
+
+    // Търсим web-relevant въпроси
+    const searchKeywords = [
+        /къде\s+(мога\s+)?да.*наема|наем\s+на|car\s+rental|rent\s+a\s+car/,
+        /ресторант|restaurant|хранене|dining/,
+        /туристически|маршрут|route|туризъм|tourism|висок|hiking|скиране|ski/,
+        /какво\s+(да|видя|посетя)|what\s+to\s+see|что\s+посмотреть/,
+        /препоръчай|recommend/,
+        /цена|price|cost|цена/,
+        /отворено|open|часове|hours|работно\s+време/
+    ];
+
+    return searchKeywords.some(pattern => pattern.test(text));
+}
+
+async function searchBrave(query, language = 'bg') {
+    if (!BRAVE_SEARCH_API_KEY) return null;
+
+    try {
+        const controller = new AbortController();
+        const timeoutHandle = setTimeout(() => controller.abort(), BRAVE_SEARCH_TIMEOUT_MS);
+
+        const response = await fetch('https://api.search.brave.com/res/v1/web/search', {
+            method: 'POST',
+            headers: {
+                'Accept-Encoding': 'gzip',
+                'X-Subscription-Token': BRAVE_SEARCH_API_KEY,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                q: query,
+                count: 5,
+                text_format: 'plaintext'
+            }),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutHandle);
+
+        if (!response.ok) {
+            console.warn(`[BRAVE] Грешка при търсене: ${response.status}`);
+            return null;
+        }
+
+        const data = await response.json();
+        const results = Array.isArray(data?.web) ? data.web : [];
+
+        if (!results.length) {
+            console.log('[BRAVE] Нямa резултати');
+            return null;
+        }
+
+        // Форматирай резултатите
+        const formatted = results
+            .slice(0, 4)
+            .map(r => {
+                const title = r.title || '';
+                const url = r.url || '';
+                const description = r.description || '';
+                return `📌 ${title}\n${url}\n${description}`;
+            })
+            .join('\n\n');
+
+        console.log(`[BRAVE] ✅ Намерени ${results.length} резултата`);
+        return formatted;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            console.warn(`[BRAVE] Timeout след ${BRAVE_SEARCH_TIMEOUT_MS}ms`);
+        } else {
+            console.warn('[BRAVE] Грешка:', error.message);
+        }
+        return null;
+    }
+}
 
 function isManualLikeQuestion(userMessage = '') {
     const text = String(userMessage || '').toLowerCase();
@@ -1446,9 +1565,14 @@ function buildPlacesSearchQuery(userMessage) {
 
 async function getLivePlacesReply(userMessage, language = 'bg') {
     if (!GOOGLE_PLACES_API_KEY) return null;
+    if (isPlacesBlockedNow()) {
+        return null;
+    }
 
     try {
         const textQuery = buildPlacesSearchQuery(userMessage);
+        const controller = new AbortController();
+        const timeoutHandle = setTimeout(() => controller.abort(), GOOGLE_PLACES_TIMEOUT_MS);
         const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
             method: 'POST',
             headers: {
@@ -1460,12 +1584,17 @@ async function getLivePlacesReply(userMessage, language = 'bg') {
                 textQuery,
                 pageSize: Math.max(1, Math.min(GOOGLE_PLACES_MAX_RESULTS, 5)),
                 languageCode: language === 'en' ? 'en' : 'bg'
-            })
+            }),
+            signal: controller.signal
         });
+        clearTimeout(timeoutHandle);
 
         if (!response.ok) {
             const errText = await response.text();
             console.warn('[PLACES] ⚠️ Грешка при търсене:', response.status, errText);
+            if (shouldTripPlacesCircuitBreaker(response.status, errText)) {
+                markPlacesBlocked(response.status === 403 ? 'API_KEY_SERVICE_BLOCKED/PERMISSION_DENIED' : `HTTP_${response.status}`);
+            }
             return null;
         }
 
@@ -1491,6 +1620,10 @@ async function getLivePlacesReply(userMessage, language = 'bg') {
             ? `✅ SOURCE: Google Maps Places API (live)\nLive map results in Bansko/Razlog:\n\n${lines.join('\n\n')}`
             : `✅ ИЗТОЧНИК: Google Maps Places API (live)\nLive резултати от карти за Банско/Разлог:\n\n${lines.join('\n\n')}`;
     } catch (error) {
+        if (error?.name === 'AbortError') {
+            console.warn(`[PLACES] ⚠️ Timeout след ${GOOGLE_PLACES_TIMEOUT_MS}ms`);
+            return null;
+        }
         console.warn('[PLACES] ⚠️ Exception:', error.message);
         return null;
     }
@@ -2081,6 +2214,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     const { role, data } = await determineUserRole(authCode, userMessage, history);
     const preferredLanguage = detectPreferredLanguage(userMessage, history);
     let forceGeminiDirect = false;
+    let braveSearchResults = null;
 
     // 2.3. ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА РОЛЯТА (без Gemini)
     if (isRoleIdentityRequest(userMessage)) {
@@ -2136,13 +2270,27 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
             return livePlacesReply;
         }
         if (GOOGLE_PLACES_STRICT_MODE) {
+            const blockedHint = isPlacesBlockedNow() ? `\n${getPlacesBlockedHint(preferredLanguage)}` : '';
             return preferredLanguage === 'en'
-                ? '❌ SOURCE: Google Maps Places API (live) not available. Verified map lookup is blocked in strict mode. Set GOOGLE_PLACES_API_KEY or disable strict mode.'
-                : '❌ ИЗТОЧНИК: Google Maps Places API (live) не е наличен. В strict режим провереното търсене е блокирано. Задайте GOOGLE_PLACES_API_KEY или изключете strict режима.';
+                ? `❌ SOURCE: Google Maps Places API (live) not available. Verified map lookup is blocked in strict mode. Set GOOGLE_PLACES_API_KEY or disable strict mode.${blockedHint}`
+                : `❌ ИЗТОЧНИК: Google Maps Places API (live) не е наличен. В strict режим провереното търсене е блокирано. Задайте GOOGLE_PLACES_API_KEY или изключете strict режима.${blockedHint}`;
         }
 
         forceGeminiDirect = true;
         console.log('[PLACES] ↪️ Няма live maps резултат. Форсирам Gemini direct (без Groq/manual router).');
+    }
+
+    // 2.48. WEB SEARCH (Brave) за ресторанти, наем, туристически маршрути
+    if (isSearchEligibleQuery(userMessage)) {
+        const searchQuery = preferredLanguage === 'en'
+            ? userMessage
+            : `${userMessage} near Bansko Razlog Bulgaria`;
+
+        braveSearchResults = await searchBrave(searchQuery, preferredLanguage);
+        if (braveSearchResults) {
+            console.log('[BRAVE] ✅ Интегрирам резултатите в Gemini контекст');
+            forceGeminiDirect = true;
+        }
     }
 
     // 2.5. ТВЪРДА АВТОРИЗАЦИОННА БАРИЕРА ЗА УПРАВЛЕНИЕ НА ТОК
@@ -2224,7 +2372,15 @@ After successful verification, I will execute the command immediately.`;
     }
 
     // 5. ИНСТРУКЦИИ ЗА ИКО (Вече 'data' съществува и няма да гърми)
-    const systemInstruction = buildSystemInstruction(role, data, powerStatus, manualContent, currentDateTime, preferredLanguage);
+    let systemInstruction = buildSystemInstruction(role, data, powerStatus, manualContent, currentDateTime, preferredLanguage);
+
+    // Добави Brave search резултати ако са налични
+    if (braveSearchResults) {
+        const searchContextLabel = preferredLanguage === 'en'
+            ? '\n\n=== LIVE WEB SEARCH RESULTS (via Brave Search API) ===\nIncorporate this real-time information into your answer:'
+            : '\n\n=== LIVE WEB SEARCH РЕЗУЛТАТИ (via Brave Search API) ===\nВключи тази live информация в твоя отговор:';
+        systemInstruction += `${searchContextLabel}\n${braveSearchResults}`;
+    }
 
     // 5.5. ПРОВЕРКА ЗА КОМАНДИ НА ТОК ПРЕДИ AI ГЕНЕРИРАНЕ
     // Ако домакинът или гост командва управление на тока, изпълни го веднага

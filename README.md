@@ -694,6 +694,17 @@ GOOGLE_PLACES_API_KEY=
 # GOOGLE_PLACES_MAX_RESULTS=3
 # GOOGLE_PLACES_STRICT_MODE=false
 # Ако е true: без live Google Places резултат системата НЕ връща непроверен отговор
+# GOOGLE_PLACES_TIMEOUT_MS=5000
+# GOOGLE_PLACES_BLOCK_COOLDOWN_MS=3600000
+# При API_KEY_SERVICE_BLOCKED / PERMISSION_DENIED Places заявките се спират временно
+# за да няма излишни 403 заявки до изчистване на API ключа/ограниченията.
+
+# === OPTIONAL BRAVE SEARCH (Live Web Search для ресторанти, наем, маршрути) ===
+# За отговори на въпроси за ресторанти, наем на кола, туристически маршрути
+# https://api.search.brave.com/ -> вземи API ключ
+BRAVE_SEARCH_API_KEY=
+# BRAVE_SEARCH_TIMEOUT_MS=6000
+# 1000 заявки/месец в free плана (достатъчно за среден volume)
 
 # === OPTIONAL GROQ ROUTER (SAFE ROUTING BEFORE GEMINI) ===
 # Groq отговаря на manual/property въпроси.
