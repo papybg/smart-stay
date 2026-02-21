@@ -1539,74 +1539,68 @@ function isPowerStatusRequest(userMessage) {
     return statusKeywords.test(userMessage);
 }
 
-async function getBookingsPowerStatus(role, bookingData) {
+async function getSourcePowerStatus(role, bookingData) {
     if (!sql) return { available: false, state: null };
 
     const normalizeStatus = (value) => {
+        if (typeof value === 'boolean') return value ? 'on' : 'off';
         const normalized = String(value || '').trim().toLowerCase();
         if (normalized === 'on' || normalized === 'off') return normalized;
+        if (normalized === 'true' || normalized === '1') return 'on';
+        if (normalized === 'false' || normalized === '0') return 'off';
         return null;
     };
 
     try {
-        // За гост: статус от неговата резервация
+        // За гост: първо опитай ред, свързан с неговата резервация
         if (role === 'guest' && bookingData?.booking_id) {
             const rows = await sql`
-                SELECT power_status
-                FROM bookings
-                WHERE id = ${bookingData.booking_id}
+                SELECT is_on, timestamp
+                FROM power_history
+                WHERE booking_id = ${String(bookingData.booking_id)}
+                ORDER BY timestamp DESC
                 LIMIT 1
             `;
-            const status = normalizeStatus(rows[0]?.power_status);
+            const status = normalizeStatus(rows[0]?.is_on);
             if (status) {
                 return { available: true, state: status };
             }
-
-            if (bookingData?.reservation_code) {
-                const fallbackRows = await sql`
-                    SELECT power_status
-                    FROM bookings
-                    WHERE reservation_code = ${bookingData.reservation_code}
-                    ORDER BY check_in DESC
-                    LIMIT 1
-                `;
-                const fallbackStatus = normalizeStatus(fallbackRows[0]?.power_status);
-                if (fallbackStatus) {
-                    return { available: true, state: fallbackStatus };
-                }
-            }
-            return { available: true, state: null };
         }
 
-        // За домакин/други: първо опитай активна резервация, после последно обновен power_status
-        const candidateRows = await sql`
-            SELECT power_status
-            FROM bookings
-            WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
-            ORDER BY
-                CASE
-                    WHEN check_in <= NOW() AND check_out > NOW() THEN 0
-                    ELSE 1
-                END,
-                power_status_updated_at DESC NULLS LAST,
-                check_in DESC
-            LIMIT 3
+        if (role === 'guest' && bookingData?.reservation_code) {
+            const fallbackRows = await sql`
+                SELECT is_on, timestamp
+                FROM power_history
+                WHERE booking_id = ${String(bookingData.reservation_code)}
+                ORDER BY timestamp DESC
+                LIMIT 1
+            `;
+            const fallbackStatus = normalizeStatus(fallbackRows[0]?.is_on);
+            if (fallbackStatus) {
+                return { available: true, state: fallbackStatus };
+            }
+        }
+
+        // Source of truth: последният запис в power_history
+        const latestRows = await sql`
+            SELECT is_on, timestamp
+            FROM power_history
+            ORDER BY timestamp DESC
+            LIMIT 1
         `;
 
-        if (candidateRows.length === 0) {
+        if (latestRows.length === 0) {
             return { available: true, state: null };
         }
 
-        for (const row of candidateRows) {
-            const status = normalizeStatus(row?.power_status);
-            if (status) {
-                return { available: true, state: status };
-            }
+        const status = normalizeStatus(latestRows[0]?.is_on);
+        if (status) {
+            return { available: true, state: status };
         }
 
         return { available: true, state: null };
     } catch (error) {
-        console.error('[DB] 🔴 Грешка при четене на bookings.power_status:', error.message);
+        console.error('[DB] 🔴 Грешка при четене на power_history:', error.message);
         return { available: false, state: null };
     }
 }
@@ -2613,23 +2607,23 @@ After successful verification, I will execute the command immediately.`;
     // 3.5 КРАТЪК ДЕТЕРМИНИСТИЧЕН ОТГОВОР ЗА СТАТУС НА ТОКА
     // Изискване: без час, само кратка информация
     if (isPowerStatusRequest(userMessage) && !requestedPowerCommand) {
-        const bookingsStatus = await getBookingsPowerStatus(role, data);
-        if (!bookingsStatus.available) {
+        const sourceStatus = await getSourcePowerStatus(role, data);
+        if (!sourceStatus.available) {
             return preferredLanguage === 'en'
-                ? 'I currently cannot read booking status.'
-                : 'В момента не мога да прочета статуса от bookings.';
+                ? 'I currently cannot read power source status.'
+                : 'В момента не мога да прочета статуса от power history.';
         }
 
-        if (bookingsStatus.state === 'on') {
+        if (sourceStatus.state === 'on') {
             return preferredLanguage === 'en' ? 'Yes, there is electricity.' : 'Да, има ток.';
         }
-        if (bookingsStatus.state === 'off') {
+        if (sourceStatus.state === 'off') {
             return preferredLanguage === 'en' ? 'No, there is no electricity.' : 'Не, няма ток.';
         }
 
         return preferredLanguage === 'en'
-            ? 'There is no active booking power status at the moment.'
-            : 'В момента няма активен статус на тока в bookings.';
+            ? 'There is no power history status at the moment.'
+            : 'В момента няма статус в power history.';
     }
 
     // 4. ЧЕТЕНЕ НА МАНУАЛА (РАЗДЕЛЕН НА ПУБЛИЧЕН И ЧАСТЕН)
