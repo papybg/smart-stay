@@ -773,18 +773,55 @@ function detectPowerCommandIntent(rawMessage = '') {
     const cleaned = normalizedText.replace(/[^\p{L}\p{N}\s]+/gu, ' ');
     const tokens = new Set(cleaned.split(/\s+/).filter(Boolean));
 
-    const excludeTokenHits = ['изключи', 'изключ', 'спри', 'спирай', 'off'];
-    const includeTokenHits = ['включи', 'включ', 'пусни', 'възстанови', 'on'];
+    const excludeTokenHits = [
+        'изключи', 'изключа', 'изключване', 'изключвам',
+        'спри', 'спирай', 'спиране',
+        'угаси', 'угаси', 'угасване',
+        'изгаси', 'изгася', 'изгасване',
+        'κλείσε', 'κλεισε', 'κλείσιμο',
+        'σβήσε', 'σβησε',
+        'σταμάτα', 'σταματα',
+        'opreste', 'oprește', 'oprire', 'stinge', 'stingeți',
+        'iskljuci', 'isključi', 'ugasite', 'ugasi', 'stani', 'stani',
+        'искључи', 'угаси', 'стани',
+        'исклучи', 'изгаси', 'згасни', 'стопирај', 'сопри',
+        'ausschalten', 'ausschalte', 'ausmachen', 'aus', 'stoppen',
+        'kapat', 'kapatın', 'kapatin', 'durdur', 'söndür', 'sondur',
+        'off'
+    ];
+    const includeTokenHits = [
+        'включи', 'включа', 'включване', 'включвам',
+        'пусни', 'пусна', 'пуснеш', 'пускане',
+        'цъкни', 'цъкна',
+        'възстанови', 'възстановяване',
+        'άναψε', 'αναψε',
+        'άνοιξε', 'ανοιξε', 'άνοιγμα',
+        'porneste', 'pornește', 'aprinde', 'activeaza', 'activează',
+        'ukljuci', 'uključi', 'upali', 'pokreni',
+        'укључи', 'упали', 'покрени',
+        'вклучи', 'вклучи', 'пушти', 'уклучи',
+        'einschalten', 'einschalte', 'anmachen', 'anmachen',
+        'aç', 'ac', 'açın', 'acin', 'yak',
+        'on'
+    ];
 
     const hasExcludeToken = excludeTokenHits.some(token => tokens.has(token));
-    const hasExcludePhrase = /power\s*off|turn\s*off|cut\s*power/i.test(normalizedText);
+    const hasExcludePhrase = /power\s*off|turn\s*off|cut\s*power|κλείσε\s+το\s+ρεύμα|κλεισε\s+το\s+ρευμα|σβήσε\s+το\s+ρεύμα|σβησε\s+το\s+ρευμα|opreste\s+curentul|oprește\s+curentul|stinge\s+curentul|iskljuci\s+struju|isključi\s+struju|угаси\s+струју|исклучи\s+струја|aus\s+strom|strom\s+aus|schalte\s+strom\s+aus|elektriği\s+kapat|elektrigi\s+kapat/i.test(normalizedText);
     const isExclude = hasExcludeToken || hasExcludePhrase;
 
     const hasIncludeToken = includeTokenHits.some(token => tokens.has(token)) || /дай\s+ток/i.test(normalizedText);
-    const hasIncludePhrase = /power\s*on|turn\s*on|restore\s*power/i.test(normalizedText);
+    const hasIncludePhrase = /power\s*on|turn\s*on|restore\s*power|άναψε\s+το\s+ρεύμα|αναψε\s+το\s+ρευμα|άνοιξε\s+το\s+ρεύμα|ανοιξε\s+το\s+ρευμα|porneste\s+curentul|pornește\s+curentul|aprinde\s+curentul|ukljuci\s+struju|uključi\s+struju|укључи\s+струју|вклучи\s+струја|strom\s+an|schalte\s+strom\s+ein|elektriği\s+aç|elektrigi\s+ac/i.test(normalizedText);
     const isInclude = !isExclude && (hasIncludeToken || hasIncludePhrase);
 
     return { isInclude, isExclude };
+}
+
+function isLikelyPowerCommand(userMessage = '') {
+    const { isInclude, isExclude } = detectPowerCommandIntent(userMessage);
+    if (isInclude || isExclude) return true;
+
+    const text = String(userMessage || '');
+    return /включи|включване|пусни|пуснеш|цъкни|възстанови|спри|изключи|угаси|изгаси|power\s*on|power\s*off|turn\s*on|turn\s*off|restore\s*power|cut\s*power|άναψε|αναψε|άνοιξε|ανοιξε|κλείσε|κλεισε|σβήσε|σβησε|σταμάτα|σταματα|porneste|pornește|aprinde|activeaza|activează|opreste|oprește|stinge|ukljuci|uključi|iskljuci|isključi|укључи|искључи|вклучи|исклучи|einschalten|ausschalten|anmachen|ausmachen|strom\s+an|strom\s+aus|aç|ac|kapat|durdur|söndür|sondur/i.test(text);
 }
 
 /**
@@ -1364,11 +1401,11 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
     // Разпознава ключови думи на български език, свързани със спешни ситуации
     const emergencyPowerKeywords = /няма ток|без ток|не работи ток|спрян ток|изключен ток|няма енергия|NO POWER|нет тока/i;
     const medicalEmergencyKeywords = /болен|травма|инфаркт|помощ|спешност|здравословен|насилие|пожар/i;
-    const powerCommandKeywords = /включи\s+(тока|ток|захранването)|пусни\s+(тока|ток)|възстанови\s+(тока|ток)|дай\s+ток|изключи\s+(тока|ток|захранването)|спри\s+(тока|ток)|махни\s+тока|power\s+on|power\s+off|turn\s+on\s+(power|electricity)|turn\s+off\s+(power|electricity)|restore\s+(power|electricity)|cut\s+(power|electricity)|включ|изключ/i;
+    const powerCommandKeywords = /включи|включване|пусни|пуснеш|цъкни|възстанови|дай\s+ток|изключи|спри|угаси|изгаси|махни\s+тока|power\s*on|power\s*off|turn\s*on|turn\s*off|restore\s*power|cut\s*power|άναψε|αναψε|άνοιξε|ανοιξε|κλείσε|κλεισε|σβήσε|σβησε|σταμάτα|σταματα|porneste|pornește|aprinde|activeaza|activează|opreste|oprește|stinge|ukljuci|uključi|iskljuci|isključi|укључи|искључи|вклучи|исклучи|einschalten|ausschalten|anmachen|ausmachen|strom\s+an|strom\s+aus|aç|ac|kapat|durdur|söndür|sondur/i;
     
     const needsPower = emergencyPowerKeywords.test(userMessage);
     const needsMedical = medicalEmergencyKeywords.test(userMessage);
-    const isPowerCommand = powerCommandKeywords.test(userMessage);
+    const isPowerCommand = powerCommandKeywords.test(userMessage) || isLikelyPowerCommand(userMessage);
 
     if (!needsPower && !needsMedical && !isPowerCommand) {
         console.log('[POWER] Не са разпознати ключови думи за спешност или команди за управление');
@@ -1486,8 +1523,7 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
  */
 function isPowerCommandRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    const powerCommandKeywords = /включи\s+(тока|ток|захранването)|пусни\s+(тока|ток)|възстанови\s+(тока|ток)|дай\s+ток|изключи\s+(тока|ток|захранването)|спри\s+(тока|ток)|махни\s+тока|power\s+on|power\s+off|turn\s+on\s+(power|electricity)|turn\s+off\s+(power|electricity)|restore\s+(power|electricity)|cut\s+(power|electricity)/i;
-    return powerCommandKeywords.test(userMessage);
+    return isLikelyPowerCommand(userMessage);
 }
 
 /**

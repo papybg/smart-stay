@@ -71,19 +71,23 @@
 
     <footer class="ios-safe-area w-full bg-gradient-to-t from-background-light via-background-light/95 to-transparent pt-4">
         <div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar" id="quick-chips">
-            <button data-message="Каква е WiFi паролата?" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+            <button data-message="Каква е WiFi паролата?" data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="WiFi">
                 <span class="material-symbols-outlined text-[18px] text-[#61896f]">wifi</span>
                 <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">WiFi</p>
             </button>
-            <button data-message="Как се прави check-in?" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+            <button data-message="Искам да управлявам тока (включи/изключи)." data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="Изисква регистриран гост или домакин">
+                <span class="material-symbols-outlined text-[18px] text-[#61896f]">power_settings_new</span>
+                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Power</p>
+            </button>
+            <button data-message="Как се прави check-in?" data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="Check-in">
                 <span class="material-symbols-outlined text-[18px] text-[#61896f]">key</span>
                 <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Check-in</p>
             </button>
-            <button data-message="Какви са правилата в апартамента?" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+            <button data-message="Какви са правилата в апартамента?" data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="Правила">
                 <span class="material-symbols-outlined text-[18px] text-[#61896f]">menu_book</span>
                 <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Правила</p>
             </button>
-            <button data-message="Препоръчай ресторанти и маршрути в района" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors">
+            <button data-message="Препоръчай ресторанти и маршрути в района" data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="Local Tips">
                 <span class="material-symbols-outlined text-[18px] text-[#61896f]">explore</span>
                 <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Local Tips</p>
             </button>
@@ -116,6 +120,36 @@
         const expiry = Number(localStorage.getItem('smart-stay-expiry') || 0);
         if (!token || !expiry || Date.now() > expiry) return null;
         return token;
+    }
+
+    function hasRegisteredGuestContext() {
+        const hmCodePattern = /HM[A-Z0-9_-]+/i;
+        for (let index = chatHistory.length - 1; index >= 0; index--) {
+            const msg = chatHistory[index];
+            if (!msg || msg.role !== 'user' || typeof msg.content !== 'string') continue;
+            if (hmCodePattern.test(msg.content)) return true;
+        }
+        return false;
+    }
+
+    function canUseRegisteredPower() {
+        return Boolean(getSessionToken()) || hasRegisteredGuestContext();
+    }
+
+    function updateQuickChipAccess() {
+        const registeredOnlyButtons = quickChips.querySelectorAll('button[data-requires-auth="registered"]');
+        const canUsePower = canUseRegisteredPower();
+        registeredOnlyButtons.forEach((btn) => {
+            if (!btn.dataset.defaultTitle) {
+                btn.dataset.defaultTitle = btn.getAttribute('title') || 'Quick action';
+            }
+            btn.disabled = !canUsePower;
+            if (!canUsePower) {
+                btn.title = 'Тази функция е достъпна само за регистриран гост или домакин';
+            } else {
+                btn.title = btn.dataset.defaultTitle;
+            }
+        });
     }
 
     function escapeAndFormat(text) {
@@ -201,6 +235,7 @@
 
         createMessage('user', message);
         chatHistory.push({ role: 'user', content: message });
+        updateQuickChipAccess();
         addTyping();
 
         try {
@@ -246,10 +281,12 @@
             if (parsed.badge) addSourceBadge(parsed.badge);
             createMessage('assistant', parsed.body || rawReply);
             chatHistory.push({ role: 'assistant', content: parsed.body || rawReply });
+            updateQuickChipAccess();
         } catch (error) {
             removeTyping();
             createMessage('assistant', `⚠️ ${error.message || 'Проблем с връзката. Опитайте отново.'}`);
             chatHistory.push({ role: 'assistant', content: '⚠️ Проблем с връзката. Опитайте отново.' });
+            updateQuickChipAccess();
         }
     }
 
@@ -264,11 +301,13 @@
     quickChips.addEventListener('click', async (event) => {
         const btn = event.target.closest('button[data-message]');
         if (!btn) return;
+        if (btn.disabled) return;
         await sendMessage(btn.dataset.message || '');
     });
 
     createMessage('assistant', 'Добре дошли в Aspen Valley! Аз съм Ико – вашият AI асистент. Мога да помогна с информация за престоя, района и полезни препоръки.');
     chatHistory.push({ role: 'assistant', content: 'Добре дошли в Aspen Valley! Аз съм Ико – вашият AI асистент. Мога да помогна с информация за престоя, района и полезни препоръки.' });
+    updateQuickChipAccess();
 </script>
 </body>
 </html>
