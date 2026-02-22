@@ -513,14 +513,25 @@
             const code = document.getElementById('pinCode').value;
             if(!name || !code) return alert("Нужно е име и код!");
 
-            await fetch('/api/pins', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ pin_name: name, pin_code: code })
-            });
+            try {
+                const response = await fetch('/api/pins', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ pin_name: name, pin_code: code })
+                });
 
-            document.getElementById('pinName').value = '';
-            document.getElementById('pinCode').value = '';
+                if (response.ok) {
+                    document.getElementById('pinName').value = '';
+                    document.getElementById('pinCode').value = '';
+                } else {
+                    const errorData = await response.json().catch(() => ({ error: 'Невалиден JSON отговор от сървъра' }));
+                    alert(`Грешка при запис: ${errorData.error || response.statusText}`);
+                }
+            } catch (e) {
+                console.error('Add PIN fetch error:', e);
+                alert(`Критична грешка при изпращане на заявката: ${e.message}`);
+            }
+            
             loadPins();
         }
 
