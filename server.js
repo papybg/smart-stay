@@ -186,6 +186,7 @@ app.use((req, res, next) => {
     const ip = req.ip || req.connection.remoteAddress || 'UNKNOWN';
     const payloadSize = req.body ? JSON.stringify(req.body).length : 0;
 
+    const ua = req.headers['user-agent'] || '-';
     const isTaskerStatusRoute = req.url.startsWith('/api/power-status') || req.url.startsWith('/api/power/status');
     if (isTaskerStatusRoute) {
         const now = Date.now();
@@ -193,11 +194,11 @@ app.use((req, res, next) => {
             return next();
         }
         lastPowerStatusRequestLogTs = now;
-        console.log(`[${timestamp}] 📨 ${method} ${req.url.padEnd(25)} | IP: ${ip.padEnd(15)} | Payload: ${payloadSize} B | throttled`);
+        console.log(`[${timestamp}] 📨 ${method} ${req.url.padEnd(25)} | IP: ${ip.padEnd(15)} | UA: ${String(ua).slice(0,60).padEnd(60)} | Payload: ${payloadSize} B | throttled`);
         return next();
     }
 
-    console.log(`[${timestamp}] 📨 ${method} ${req.url.padEnd(25)} | IP: ${ip.padEnd(15)} | Payload: ${payloadSize} B`);
+    console.log(`[${timestamp}] 📨 ${method} ${req.url.padEnd(25)} | IP: ${ip.padEnd(15)} | UA: ${String(ua).slice(0,60).padEnd(60)} | Payload: ${payloadSize} B`);
     next();
 });
 

@@ -230,12 +230,23 @@ export function registerPowerRoutes(app, {
         return await executeMeterAction('off', 'samsung_meter_off', res);
     });
 
+    // Simple in-memory cache to reduce load when many clients poll the same data
+    const powerHistoryCache = new Map(); // key -> { ts, payload }
+    const POWER_HISTORY_CACHE_MS = Number(process.env.POWER_HISTORY_CACHE_MS || 15000);
+
     app.get('/api/power-history', async (req, res) => {
         if (!sql) {
             return res.status(503).json({ error: 'Database not available' });
         }
         try {
-            const { days = 30 } = req.query;
+            const days = Number(req.query?.days || 30);
+            const cacheKey = `days:${days}`;
+            const now = Date.now();
+            const cached = powerHistoryCache.get(cacheKey);
+            if (cached && (now - cached.ts) < POWER_HISTORY_CACHE_MS) {
+                return res.json(cached.payload);
+            }
+
             const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
             const history = await sql`
@@ -252,11 +263,14 @@ export function registerPowerRoutes(app, {
                 LIMIT 500
             `;
 
-            return res.json({
+            const payload = {
                 count: history.length,
                 data: history,
                 period: { since: sinceDate, until: new Date() }
-            });
+            };
+
+            powerHistoryCache.set(cacheKey, { ts: now, payload });
+            return res.json(payload);
         } catch (error) {
             console.error('[DB] 🔴 Грешка при четене:', error.message);
             return res.status(500).json({ error: error.message });
