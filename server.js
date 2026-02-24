@@ -247,6 +247,51 @@ app.get('/', (req, res) => {
     res.json({ name: 'Smart Stay', status: 'operational', timestamp: new Date().toISOString() });
 });
 
+async function handleSmartThingsLifecycle(req, res) {
+    try {
+        const lifecycle = String(req.body?.lifecycle || '').toUpperCase();
+        const confirmationUrl = req.body?.confirmationData?.confirmationUrl;
+
+        if (lifecycle === 'CONFIRMATION') {
+            if (!confirmationUrl) {
+                console.error('[SMARTTHINGS] ❌ CONFIRMATION без confirmationUrl');
+                return res.status(400).json({ error: 'Missing confirmationUrl' });
+            }
+
+            console.log('[SMARTTHINGS] 🔐 CONFIRMATION получен, потвърждавам webhook...');
+            const confirmResponse = await fetch(confirmationUrl, { method: 'GET' });
+
+            if (!confirmResponse.ok) {
+                const responseText = await confirmResponse.text().catch(() => '');
+                console.error(`[SMARTTHINGS] ❌ confirmationUrl върна ${confirmResponse.status}: ${responseText}`);
+                return res.status(502).json({
+                    error: 'Confirmation request failed',
+                    status: confirmResponse.status
+                });
+            }
+
+            console.log('[SMARTTHINGS] ✅ Webhook verification успешна');
+            return res.status(200).json({
+                success: true,
+                lifecycle: 'CONFIRMATION',
+                confirmed: true
+            });
+        }
+
+        // За останали lifecycle event-и връщаме 200, за да избегнем retries.
+        return res.status(200).json({
+            success: true,
+            lifecycle: lifecycle || 'UNKNOWN'
+        });
+    } catch (error) {
+        console.error('[SMARTTHINGS] 🔴 Грешка при lifecycle обработка:', error.message);
+        return res.status(500).json({ error: 'SmartThings lifecycle handler error' });
+    }
+}
+
+app.post('/smartthings', handleSmartThingsLifecycle);
+app.post('/', handleSmartThingsLifecycle);
+
 registerAuthRoutes(app, {
     getAIResponse,
     generateToken,
