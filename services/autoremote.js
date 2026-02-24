@@ -1,184 +1,133 @@
-/**
- * ============================================================================
- * SAMSUNG SMARTTHINGS DIRECT INTEGRATION
- * ============================================================================
- *
- * Основен поток: Backend → SmartThings API → Tuya/SmartLife интегрирано устройство
- * Tasker е само за ОБРАТНА ВРЪЗКА (feedback) през /api/power-status.
- */
-
 import axios from 'axios';
 
-const SMARTTHINGS_TOKEN = process.env.SMARTTHINGS_API_TOKEN
+// ============================================================================
+// НОВ OAuth2-базиран модул за SmartThings
+// ============================================================================
+
+let stAccessToken = process.env.ST_ACCESS_TOKEN;
+let stRefreshToken = process.env.ST_REFRESH_TOKEN;
+const LEGACY_ACCESS_TOKEN = process.env.SMARTTHINGS_API_TOKEN
     || process.env.SMARTTHINGS_TOKEN
     || process.env.SAMSUNG_API_KEY
     || '';
-const SMARTTHINGS_DEVICE_ID = process.env.SMARTTHINGS_DEVICE_ID
-    || process.env.SAMSUNG_DEVICE_ID
-    || '';
-const SMARTTHINGS_DEVICE_ID_ON = process.env.SMARTTHINGS_DEVICE_ID_ON || SMARTTHINGS_DEVICE_ID;
-const SMARTTHINGS_DEVICE_ID_OFF = process.env.SMARTTHINGS_DEVICE_ID_OFF || SMARTTHINGS_DEVICE_ID;
-const SMARTTHINGS_BUTTON_DEVICE_ID = process.env.SMARTTHINGS_BUTTON_DEVICE_ID || '';
-const SMARTTHINGS_BUTTON_DEVICE_ID_ON = process.env.SMARTTHINGS_BUTTON_DEVICE_ID_ON || SMARTTHINGS_BUTTON_DEVICE_ID;
-const SMARTTHINGS_BUTTON_DEVICE_ID_OFF = process.env.SMARTTHINGS_BUTTON_DEVICE_ID_OFF || SMARTTHINGS_BUTTON_DEVICE_ID;
-const SMARTTHINGS_COMPONENT = process.env.SMARTTHINGS_COMPONENT || 'main';
-const SMARTTHINGS_BUTTON_COMPONENT = process.env.SMARTTHINGS_BUTTON_COMPONENT || SMARTTHINGS_COMPONENT;
-const SMARTTHINGS_API_URL = process.env.SMARTTHINGS_API_URL || 'https://api.smartthings.com/v1';
+
+if (!stAccessToken && LEGACY_ACCESS_TOKEN) {
+    stAccessToken = LEGACY_ACCESS_TOKEN;
+    console.log('[SMARTTHINGS] ℹ️ Използвам legacy access token от SMARTTHINGS_* env');
+}
+
+// Променливи за устройствата, които се запазват от старата логика
+const SMARTTHINGS_DEVICE_ID_ON = process.env.SMARTTHINGS_DEVICE_ID_ON || process.env.SMARTTHINGS_DEVICE_ID;
+const SMARTTHINGS_DEVICE_ID_OFF = process.env.SMARTTHINGS_DEVICE_ID_OFF || process.env.SMARTTHINGS_DEVICE_ID;
 const SMARTTHINGS_COMMAND_ON = process.env.SMARTTHINGS_COMMAND_ON || 'on';
 const SMARTTHINGS_COMMAND_OFF = process.env.SMARTTHINGS_COMMAND_OFF || 'off';
-const SMARTTHINGS_SCENE_COMMAND = process.env.SMARTTHINGS_SCENE_COMMAND || 'on';
-const SMARTTHINGS_SCENE_COMMAND_ON = process.env.SMARTTHINGS_SCENE_COMMAND_ON || SMARTTHINGS_SCENE_COMMAND || 'on';
-const SMARTTHINGS_SCENE_COMMAND_OFF = process.env.SMARTTHINGS_SCENE_COMMAND_OFF || SMARTTHINGS_SCENE_COMMAND || 'on';
-const SMARTTHINGS_BUTTON_COMMAND_ON = process.env.SMARTTHINGS_BUTTON_COMMAND_ON || 'push';
-const SMARTTHINGS_BUTTON_COMMAND_OFF = process.env.SMARTTHINGS_BUTTON_COMMAND_OFF || 'push';
-const SMARTTHINGS_SCENE_BUTTON_MODE = (process.env.SMARTTHINGS_SCENE_BUTTON_MODE || 'true').toLowerCase() !== 'false';
-const SMARTTHINGS_SCENE_PULSE_DELAY_MS = Number(process.env.SMARTTHINGS_SCENE_PULSE_DELAY_MS || 250);
-const USE_SPLIT_SCENE_DEVICES =
-    Boolean(SMARTTHINGS_DEVICE_ID_ON)
-    && Boolean(SMARTTHINGS_DEVICE_ID_OFF)
-    && SMARTTHINGS_DEVICE_ID_ON !== SMARTTHINGS_DEVICE_ID_OFF;
-
-if (!SMARTTHINGS_TOKEN || (!SMARTTHINGS_DEVICE_ID_ON && !SMARTTHINGS_DEVICE_ID_OFF && !SMARTTHINGS_BUTTON_DEVICE_ID_ON && !SMARTTHINGS_BUTTON_DEVICE_ID_OFF)) {
-    console.warn('[SMARTTHINGS] ⚠️ Липсват SMARTTHINGS token/device id в env');
-}
 
 /**
- * Изпраща команда към Samsung SmartThings устройството
- *
- * @async
- * @param {'on'|'off'} switchCommand
- * @returns {Promise<boolean>} True ако успешно е изпратено
+ *  refreshed ST token
  */
-export async function sendCommandToSamsung(switchCommand, targetDeviceId = SMARTTHINGS_DEVICE_ID) {
-    if (!SMARTTHINGS_TOKEN || !targetDeviceId) {
-        console.error('[SMARTTHINGS] ❌ Липсва SMARTTHINGS_TOKEN или SMARTTHINGS_DEVICE_ID');
+async function refreshSTToken() {
+    if (!process.env.ST_CLIENT_ID || !process.env.ST_CLIENT_SECRET || !stRefreshToken) {
+        console.error('[SMARTTHINGS] ❌ Липсват ST_CLIENT_ID/ST_CLIENT_SECRET/ST_REFRESH_TOKEN за OAuth refresh');
         return false;
     }
-
-    const normalized = String(switchCommand || '').trim().toLowerCase();
-    if (normalized !== 'on' && normalized !== 'off') {
-        console.error(`[SMARTTHINGS] ❌ Невалидна команда: ${switchCommand}`);
-        return false;
-    }
-
-    const url = `${SMARTTHINGS_API_URL}/devices/${targetDeviceId}/commands`;
 
     try {
-        console.log(`[SMARTTHINGS] 📤 Изпращам ${normalized.toUpperCase()} към device ${targetDeviceId}`);
-
-        const response = await axios.post(url, {
-            commands: [
-                {
-                    component: SMARTTHINGS_COMPONENT,
-                    capability: 'switch',
-                    command: normalized
-                }
-            ]
-        }, {
-            headers: {
-                Authorization: `Bearer ${SMARTTHINGS_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: 8000
+        const response = await axios.post('https://api.smartthings.com/oauth/token', new URLSearchParams({
+            grant_type: 'refresh_token',
+            client_id: process.env.ST_CLIENT_ID,
+            client_secret: process.env.ST_CLIENT_SECRET,
+            refresh_token: stRefreshToken
+        }), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            timeout: 10000
         });
 
-        if (response.status >= 200 && response.status < 300) {
-            console.log(`[SMARTTHINGS] ✅ Команда ${normalized.toUpperCase()} изпратена успешно`);
-            return true;
+        if (!response.data?.access_token) {
+            console.error('[SMARTTHINGS] ❌ Липсва access_token в OAuth refresh отговора');
+            return false;
         }
 
-        console.warn('[SMARTTHINGS] ⚠️ Неочакван отговор:', response.status);
-        return false;
-    } catch (error) {
-        const details = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
-        console.error('[SMARTTHINGS] ❌ Грешка при команда:', details);
-        return false;
-    }
-}
-
-async function sendButtonCommandToSamsung(buttonCommand, targetDeviceId) {
-    if (!SMARTTHINGS_TOKEN || !targetDeviceId) {
-        console.error('[SMARTTHINGS] ❌ Липсва SMARTTHINGS_TOKEN или SMARTTHINGS_BUTTON_DEVICE_ID');
-        return false;
-    }
-
-    const normalized = String(buttonCommand || '').trim().toLowerCase() || 'push';
-    const url = `${SMARTTHINGS_API_URL}/devices/${targetDeviceId}/commands`;
-
-    try {
-        console.log(`[SMARTTHINGS] 🔘 Изпращам BUTTON ${normalized.toUpperCase()} към device ${targetDeviceId}`);
-
-        const response = await axios.post(url, {
-            commands: [
-                {
-                    component: SMARTTHINGS_BUTTON_COMPONENT,
-                    capability: 'button',
-                    command: normalized
-                }
-            ]
-        }, {
-            headers: {
-                Authorization: `Bearer ${SMARTTHINGS_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: 8000
-        });
-
-        if (response.status >= 200 && response.status < 300) {
-            console.log(`[SMARTTHINGS] ✅ BUTTON команда ${normalized.toUpperCase()} изпратена успешно`);
-            return true;
+        stAccessToken = response.data.access_token;
+        if (response.data.refresh_token) {
+            stRefreshToken = response.data.refresh_token;
         }
-
-        console.warn('[SMARTTHINGS] ⚠️ Неочакван BUTTON отговор:', response.status);
-        return false;
-    } catch (error) {
-        const details = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
-        console.error('[SMARTTHINGS] ❌ Грешка при BUTTON команда:', details);
+        console.log('[SMARTTHINGS] ✅ Токенът е обновен!');
+        return true;
+    } catch (err) {
+        console.error('[SMARTTHINGS] ❌ Грешка (refresh):', err.response?.data || err.message);
         return false;
     }
-}
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function sendSceneButtonCommand(targetDeviceId, triggerCommand) {
-    const normalizedTrigger = String(triggerCommand || '').trim().toLowerCase();
-    if (!SMARTTHINGS_SCENE_BUTTON_MODE || normalizedTrigger !== 'on') {
-        return await sendCommandToSamsung(normalizedTrigger, targetDeviceId);
-    }
-
-    console.log('[SMARTTHINGS] 🔘 Scene button mode: pulse OFF → ON');
-    await sendCommandToSamsung('off', targetDeviceId);
-    await sleep(Math.max(0, SMARTTHINGS_SCENE_PULSE_DELAY_MS));
-    return await sendCommandToSamsung('on', targetDeviceId);
 }
 
 /**
- * Управление на тока (директно през Samsung)
+ * send ST command
+ * @param {*} deviceId 
+ * @param {*} cmd 
+ * @returns 
+ */
+async function sendSTCommand(deviceId, cmd, retryCount = 0) {
+    try {
+        if (!stAccessToken) {
+            const refreshed = await refreshSTToken();
+            if (!refreshed) {
+                console.error('[SMARTTHINGS] ❌ Няма валиден access token за изпращане на команда');
+                return false;
+            }
+        }
+
+        await axios.post(`https://api.smartthings.com/v1/devices/${deviceId}/commands`, {
+            commands: [{ component: 'main', capability: 'switch', command: cmd }]
+        }, {
+            headers: { Authorization: `Bearer ${stAccessToken}` },
+            timeout: 10000
+        });
+
+        console.log(`[SMARTTHINGS] 📤 Успешно: ${cmd}`);
+        return true; // Връщаме true при успех
+    } catch (err) {
+        if (err.response?.status === 401 && retryCount < 1) {
+            console.log('[SMARTTHINGS] ⚠️ Изтекъл токен, подновявам...');
+            const refreshed = await refreshSTToken();
+            if (!refreshed) {
+                return false;
+            }
+            return sendSTCommand(deviceId, cmd, retryCount + 1);
+        }
+
+        console.error('[SMARTTHINGS] ❌ Грешка (команда):', err.response?.data || err.message);
+        return false; // Връщаме false при грешка
+    }
+}
+
+// Автоматично обновяване на всеки 12 часа
+if (stRefreshToken) {
+    const tokenRefreshInterval = setInterval(refreshSTToken, 43200000);
+    if (typeof tokenRefreshInterval.unref === 'function') {
+        tokenRefreshInterval.unref();
+    }
+}
+
+
+/**
+ * Управление на тока (директно през Samsung с OAuth2)
  * @async
  * @param {boolean} turnOn - true за ВКЛ, false за ИЗКЛ
  * @returns {Promise<boolean>}
  */
 export async function controlPower(turnOn) {
-    const buttonDeviceId = turnOn ? SMARTTHINGS_BUTTON_DEVICE_ID_ON : SMARTTHINGS_BUTTON_DEVICE_ID_OFF;
-    if (buttonDeviceId) {
-        const buttonCommand = turnOn ? SMARTTHINGS_BUTTON_COMMAND_ON : SMARTTHINGS_BUTTON_COMMAND_OFF;
-        return await sendButtonCommandToSamsung(buttonCommand, buttonDeviceId);
-    }
-
-    const command = USE_SPLIT_SCENE_DEVICES
-        ? (turnOn ? SMARTTHINGS_SCENE_COMMAND_ON : SMARTTHINGS_SCENE_COMMAND_OFF)
-        : (turnOn ? SMARTTHINGS_COMMAND_ON : SMARTTHINGS_COMMAND_OFF);
+    const command = turnOn ? SMARTTHINGS_COMMAND_ON : SMARTTHINGS_COMMAND_OFF;
     const targetDeviceId = turnOn ? SMARTTHINGS_DEVICE_ID_ON : SMARTTHINGS_DEVICE_ID_OFF;
-    if (USE_SPLIT_SCENE_DEVICES) {
-        return await sendSceneButtonCommand(targetDeviceId, command);
+
+    if (!targetDeviceId) {
+        console.error('[SMARTTHINGS] ❌ Липсва ID на устройство (SMARTTHINGS_DEVICE_ID_ON/OFF)');
+        return false;
     }
-    return await sendCommandToSamsung(command, targetDeviceId);
+    
+    return await sendSTCommand(targetDeviceId, command);
 }
 
 /**
- * Управление на електромера по текстова команда (за Samsung/Tasker endpoint-и)
+ * Управление на електромера по текстова команда (за Samsung/Tasker endpoint-и с OAuth2)
  * @param {'on'|'off'} action
  * @returns {Promise<{success: boolean, command: string}>}
  */
@@ -189,25 +138,19 @@ export async function controlMeterByAction(action) {
     }
 
     const turnOn = normalized === 'on';
-    const buttonDeviceId = turnOn ? SMARTTHINGS_BUTTON_DEVICE_ID_ON : SMARTTHINGS_BUTTON_DEVICE_ID_OFF;
-    if (buttonDeviceId) {
-        const buttonCommand = turnOn ? SMARTTHINGS_BUTTON_COMMAND_ON : SMARTTHINGS_BUTTON_COMMAND_OFF;
-        const success = await sendButtonCommandToSamsung(buttonCommand, buttonDeviceId);
-        return { success, command: buttonCommand };
+    const command = turnOn ? SMARTTHINGS_COMMAND_ON : SMARTTHINGS_COMMAND_OFF;
+    const targetDeviceId = turnOn ? SMARTTHINGS_DEVICE_ID_ON : SMARTTHINGS_DEVICE_ID_OFF;
+
+    if (!targetDeviceId) {
+        console.error('[SMARTTHINGS] ❌ Липсва ID на устройство (SMARTTHINGS_DEVICE_ID_ON/OFF)');
+        return { success: false, command: '' };
     }
 
-    const command = USE_SPLIT_SCENE_DEVICES
-        ? (turnOn ? SMARTTHINGS_SCENE_COMMAND_ON : SMARTTHINGS_SCENE_COMMAND_OFF)
-        : (turnOn ? SMARTTHINGS_COMMAND_ON : SMARTTHINGS_COMMAND_OFF);
-    const targetDeviceId = turnOn ? SMARTTHINGS_DEVICE_ID_ON : SMARTTHINGS_DEVICE_ID_OFF;
-    const success = USE_SPLIT_SCENE_DEVICES
-        ? await sendSceneButtonCommand(targetDeviceId, command)
-        : await sendCommandToSamsung(command, targetDeviceId);
+    const success = await sendSTCommand(targetDeviceId, command);
     return { success, command };
 }
 
-/*
-// LEGACY TASKER COMMAND FLOW (disabled intentionally)
-// const AR_KEY = process.env.AUTOREMOTE_KEY;
-// export async function sendCommandToPhone(command) { ... }
-*/
+// Проверка при стартиране дали са налични нужните OAuth променливи
+if (!process.env.ST_CLIENT_ID || !process.env.ST_CLIENT_SECRET || !stRefreshToken) {
+    console.warn('[SMARTTHINGS] ⚠️ OAuth2 не е напълно конфигуриран. Липсват ST_CLIENT_ID, ST_CLIENT_SECRET или ST_REFRESH_TOKEN в env променливите.');
+}

@@ -1,0 +1,11 @@
+{
+    "displayName": "Smart Stay",
+    "description": "Smart Stay Automation",
+    "appType": "API_ONLY",
+    "settings": {},
+    "oauth": {
+        "clientName": "Smart Stay",
+        "scopes": ["r:devices:*", "w:devices:*", "x:devices:*"],
+        "redirectUris": ["https://smart-stay.onrender.com/callback"]
+    }
+}

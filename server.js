@@ -42,7 +42,7 @@ import { generateToken, invalidateToken, SESSION_DURATION } from './services/ses
 import { syncBookingsFromGmail, syncBookingsPowerFromLatestHistory } from './services/detective.js';
 import { createApiKeyGuard, createSimpleRateLimiter } from './middlewares/security.js';
 import { registerPowerRoutes } from './routes/powerRoutes.js';
-import { registerAuthRoutes } from './routes/authRoutes.js';
+import { registerAuthRoutes, registerSmartThingsCallbackRoute } from './routes/authRoutes.js';
 import { registerBookingsRoutes } from './routes/bookingsRoutes.js';
 import { registerAdminRoutes } from './routes/adminRoutes.js';
 import { registerSystemRoutes } from './routes/systemRoutes.js';
@@ -271,6 +271,7 @@ registerBookingsRoutes(app, {
 
 registerAdminRoutes(app, { sql });
 registerSystemRoutes(app);
+registerSmartThingsCallbackRoute(app);
 
 // ============================================================================
 // TELEGRAM CONTROL (Закомментирано - ще се активира с интеграция на бот)
