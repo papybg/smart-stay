@@ -156,16 +156,36 @@ if (stRefreshToken) {
  * @param {boolean} turnOn - true за ВКЛ, false за ИЗКЛ
  * @returns {Promise<boolean>}
  */
-export async function controlPower(turnOn) {
-    const command = turnOn ? SMARTTHINGS_COMMAND_ON : SMARTTHINGS_COMMAND_OFF;
-    const targetDeviceId = turnOn ? SMARTTHINGS_DEVICE_ID_ON : SMARTTHINGS_DEVICE_ID_OFF;
-
-    if (!targetDeviceId) {
-        console.error('[SMARTTHINGS] ❌ Липсва ID на устройство (SMARTTHINGS_DEVICE_ID_ON/OFF)');
+// execute SmartThings scene by ID
+async function executeScene(sceneId) {
+    if (!sceneId) {
+        console.error('[SMARTTHINGS] ❌ Липсва sceneId за изпълнение');
         return false;
     }
-    
-    return await sendSTCommand(targetDeviceId, command);
+    try {
+        const token = await ensureValidSTAccessToken();
+        const url = `https://api.smartthings.com/v1/scenes/${sceneId}/execute`;
+        console.log('[SMARTTHINGS:DEBUG] Executing scene URL:', url);
+        await axios.post(url, {}, {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 10000
+        });
+        console.log('[SMARTTHINGS] 📤 Scene executed:', sceneId);
+        return true;
+    } catch (err) {
+        console.error('[SMARTTHINGS] ❌ Грешка (scene):', err.response?.data || err.message);
+        return false;
+    }
+}
+
+export async function controlPower(turnOn) {
+    // switch to using scenes instead of direct device commands
+    const sceneId = turnOn ? process.env.SMARTTHINGS_SCENE_ON : process.env.SMARTTHINGS_SCENE_OFF;
+    if (!sceneId) {
+        console.error('[SMARTTHINGS] ❌ Липсва scene ID (SMARTTHINGS_SCENE_ON/OFF)');
+        return false;
+    }
+    return await executeScene(sceneId);
 }
 
 /**
