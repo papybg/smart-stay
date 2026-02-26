@@ -87,7 +87,12 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
         console.log('[SMARTTHINGS:DEBUG] Token последно обновен:', global.lastTokenRefresh || 'Никога');
         console.log('[SMARTTHINGS:DEBUG] Времето сега:', new Date().toISOString());
 
-        await axios.post(`https://api.smartthings.com/v1/devices/${deviceId}/commands`, {
+        const url = `https://api.smartthings.com/v1/devices/${deviceId}/commands`;
+        console.log('[SMARTTHINGS:DEBUG] Request URL:', url);
+        console.log('[SMARTTHINGS:DEBUG] Device ID:', deviceId);
+        console.log('[SMARTTHINGS:DEBUG] Command:', cmd);
+
+        await axios.post(url, {
             commands: [{ component: 'main', capability: 'switch', command: cmd }]
         }, {
             headers: { Authorization: `Bearer ${token}` },
@@ -108,6 +113,7 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
         }
 
         console.error('[SMARTTHINGS] ❌ Грешка (команда):', err.response?.data || err.message);
+        console.error('[SMARTTHINGS:DEBUG] Full error:', err.response?.data);
         return false; // Връщаме false при грешка
     }
 }
