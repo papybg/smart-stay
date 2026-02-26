@@ -105,7 +105,30 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
 
 // Автоматично обновяване на всеки 12 часа
 if (stRefreshToken) {
-    const tokenRefreshInterval = setInterval(refreshSTToken, 43200000);
+    // форсирано обновяване веднага при старта
+    (async () => {
+        try {
+            const ok = await refreshSTToken();
+            if (ok) {
+                global.lastTokenRefresh = new Date().toISOString();
+                console.log('[SMARTTHINGS] ℹ️ Initial token refresh completed on startup');
+            }
+        } catch (e) {
+            console.warn('[SMARTTHINGS] ⚠️ Initial token refresh failed:', e.message);
+        }
+    })();
+
+    const tokenRefreshInterval = setInterval(async () => {
+        try {
+            const ok = await refreshSTToken();
+            if (ok) {
+                global.lastTokenRefresh = new Date().toISOString();
+                console.log('[SMARTTHINGS] ℹ️ Periodic token refresh successful');
+            }
+        } catch (e) {
+            console.warn('[SMARTTHINGS] ⚠️ Periodic token refresh error:', e.message);
+        }
+    }, 43200000);
     if (typeof tokenRefreshInterval.unref === 'function') {
         tokenRefreshInterval.unref();
     }
