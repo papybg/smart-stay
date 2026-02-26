@@ -25,6 +25,9 @@ const SMARTTHINGS_DEVICE_ID_OFF = process.env.SMARTTHINGS_DEVICE_ID_OFF || proce
 const SMARTTHINGS_COMMAND_ON = process.env.SMARTTHINGS_COMMAND_ON || 'on';
 const SMARTTHINGS_COMMAND_OFF = process.env.SMARTTHINGS_COMMAND_OFF || 'off';
 
+// debug startup values so we can trace which IDs are actually in use
+console.log('[SMARTTHINGS:DEBUG] ENV DEVICE IDs ON/OFF:', SMARTTHINGS_DEVICE_ID_ON, SMARTTHINGS_DEVICE_ID_OFF);
+
 /**
  *  refreshed ST token
  */
