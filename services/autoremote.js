@@ -71,10 +71,12 @@ async function refreshSTToken() {
 async function sendSTCommand(deviceId, cmd, retryCount = 0) {
     try {
         const token = await ensureValidSTAccessToken();
-        if (!token) {
-            console.error('[SMARTTHINGS] ❌ Няма валиден access token за изпращане на команда');
-            return false;
-        }
+        // DEBUG LOGGING
+        global.lastTokenRefresh = global.lastTokenRefresh || null;
+        console.log('[SMARTTHINGS:DEBUG] Използван токен:', token ? 'От паметта (fresh)' : 'От env (може да е изтекъл)');
+        console.log('[SMARTTHINGS:DEBUG] Token value (първи 20 символа):', (token || process.env.ST_ACCESS_TOKEN || '').substring(0, 20));
+        console.log('[SMARTTHINGS:DEBUG] Token последно обновен:', global.lastTokenRefresh || 'Никога');
+        console.log('[SMARTTHINGS:DEBUG] Времето сега:', new Date().toISOString());
 
         await axios.post(`https://api.smartthings.com/v1/devices/${deviceId}/commands`, {
             commands: [{ component: 'main', capability: 'switch', command: cmd }]
@@ -92,6 +94,7 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
             if (!refreshed) {
                 return false;
             }
+            global.lastTokenRefresh = new Date().toISOString();
             return sendSTCommand(deviceId, cmd, retryCount + 1);
         }
 
