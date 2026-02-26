@@ -6,6 +6,7 @@ import axios from 'axios';
 
 let stAccessToken = process.env.ST_ACCESS_TOKEN;
 let stRefreshToken = process.env.ST_REFRESH_TOKEN;
+export { stAccessToken };
 // Legacy SmartThings PAT token logic removed. Only OAuth tokens are supported.
 
 // Променливи за устройствата, които се запазват от старата логика

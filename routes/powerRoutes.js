@@ -1,4 +1,18 @@
 export function registerPowerRoutes(app, {
+        // Endpoint for current SmartThings access token
+        app.get('/api/st-token', (_req, res) => {
+            try {
+                // Dynamically require autoremote.js to get stAccessToken
+                const autoremote = require('../services/autoremote.js');
+                const token = autoremote.stAccessToken || null;
+                if (!token) {
+                    return res.status(404).json({ error: 'No access token in memory.' });
+                }
+                res.json({ access_token: token });
+            } catch (err) {
+                res.status(500).json({ error: 'Failed to get access token.' });
+            }
+        });
     sql,
     controlMeterByAction,
     syncBookingsPowerFromLatestHistory,
