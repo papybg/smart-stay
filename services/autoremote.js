@@ -36,20 +36,21 @@ async function refreshSTToken() {
 
     try {
         // debug information about refresh request
-        console.log('[SMARTTHINGS:REFRESH_DEBUG] Request params:', {
+        const previewParams = {
             grant_type: 'refresh_token',
-            client_id: process.env.ST_CLIENT_ID ? process.env.ST_CLIENT_ID.substring(0,10) + '...' : undefined,
-            client_secret: '***',
             refresh_token: stRefreshToken ? stRefreshToken.substring(0,10) + '...' : undefined
-        });
-        console.log('[SMARTTHINGS:REFRESH_DEBUG] Request headers will include Content-Type and optionally Basic Auth');
+        };
+        console.log('[SMARTTHINGS:REFRESH_DEBUG] Request params (body):', previewParams);
+        const basicAuth = Buffer.from(`${process.env.ST_CLIENT_ID}:${process.env.ST_CLIENT_SECRET}`).toString('base64');
+        console.log('[SMARTTHINGS:REFRESH_DEBUG] Using Basic Auth header for client credentials');
         const response = await axios.post('https://api.smartthings.com/oauth/token', new URLSearchParams({
             grant_type: 'refresh_token',
-            client_id: process.env.ST_CLIENT_ID,
-            client_secret: process.env.ST_CLIENT_SECRET,
             refresh_token: stRefreshToken
-        }), {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        }).toString(), {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic ' + basicAuth
+            },
             timeout: 10000
         });
 
