@@ -118,6 +118,7 @@ export function registerSmartThingsCallbackRoute(app) {
                 redirect_uri: redirectUri
             });
 
+            let tokenResponse;
             try {
                 // Basic Auth header
                 const basicAuth = Buffer.from(`${ST_CLIENT_ID}:${ST_CLIENT_SECRET}`).toString('base64');
@@ -126,7 +127,7 @@ export function registerSmartThingsCallbackRoute(app) {
                     code,
                     redirect_uri: redirectUri
                 });
-                const tokenResponse = await axios.post('https://api.smartthings.com/oauth/token', 
+                tokenResponse = await axios.post('https://api.smartthings.com/oauth/token', 
                     params.toString(),
                     {
                         headers: {
@@ -144,7 +145,7 @@ export function registerSmartThingsCallbackRoute(app) {
                         <p>SmartThings не върна валидни токени.</p>
                     `);
                 }
-                // ...existing code for success...
+                // ...existing code for success (всички използвания на tokenResponse трябва да са тук)...
             } catch (error) {
                 if (error.response) {
                     console.error('[ST-CALLBACK] ❌ Token exchange failed:', {
