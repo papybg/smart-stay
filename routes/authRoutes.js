@@ -119,16 +119,20 @@ export function registerSmartThingsCallbackRoute(app) {
             });
 
             try {
+                // Basic Auth header
+                const basicAuth = Buffer.from(`${ST_CLIENT_ID}:${ST_CLIENT_SECRET}`).toString('base64');
+                const params = new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    code,
+                    redirect_uri: redirectUri
+                });
                 const tokenResponse = await axios.post('https://api.smartthings.com/oauth/token', 
-                    new URLSearchParams({
-                        grant_type: 'authorization_code',
-                        client_id: ST_CLIENT_ID,
-                        client_secret: ST_CLIENT_SECRET,
-                        code,
-                        redirect_uri: redirectUri
-                    }),
+                    params.toString(),
                     {
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        headers: {
+                            'Authorization': 'Basic ' + basicAuth,
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
                         timeout: 10000
                     }
                 );
