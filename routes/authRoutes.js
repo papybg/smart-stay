@@ -145,6 +145,9 @@ export function registerSmartThingsCallbackRoute(app) {
                         <p>SmartThings не върна валидни токени.</p>
                     `);
                 }
+                // Логване на токените
+                console.log('[ST-TOKENS] ACCESS_TOKEN:', tokenResponse.data.access_token);
+                console.log('[ST-TOKENS] REFRESH_TOKEN:', tokenResponse.data.refresh_token);
                 // ...existing code for success (всички използвания на tokenResponse трябва да са тук)...
             } catch (error) {
                 if (error.response) {
