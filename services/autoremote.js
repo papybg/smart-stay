@@ -6,15 +6,7 @@ import axios from 'axios';
 
 let stAccessToken = process.env.ST_ACCESS_TOKEN;
 let stRefreshToken = process.env.ST_REFRESH_TOKEN;
-const LEGACY_ACCESS_TOKEN = process.env.SMARTTHINGS_API_TOKEN
-    || process.env.SMARTTHINGS_TOKEN
-    || process.env.SAMSUNG_API_KEY
-    || '';
-
-if (!stAccessToken && LEGACY_ACCESS_TOKEN) {
-    stAccessToken = LEGACY_ACCESS_TOKEN;
-    console.log('[SMARTTHINGS] ℹ️ Използвам legacy access token от SMARTTHINGS_* env');
-}
+// Legacy SmartThings PAT token logic removed. Only OAuth tokens are supported.
 
 // Променливи за устройствата, които се запазват от старата логика
 const SMARTTHINGS_DEVICE_ID_ON = process.env.SMARTTHINGS_DEVICE_ID_ON || process.env.SMARTTHINGS_DEVICE_ID;
