@@ -108,25 +108,49 @@ export function registerSmartThingsCallbackRoute(app) {
                 `);
             }
 
-            console.log('[ST-CALLBACK] 🔄 Размена на code за tokens...');
+            // Подробно логване на параметрите за token exchange
+            const redirectUri = `${process.env.APP_BASE_URL || 'https://smart-stay.onrender.com'}/callback`;
+            console.log('[ST-CALLBACK] Token exchange params:', {
+                grant_type: 'authorization_code',
+                client_id: ST_CLIENT_ID,
+                client_secret: ST_CLIENT_SECRET ? '***' : undefined,
+                code,
+                redirect_uri: redirectUri
+            });
 
-            // Размена на authorization code за access_token + refresh_token
-            const tokenResponse = await axios.post('https://api.smartthings.com/oauth/token', 
-                new URLSearchParams({
-                    grant_type: 'authorization_code',
-                    client_id: ST_CLIENT_ID,
-                    client_secret: ST_CLIENT_SECRET,
-                    code,
-                    redirect_uri: `${process.env.APP_BASE_URL || 'https://smart-stay.onrender.com'}/callback`
-                }),
-                {
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    timeout: 10000
+            try {
+                const tokenResponse = await axios.post('https://api.smartthings.com/oauth/token', 
+                    new URLSearchParams({
+                        grant_type: 'authorization_code',
+                        client_id: ST_CLIENT_ID,
+                        client_secret: ST_CLIENT_SECRET,
+                        code,
+                        redirect_uri: redirectUri
+                    }),
+                    {
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        timeout: 10000
+                    }
+                );
+
+                if (!tokenResponse.data?.access_token || !tokenResponse.data?.refresh_token) {
+                    console.error('[ST-CALLBACK] ❌ SmartThings не върна tokens:', tokenResponse.data);
+                    return res.status(400).send(`
+                        <h1>❌ OAuth Token Грешка</h1>
+                        <p>SmartThings не върна валидни токени.</p>
+                    `);
                 }
-            );
-
-            if (!tokenResponse.data?.access_token || !tokenResponse.data?.refresh_token) {
-                console.error('[ST-CALLBACK] ❌ SmartThings не върна tokens:', tokenResponse.data);
+                // ...existing code for success...
+            } catch (error) {
+                if (error.response) {
+                    console.error('[ST-CALLBACK] ❌ Token exchange failed:', {
+                        status: error.response.status,
+                        headers: error.response.headers,
+                        data: error.response.data
+                    });
+                } else {
+                    console.error('[ST-CALLBACK] ❌ Token exchange error:', error.message);
+                }
                 return res.status(400).send(`
                     <h1>❌ Грешка при Размена</h1>
                     <p>SmartThings не върна валидни tokens. Проверете логовете на сървъра.</p>
