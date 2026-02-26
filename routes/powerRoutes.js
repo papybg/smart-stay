@@ -1,24 +1,24 @@
+import { ensureValidSTAccessToken } from '../services/autoremote.js';
+
 export function registerPowerRoutes(app, {
-        // Endpoint for current SmartThings access token
-        app.get('/api/st-token', (_req, res) => {
-            try {
-                // Dynamically require autoremote.js to get stAccessToken
-                const autoremote = require('../services/autoremote.js');
-                const token = autoremote.stAccessToken || null;
-                if (!token) {
-                    return res.status(404).json({ error: 'No access token in memory.' });
-                }
-                res.json({ access_token: token });
-            } catch (err) {
-                res.status(500).json({ error: 'Failed to get access token.' });
-            }
-        });
     sql,
     controlMeterByAction,
     syncBookingsPowerFromLatestHistory,
     taskerNoiseWindowMs,
     recentTaskerStatusBySource
 }) {
+    app.get('/api/st-token', async (req, res) => {
+        const forceRefresh = String(req.query?.refresh || '').toLowerCase() === '1'
+            || String(req.query?.refresh || '').toLowerCase() === 'true';
+        const token = await ensureValidSTAccessToken({ forceRefresh });
+        if (!token) {
+            return res.status(503).json({
+                error: 'No valid SmartThings access token available. Check ST_CLIENT_ID, ST_CLIENT_SECRET, ST_REFRESH_TOKEN.'
+            });
+        }
+        res.json({ access_token: token, refreshed: forceRefresh });
+    });
+
     app.get('/api/power-status', (_req, res) => {
         res.json({
             online: true,

@@ -9,6 +9,16 @@ let stRefreshToken = process.env.ST_REFRESH_TOKEN;
 export { stAccessToken };
 // Legacy SmartThings PAT token logic removed. Only OAuth tokens are supported.
 
+export async function ensureValidSTAccessToken({ forceRefresh = false } = {}) {
+    if (forceRefresh || !stAccessToken) {
+        const refreshed = await refreshSTToken();
+        if (!refreshed) {
+            return null;
+        }
+    }
+    return stAccessToken || null;
+}
+
 // Променливи за устройствата, които се запазват от старата логика
 const SMARTTHINGS_DEVICE_ID_ON = process.env.SMARTTHINGS_DEVICE_ID_ON || process.env.SMARTTHINGS_DEVICE_ID;
 const SMARTTHINGS_DEVICE_ID_OFF = process.env.SMARTTHINGS_DEVICE_ID_OFF || process.env.SMARTTHINGS_DEVICE_ID;
@@ -60,18 +70,16 @@ async function refreshSTToken() {
  */
 async function sendSTCommand(deviceId, cmd, retryCount = 0) {
     try {
-        if (!stAccessToken) {
-            const refreshed = await refreshSTToken();
-            if (!refreshed) {
-                console.error('[SMARTTHINGS] ❌ Няма валиден access token за изпращане на команда');
-                return false;
-            }
+        const token = await ensureValidSTAccessToken();
+        if (!token) {
+            console.error('[SMARTTHINGS] ❌ Няма валиден access token за изпращане на команда');
+            return false;
         }
 
         await axios.post(`https://api.smartthings.com/v1/devices/${deviceId}/commands`, {
             commands: [{ component: 'main', capability: 'switch', command: cmd }]
         }, {
-            headers: { Authorization: `Bearer ${stAccessToken}` },
+            headers: { Authorization: `Bearer ${token}` },
             timeout: 10000
         });
 
