@@ -19,13 +19,49 @@ export function registerPowerRoutes(app, {
         res.json({ access_token: token, refreshed: forceRefresh });
     });
 
-    app.get('/api/power-status', (_req, res) => {
-        res.json({
+    app.get('/api/power-status', async (_req, res) => {
+        // respond with cached state but try to refresh from SmartThings device if configured
+        const responseObj = {
             online: true,
             isOn: global.powerState.is_on,
             lastUpdate: global.powerState.last_update.toISOString(),
             source: global.powerState.source
-        });
+        };
+
+        // if we have a device ID and a valid access token, query the real status
+        const deviceId = process.env.SMARTTHINGS_DEVICE_ID_ON || process.env.SMARTTHINGS_DEVICE_ID;
+        if (deviceId) {
+            try {
+                const token = await ensureValidSTAccessToken();
+                if (token) {
+                    const url = `https://api.smartthings.com/v1/devices/${deviceId}/components/main/capabilities/switch/status`;
+                    const stRes = await fetch(url, {
+                        headers: { Authorization: `Bearer ${token}` },
+                        timeout: 10000
+                    });
+                    if (stRes.ok) {
+                        const data = await stRes.json();
+                        // SmartThings returns an array of status entries
+                        const stateEntry = data?.data?.[0] || data?.[0] || null;
+                        if (stateEntry && stateEntry.value !== undefined) {
+                            const realIsOn = stateEntry.value === 'on' || stateEntry.value === true;
+                            responseObj.isOn = realIsOn;
+                            responseObj.source = 'smartthings';
+                            // optionally update global cache
+                            global.powerState.is_on = realIsOn;
+                            global.powerState.last_update = new Date();
+                            global.powerState.source = 'smartthings';
+                        }
+                    } else {
+                        console.warn('[SMARTTHINGS] ⚠️ Неуспешен статус заявка:', stRes.status);
+                    }
+                }
+            } catch (err) {
+                console.warn('[SMARTTHINGS] ⚠️ Грешка при четене на статус:', err.message);
+            }
+        }
+
+        res.json(responseObj);
     });
 
     function normalizePowerState(rawValue) {
