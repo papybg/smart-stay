@@ -115,9 +115,52 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
             return sendSTCommand(deviceId, cmd, retryCount + 1);
         }
 
+        // if forbidden, maybe deviceId is wrong - try discover
+        if (err.response?.status === 403 && retryCount < 1) {
+            console.warn('[SMARTTHINGS] ⚠️ 403 Forbidden - проверявам налични устройства');
+            const newId = await discoverDeviceId(deviceId);
+            if (newId && newId !== deviceId) {
+                console.log('[SMARTTHINGS] ℹ️ Открито ново deviceId:', newId);
+                // update env so future calls use it
+                if (deviceId === SMARTTHINGS_DEVICE_ID_ON) {
+                    process.env.SMARTTHINGS_DEVICE_ID_ON = newId;
+                }
+                if (deviceId === SMARTTHINGS_DEVICE_ID_OFF) {
+                    process.env.SMARTTHINGS_DEVICE_ID_OFF = newId;
+                }
+                return sendSTCommand(newId, cmd, retryCount + 1);
+            }
+        }
+
         console.error('[SMARTTHINGS] ❌ Грешка (команда):', err.response?.data || err.message);
         console.error('[SMARTTHINGS:DEBUG] Full error:', err.response?.data);
         return false; // Връщаме false при грешка
+    }
+}
+
+// try to discover device id by listing devices and matching labels
+async function discoverDeviceId(failedId) {
+    const token = await ensureValidSTAccessToken();
+    if (!token) return null;
+    try {
+        const resp = await axios.get('https://api.smartthings.com/v1/devices', {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const list = resp.data?.items || resp.data;
+        if (!Array.isArray(list)) return null;
+        for (const d of list) {
+            if (d.deviceId === failedId) continue;
+            const lbl = String(d.label || '').toLowerCase();
+            if (lbl.includes('start') || lbl.includes('stop') || lbl.includes('c2c')) {
+                return d.deviceId;
+            }
+        }
+        // fallback: first device of type VIPER
+        const viper = list.find(d => d.type === 'VIPER');
+        return viper?.deviceId || null;
+    } catch (e) {
+        console.warn('[SMARTTHINGS] ⚠️ Неуспех при търсене на устройства:', e.message);
+        return null;
     }
 }
 
