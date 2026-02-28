@@ -2,7 +2,7 @@
 import { neon } from '@neondatabase/serverless';
 import fs from 'fs/promises';
 import path from 'path';
-import { controlPower as sendPowerCommand } from './autoremote.js';
+import { controlPower as sendPowerCommand, controlMeterByAction } from './autoremote.js';
 import { validateToken } from './sessionManager.js';
 
 /**
@@ -600,20 +600,61 @@ const automationClient = {
      */
     async controlPower(state, bookingId = null, source = 'ai_command') {
         try {
+            // first, fetch current known status
+            const status = await this.getPowerStatus({ silent: true });
+            if (status.isOn === state) {
+                console.log('[AUTOMATION] ⚠️ Токът вече е', state ? 'ON' : 'OFF', '- пропускам команда');
+                return true; // няма нужда от действие
+            }
+
             const command = state ? 'meter_on' : 'meter_off';
             console.log('[AUTOMATION] 📡 Управление на тока чрез Samsung API:', command);
 
-            // 🟢 ПРАЩА КОМАНДА КЪМ SAMSUNG SMARTTHINGS API
-            // ℹ️ Историята се записва само от Tasker feedback endpoint (/api/power-status)
             const success = await sendPowerCommand(state);
-            if (success) {
-                console.log('[AUTOMATION] ✅ Команда успешно изпратена към Samsung');
-            } else {
+            if (!success) {
                 console.warn('[AUTOMATION] ⚠️ Неуспешна Samsung команда');
+                return false;
             }
-            return success;
+
+            console.log('[AUTOMATION] ✅ Команда успешно изпратена към Samsung, изчаквам потвърждение');
+
+            // wait a few seconds for Tasker feedback to arrive
+            const confirmed = await this.waitForPowerState(state, 5000);
+            if (!confirmed) {
+                console.warn('[AUTOMATION] ⚠️ Няма потвърждение от Tasker, използвам резервен метод (meter)');
+                // variant2: изпрати на meter-endpoint
+                await sendMeterCommand(state);
+                return false;
+            }
+
+            return true;
         } catch (e) {
             console.error('[AUTOMATION] ❌ Управлението на тока не успя:', e.message);
+            return false;
+        }
+    },
+
+    // helper: waits until power-status reports expected state or timeout
+    async waitForPowerState(expectedState, timeoutMs = 5000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            try {
+                const s = await this.getPowerStatus({ silent: true });
+                if (s.isOn === expectedState) return true;
+            } catch (_) {}
+            await new Promise(r => setTimeout(r, 500));
+        }
+        return false;
+    },
+
+    // helper: send meter command as fallback
+    async sendMeterCommand(state) {
+        try {
+            const action = state ? 'on' : 'off';
+            const result = await controlMeterByAction(action);
+            return result.success;
+        } catch (e) {
+            console.error('[AUTOMATION] ❌ sendMeterCommand error:', e.message);
             return false;
         }
     },
