@@ -553,6 +553,35 @@ const automationClient = {
      */
     async getPowerStatus(options = {}) {
         const { silent = false } = options;
+
+        // Tasker/history is authoritative; try reading latest row from database first
+        if (sql) {
+            try {
+                const rows = await sql`
+                    SELECT is_on, timestamp
+                    FROM power_history
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                `;
+                if (rows.length) {
+                    const raw = rows[0].is_on;
+                    const normalized = automationClient.normalizePowerStateFromStatus(raw);
+                    if (!silent) {
+                        console.log('[AUTOMATION] Статус на тока от power_history:', {
+                            isOn: normalized,
+                            timestamp: rows[0].timestamp,
+                            source: 'db'
+                        });
+                    }
+                    return { online: true, isOn: normalized, source: 'db', timestamp: rows[0].timestamp };
+                }
+            } catch (dbErr) {
+                if (!silent) console.warn('[AUTOMATION] Грешка при четене на power_history:', dbErr.message);
+                // fall through to automation endpoint
+            }
+        }
+
+        // fallback to automation service (previous behaviour)
         try {
             if (!silent) {
                 console.log('[AUTOMATION] Получавам статус на тока от услугата за автоматизация...');

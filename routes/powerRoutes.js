@@ -129,13 +129,31 @@ export function registerPowerRoutes(app, {
             );
 
             if (isDuplicateNoise) {
+                // even if we think it's noise, update cache and also write a row so
+                // that downstream systems (AI, reports) see the latest timestamp.
                 global.powerState.is_on = newState;
                 global.powerState.last_update = timestamp;
                 global.powerState.source = source;
 
+                let dbLoggedNoise = false;
+                let dbLogErrorNoise = null;
+                if (sql) {
+                    try {
+                        await sql`
+                            INSERT INTO power_history (is_on, source, timestamp, battery, booking_id)
+                            VALUES (${newState}, ${source}, ${timestamp}, ${batteryValue}, ${booking_id})
+                        `;
+                        dbLoggedNoise = true;
+                        console.log('[DB] 📝 Duplicate noise entry recorded');
+                    } catch (dbErr) {
+                        dbLogErrorNoise = dbErr.message;
+                        console.error('[DB] 🔴 Error logging duplicate noise:', dbErr.message);
+                    }
+                }
+
                 return res.status(200).json({
                     success: true,
-                    message: 'Duplicate status suppressed',
+                    message: 'Duplicate status suppressed (logged)',
                     received: {
                         is_on: newState,
                         source,
@@ -143,9 +161,9 @@ export function registerPowerRoutes(app, {
                         booking_id,
                         stateChanged: false,
                         duplicateSuppressed: true,
-                        dbLogged: false,
-                        dbLogError: null,
-                        note: 'Потиснат дублиран периодичен update'
+                        dbLogged: dbLoggedNoise,
+                        dbLogError: dbLogErrorNoise,
+                        note: dbLoggedNoise ? 'Потиснат дублиран периодичен update (записан)' : 'Потиснат дублиран периодичен update'
                     }
                 });
             }
@@ -155,7 +173,7 @@ export function registerPowerRoutes(app, {
             global.powerState.source = source;
             recentTaskerStatusBySource.set(source, { state: newState, ts: Date.now() });
 
-            if (sql && (prevState !== newState || forceLog)) {
+            if (sql) {
                 try {
                     console.log(`[DB] 📝 Inserting: is_on=${newState}, source=${source}, battery=${batteryValue}, booking_id=${booking_id}`);
                     await sql`
@@ -163,16 +181,14 @@ export function registerPowerRoutes(app, {
                         VALUES (${newState}, ${source}, ${timestamp}, ${batteryValue}, ${booking_id})
                     `;
                     dbLogged = true;
-                    console.log(`[DB] ✅ Промяна записана: ${prevState ? 'ON' : 'OFF'} → ${newState ? 'ON' : 'OFF'}`);
+                    console.log(`[DB] ✅ Записано: ${prevState ? 'ON' : 'OFF'} → ${newState ? 'ON' : 'OFF'}`);
                 } catch (dbError) {
                     dbLogError = dbError.message;
                     console.error('[DB] 🔴 Грешка при логване:', dbError.message);
                 }
 
                 detectiveSync = await syncBookingsPowerFromLatestHistory();
-            } else if (sql && prevState === newState && !forceLog) {
-                console.log(`[TASKER] ℹ️ Състоянието е същото (${newState ? 'ON' : 'OFF'}), без запис`);
-            } else if (!sql) {
+            } else {
                 dbLogError = 'Database not connected';
                 console.error('[DB] 🔴 КРИТИЧНО: sql е NULL/undefined - База недостъпна!');
             }
