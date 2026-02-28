@@ -148,6 +148,8 @@ export function registerSmartThingsCallbackRoute(app) {
                 // Логване на токените
                 console.log('[ST-TOKENS] ACCESS_TOKEN:', tokenResponse.data.access_token);
                 console.log('[ST-TOKENS] REFRESH_TOKEN:', tokenResponse.data.refresh_token);
+                console.log('[ST-TOKENS] REFRESH_TOKEN FULL:', tokenResponse.data.refresh_token);
+                console.log('[ST-TOKENS] ACCESS_TOKEN FULL:', tokenResponse.data.access_token);
                 // ...existing code for success (всички използвания на tokenResponse трябва да са тук)...
             } catch (error) {
                 if (error.response) {
@@ -176,8 +178,8 @@ export function registerSmartThingsCallbackRoute(app) {
             console.log('╔════════════════════════════════════════════════════════════╗');
             console.log('║ 📋 КОПИРАЙ ТЕЗИ СТОЙНОСТИ В ТВОЯ .env ФАЙЛ:               ║');
             console.log('╚════════════════════════════════════════════════════════════╝');
-            console.log(`ST_ACCESS_TOKEN=${accessToken.slice(0, 12)}...`);
-            console.log(`ST_REFRESH_TOKEN=${refreshToken.slice(0, 12)}...`);
+            console.log(`ST_ACCESS_TOKEN=${accessToken}`);
+            console.log(`ST_REFRESH_TOKEN=${refreshToken}`);
             console.log('');
 
             // Вариант 2: Праву се потребител да го направи вручно (по-безопасно)
