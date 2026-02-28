@@ -4,12 +4,74 @@ import axios from 'axios';
 // НОВ OAuth2-базиран модул за SmartThings
 // ============================================================================
 
+import { neon } from '@neondatabase/serverless';
+
 let stAccessToken = process.env.ST_ACCESS_TOKEN;
 let stRefreshToken = process.env.ST_REFRESH_TOKEN;
 export { stAccessToken };
 // Legacy SmartThings PAT token logic removed. Only OAuth tokens are supported.
 
+// helper to obtain a database connection when needed
+function getSql() {
+    return process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
+}
+
+// -----------------------------------------------------------------------------
+// Persistance helpers (from older implementation)
+// -----------------------------------------------------------------------------
+
+async function loadFromDB() {
+    const sql = getSql();
+    if (!sql) return false;
+    try {
+        // ensure the settings table exists just in case
+        await sql`CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT);`;
+        const rows = await sql`SELECT value FROM system_settings WHERE key = 'stTokens'`;
+        if (rows.length) {
+            try {
+                const obj = JSON.parse(rows[0].value);
+                if (obj?.access && obj?.refresh) {
+                    stAccessToken = obj.access;
+                    stRefreshToken = obj.refresh;
+                    console.log('[SMARTTHINGS] ✅ Заредени OAuth токени от базата');
+                    return true;
+                }
+            } catch (e) {
+                console.warn('[SMARTTHINGS] ⚠️ Грешка при парсване на токени от БД:', e.message);
+            }
+        }
+    } catch (e) {
+        console.warn('[SMARTTHINGS] ⚠️ Неуспешно зареждане на токени от БД:', e.message);
+    }
+    return false;
+}
+
+async function saveToDB(access, refresh) {
+    const sql = getSql();
+    if (!sql) return false;
+    try {
+        await sql`CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT);`;
+        const json = JSON.stringify({ access, refresh });
+        await sql`
+            INSERT INTO system_settings (key, value)
+            VALUES ('stTokens', ${json})
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        `;
+        console.log('[SMARTTHINGS] ✅ OAuth токените запазени в базата');
+        return true;
+    } catch (e) {
+        console.error('[SMARTTHINGS] ❌ Грешка при запис на токени в БД:', e.message);
+        return false;
+    }
+}
+
+
 export async function ensureValidSTAccessToken({ forceRefresh = false } = {}) {
+    // attempt to load saved tokens if none exist yet
+    if ((!stAccessToken && !stRefreshToken)) {
+        await loadFromDB();
+    }
+
     if (forceRefresh || !stAccessToken) {
         const refreshed = await refreshSTToken();
         if (!refreshed) {
@@ -66,6 +128,8 @@ async function refreshSTToken() {
         if (response.data.refresh_token) {
             stRefreshToken = response.data.refresh_token;
         }
+        // persist updated tokens if possible
+        await saveToDB(stAccessToken, stRefreshToken).catch(() => {});
         console.log('[SMARTTHINGS] ✅ Токенът е обновен!');
         return true;
     } catch (err) {
@@ -163,6 +227,19 @@ async function discoverDeviceId(failedId) {
         return null;
     }
 }
+
+// backward-compatible alias for older callers
+export const getSTTokenWithRetry = ensureValidSTAccessToken;
+
+// load any saved tokens on module initialization (before auto-refresh)
+(async () => {
+    if (!stRefreshToken) {
+        const loaded = await loadFromDB();
+        if (loaded) {
+            console.log('[SMARTTHINGS] ℹ️ Зареден refresh token от базата при стартиране');
+        }
+    }
+})();
 
 // Автоматично обновяване на всеки 12 часа
 if (stRefreshToken) {
