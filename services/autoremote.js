@@ -25,6 +25,13 @@ const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 let stAccessToken = process.env.ST_ACCESS_TOKEN;
 let stRefreshToken = process.env.ST_REFRESH_TOKEN;
 export { stAccessToken };
+
+// active helper: simply return the personal access token (no refresh)
+export async function ensureValidSTAccessToken({ forceRefresh = false } = {}) {
+    // refresh logic is deprecated; access token is permanent
+    return process.env.ST_ACCESS_TOKEN || null;
+}
+
 /* DEPRECATED: OAuth refresh/storage helpers (see header comment)
 async function loadTokenFromDB() {
     if (!sql) return;
