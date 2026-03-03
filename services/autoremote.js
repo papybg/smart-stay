@@ -121,11 +121,8 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
         return true;
     } catch (err) {
         if (err.response?.status === 401 && retryCount < 1) {
-            console.log('[SMARTTHINGS] ⚠️ Изтекъл токен, подновявам...');
-            const refreshed = await refreshSTToken();
-            if (!refreshed) return false;
-            global.lastTokenRefresh = new Date().toISOString();
-            return sendSTCommand(deviceId, cmd, retryCount + 1);
+            console.log('[SMARTTHINGS] ⚠️ 401 - Personal Access Token невалиден, проверете ST_ACCESS_TOKEN');
+            return false;
         }
         if (err.response?.status === 403 && retryCount < 1) {
             console.warn('[SMARTTHINGS] ⚠️ 403 Forbidden - проверявам налични устройства');
@@ -210,7 +207,4 @@ export async function controlMeterByAction(action) {
     }
     const success = await sendSTCommand(targetDeviceId, command);
     return { success, command };
-}
-if (!process.env.ST_CLIENT_ID || !process.env.ST_CLIENT_SECRET) {
-    console.warn('[SMARTTHINGS] ⚠️ OAuth2 не е напълно конфигуриран. Липсват ST_CLIENT_ID, ST_CLIENT_SECRET.');
 }
