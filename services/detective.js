@@ -91,7 +91,9 @@ export async function syncBookingsFromGmail() {
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
         // ФИЛТЪР
-        const query = `(from:automated@airbnb.com OR from:pepetrow@gmail.com) (subject:"резервация е потвърдена" OR subject:"reservation confirmed" OR cancelled OR canceled OR анулирана) ${afterFilter}`;
+        // филтърът вече търси само българския шаблон, който хваща
+        // и оригинални, и препратени (Fwd:) писма от Airbnb
+        const query = `(from:automated@airbnb.com OR from:pepetrow@gmail.com) subject:"резервацията е потвърдена" ${afterFilter}`;
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
