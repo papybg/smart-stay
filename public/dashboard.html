@@ -452,7 +452,9 @@
     try {
       const r = await fetch(`${BASE_URL}/api/power-history`);
       const data = await r.json();
-      const rows = (data.history || data || []).slice(0, 5);
+      console.log('[POWER_LOG] response', data);
+      // server returns { count, data: [...], period } so prefer data.data
+      const rows = (data.data || data.history || data || []).slice(0, 5);
       const container = document.getElementById('power-log');
       if (!rows.length) { container.innerHTML = '<div class="px-4 py-3 text-xs text-muted">Няма история</div>'; return; }
       container.innerHTML = rows.map(row => {
@@ -466,7 +468,9 @@
           <span class="font-mono text-xs text-muted">${time}</span>
         </div>`;
       }).join('');
-    } catch(e) {}
+    } catch(e) {
+      console.error('[POWER_LOG] error', e);
+    }
   }
 
   async function checkEmails() {
