@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Smart Stay — Команден Център</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
 <script>
@@ -258,23 +260,23 @@
       <div class="text-sm font-semibold text-slate-400">Ръчно въвеждане</div>
       <div>
         <label class="text-xs text-muted block mb-1">Код на резервация</label>
-        <input type="text" placeholder="HMT5ZF8BMN"/>
+        <input id="res-code" type="text" placeholder="HMT5ZF8BMN"/>
       </div>
       <div>
         <label class="text-xs text-muted block mb-1">Гост</label>
-        <input type="text" placeholder="Tatjana Lepp"/>
+        <input id="res-guest" type="text" placeholder="Tatjana Lepp"/>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="text-xs text-muted block mb-1">Настаняване</label>
-          <input type="datetime-local"/>
+          <input id="res-checkin" type="text" placeholder="YYYY-MM-DD HH:mm"/>
         </div>
         <div>
           <label class="text-xs text-muted block mb-1">Напускане</label>
-          <input type="datetime-local"/>
+          <input id="res-checkout" type="text" placeholder="YYYY-MM-DD HH:mm"/>
         </div>
       </div>
-      <button class="btn-primary w-full">Запази резервация</button>
+      <button id="save-booking-btn" class="btn-primary w-full">Запази резервация</button>
     </div>
   </div>
 
@@ -486,6 +488,74 @@
     btn.disabled = false;
   }
 
+  async function loadGuests() {
+    try {
+      const r = await fetch(`${BASE_URL}/api/bookings`);
+      const bookings = await r.json();
+      const tbody = document.getElementById('guests-table');
+      if (!Array.isArray(bookings)) return;
+      const now = new Date();
+      tbody.innerHTML = bookings.map(b => {
+        const ci = new Date(b.check_in);
+        const co = new Date(b.check_out);
+        let statusHtml;
+        if (ci <= now && now <= co) {
+          statusHtml = '<span class="flex items-center gap-1.5 text-xs font-bold" style="color:#10b981;"><span class="status-dot dot-on"></span> Активен</span>';
+        } else if (co < now) {
+          statusHtml = '<span class="flex items-center gap-1.5 text-xs font-bold text-muted"><span class="status-dot dot-off"></span> Завършен</span>';
+        } else {
+          statusHtml = '<span class="flex items-center gap-1.5 text-xs font-bold" style="color:#f59e0b;"><span class="status-dot dot-warn"></span> Предстои</span>';
+        }
+        return `<tr class="row-hover border-b border-border/40">
+          <td class="px-4 py-3">
+            <div class="font-semibold">${b.guest_name}</div>
+            <div class="font-mono text-xs text-muted">${b.reservation_code}</div>
+          </td>
+          <td class="px-4 py-3">
+            <div class="text-xs">${ci.toLocaleDateString('bg')} — ${co.toLocaleDateString('bg')}</div>
+            <div class="text-xs text-muted">${ci.toLocaleTimeString('bg')} / ${co.toLocaleTimeString('bg')}</div>
+          </td>
+          <td class="px-4 py-3">
+            ${statusHtml}
+          </td>
+        </tr>`;
+      }).join('');
+    } catch(e) { console.error('[GUESTS] 🔴', e); }
+  }
+
+  async function saveBooking() {
+    const code = document.getElementById('res-code').value.trim();
+    const guest = document.getElementById('res-guest').value.trim();
+    const checkin = document.getElementById('res-checkin').value;
+    const checkout = document.getElementById('res-checkout').value;
+    if (!code || !guest || !checkin || !checkout) {
+      showToast('Попълнете всички полета', '#ef4444');
+      return;
+    }
+    try {
+      const r = await fetch(`${BASE_URL}/add-booking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guest_name: guest, reservation_code: code, check_in: checkin, check_out: checkout })
+      });
+      const data = await r.json();
+      if (r.ok && data.success) {
+        showToast('Резервацията е записана', '#10b981');
+        document.getElementById('res-code').value = '';
+        document.getElementById('res-guest').value = '';
+        document.getElementById('res-checkin').value = '';
+        document.getElementById('res-checkout').value = '';
+        loadGuests();
+      } else {
+        showToast('Грешка при запис', '#ef4444');
+        console.error(data);
+      }
+    } catch (e) {
+      showToast('Грешка при запис', '#ef4444');
+      console.error(e);
+    }
+  }
+
   function genPin() {
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
     document.getElementById('pin-code').value = pin;
@@ -547,6 +617,13 @@
   // Init
   loadPowerLog();
   loadPinList();
+  loadGuests();
+
+  // datepickers for reservation fields
+  flatpickr('#res-checkin', { enableTime: true, dateFormat: 'Y-m-d H:i' });
+  flatpickr('#res-checkout', { enableTime: true, dateFormat: 'Y-m-d H:i' });
+
+  document.getElementById('save-booking-btn').addEventListener('click', saveBooking);
 </script>
 </body>
 </html>
