@@ -1,555 +1,494 @@
 <!DOCTYPE html>
-<html lang="bg">
+<html lang="bg" class="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Stay - Команден Център</title>
-    
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Smart Stay — Команден Център</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: { sans: ['DM Sans', 'sans-serif'], mono: ['DM Mono', 'monospace'] },
+        colors: {
+          brand: '#22d3ee',
+          surface: '#0e1117',
+          card: '#161b26',
+          border: '#1f2937',
+          muted: '#6b7280',
+        }
+      }
+    }
+  }
+</script>
+<style>
+  * { font-family: 'DM Sans', sans-serif; }
+  body { background: #0e1117; color: #f1f5f9; min-height: 100dvh; }
 
-    <style>
-        /* --- ОСНОВНИ НАСТРОЙКИ --- */
-        :root { 
-            --primary: #0084ff; 
-            --primary-dark: #006bcf;
-            --secondary: #6f42c1;
-            --success: #10b981;
-            --danger: #ef4444;
-            --bg-light: #f3f4f6; 
-            --card-bg: #ffffff;
-            --text-main: #1f2937;
-            --text-muted: #6b7280;
-        }
-        
-        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background: var(--bg-light); color: var(--text-main); }
-        
-        /* --- КОНТЕЙНЕР --- */
-        .main-container {
-            max-width: 1000px;
-            margin: 30px auto;
-            padding: 0 20px;
-            display: grid;
-            gap: 24px;
-        }
+  .tab-btn { transition: all 0.2s; }
+  .tab-btn.active { color: #22d3ee; }
+  .tab-btn.active .tab-icon { background: rgba(34,211,238,0.12); color: #22d3ee; }
 
-        /* --- КАРТИ (PANELS) --- */
-        .card {
-            background: var(--card-bg);
-            border-radius: 16px;
-            padding: 24px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-            transition: transform 0.2s;
-        }
-        
-        h2 { margin-top: 0; font-size: 1.25rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 10px; }
-        
-        /* --- БУТОНИ --- */
-        .btn {
-            border: none;
-            padding: 10px 16px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.95rem;
-        }
-        .btn-primary { background: var(--primary); color: white; width: 100%; justify-content: center; }
-        .btn-primary:hover { background: var(--primary-dark); }
-        
-        .btn-sync { background: var(--secondary); color: white; }
-        .btn-sync:hover { filter: brightness(1.1); }
+  .card { background: #161b26; border: 1px solid #1f2937; border-radius: 16px; }
 
-        .btn-icon { background: none; color: var(--text-muted); padding: 5px; }
-        .btn-icon:hover { color: var(--danger); background: #fee2e2; }
+  .power-btn {
+    width: 130px; height: 130px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; cursor: pointer; border: none; transition: all 0.18s;
+    font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 0.85rem; letter-spacing: 0.05em;
+  }
+  .power-btn:active { transform: scale(0.95); }
+  .power-on { background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 0 32px rgba(16,185,129,0.35); color: white; }
+  .power-off { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 0 32px rgba(239,68,68,0.35); color: white; }
+  .power-on:hover { box-shadow: 0 0 48px rgba(16,185,129,0.55); }
+  .power-off:hover { box-shadow: 0 0 48px rgba(239,68,68,0.55); }
 
-        /* --- INPUTS --- */
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-        .form-group { display: flex; flex-direction: column; gap: 6px; }
-        
-        label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
-        input {
-            padding: 10px 12px;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 0.95rem;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 132, 255, 0.1); }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot-on { background: #10b981; box-shadow: 0 0 8px #10b981; animation: pulse-green 2s infinite; }
+  .dot-off { background: #ef4444; }
+  .dot-warn { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+  @keyframes pulse-green { 0%,100%{opacity:1} 50%{opacity:0.5} }
 
-        /* --- REMOTE CONTROL (VISUAL ONLY) --- */
-        .remote-status {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 15px;
-            background: #f9fafb;
-            border-radius: 12px;
-            border: 1px solid #e5e7eb;
-        }
-        .status-badge {
-            font-size: 0.8rem;
-            font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 20px;
-            text-transform: uppercase;
-        }
-        .status-auto { background: #dbeafe; color: #1e40af; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
 
-        /* --- PIN DEPOT STYLES --- */
-        .pin-stats {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #f3f4f6;
-        }
-        .count-bubble {
-            background: var(--bg-light);
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-weight: 700;
-            font-size: 0.9rem;
-        }
-        .count-low { background: #fecaca; color: #991b1b; }
-        .count-ok { background: #d1fae5; color: #065f46; }
+  .pin-badge-free { background: rgba(16,185,129,0.1); color: #10b981; }
+  .pin-badge-used { background: rgba(239,68,68,0.1); color: #ef4444; }
 
-        .pin-list-container {
-            margin-top: 15px;
-            max-height: 200px;
-            overflow-y: auto;
-            border: 1px solid #f3f4f6;
-            border-radius: 8px;
-        }
-        .pin-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 15px;
-            border-bottom: 1px solid #f3f4f6;
-            font-size: 0.9rem;
-        }
-        .pin-item:last-child { border-bottom: none; }
-        .pin-used { text-decoration: line-through; color: #9ca3af; }
-        .pin-code { font-family: monospace; font-weight: 700; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+  .row-hover { transition: background 0.15s; }
+  .row-hover:hover { background: #1c2333; }
 
-        /* --- TABLE --- */
-        .table-responsive { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
-        th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 12px; border-bottom: 2px solid #e5e7eb; }
-        td { padding: 12px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-        
-        .badge { padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
-        .badge-res { background: #eff6ff; color: var(--primary); }
-        
-        /* Mobile */
-        @media (max-width: 768px) {
-            .form-grid { grid-template-columns: 1fr; }
-        }
-    </style>
+  input, select {
+    background: #0e1117; border: 1px solid #1f2937; border-radius: 10px;
+    color: #f1f5f9; padding: 10px 14px; width: 100%; font-family: 'DM Sans', sans-serif;
+    outline: none; transition: border-color 0.2s;
+  }
+  input:focus, select:focus { border-color: #22d3ee; }
+  input::placeholder { color: #4b5563; }
+
+  .btn-primary {
+    background: #22d3ee; color: #0e1117; border: none; border-radius: 10px;
+    padding: 11px 20px; font-weight: 700; cursor: pointer; transition: all 0.2s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .btn-primary:hover { background: #06b6d4; }
+  .btn-primary:active { transform: scale(0.97); }
+
+  .btn-ghost {
+    background: #1f2937; color: #94a3b8; border: none; border-radius: 10px;
+    padding: 11px 20px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .btn-ghost:hover { background: #273344; color: #f1f5f9; }
+
+  .meter-stat { background: #0e1117; border: 1px solid #1f2937; border-radius: 12px; padding: 14px 18px; }
+
+  .nav-bottom { background: rgba(14,17,23,0.92); backdrop-filter: blur(16px); border-top: 1px solid #1f2937; }
+
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 4px; }
+
+  .spinner { border: 2px solid #1f2937; border-top-color: #22d3ee; border-radius: 50%; width: 18px; height: 18px; animation: spin 0.7s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: #1f2937; color: #f1f5f9; padding: 10px 20px; border-radius: 30px; font-size: 0.85rem; font-weight: 600; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; border: 1px solid #374151; }
+  .toast.show { opacity: 1; }
+</style>
 </head>
 <body>
 
-    <header style="background: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <span class="material-symbols-outlined" style="color: var(--primary); font-size: 32px;">smart_toy</span>
-            <span style="font-weight: 700; font-size: 1.2rem;">Smart Stay</span>
+<!-- HEADER -->
+<header class="sticky top-0 z-40 px-5 py-3 flex items-center justify-between" style="background:rgba(14,17,23,0.92);backdrop-filter:blur(16px);border-bottom:1px solid #1f2937;">
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:rgba(34,211,238,0.12);">
+      <span class="material-icons-round text-brand" style="font-size:20px;">bolt</span>
+    </div>
+    <div>
+      <div class="font-bold text-sm leading-tight">Smart Stay</div>
+      <div class="text-xs text-muted font-mono">Aspen Valley</div>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <span class="status-dot dot-on" id="header-dot"></span>
+    <span class="text-xs text-muted" id="header-status">ТОК: ВКЛ</span>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="pb-28 px-4 pt-5 max-w-lg mx-auto">
+
+  <!-- TAB: ЕЛЕКТРОМЕР -->
+  <div class="tab-content active" id="tab-meter">
+    <h2 class="text-base font-bold mb-4 flex items-center gap-2 text-slate-300">
+      <span class="material-icons-round text-brand" style="font-size:18px;">electric_meter</span> Електромер
+    </h2>
+
+    <!-- Stats row -->
+    <div class="grid grid-cols-3 gap-3 mb-5">
+      <div class="meter-stat">
+        <div class="text-xs text-muted mb-1">Статус</div>
+        <div class="flex items-center gap-2">
+          <span class="status-dot dot-on" id="meter-dot"></span>
+          <span class="font-bold text-sm" id="meter-status-text">ВКЛ</span>
         </div>
-        <button class="btn btn-sync" onclick="manualSync()" id="syncBtn">
-            <span class="material-symbols-outlined">sync</span>
-            Sync
-        </button>
-    </header>
-
-    <div class="main-container">
-
-        <div class="card">
-            <h2><span class="material-symbols-outlined">bolt</span> Статус на Електромера</h2>
-            <div class="remote-status">
-                <div>
-                    <span style="display: block; font-weight: 600; margin-bottom: 4px;">Автоматичен режим</span>
-                    <small style="color: var(--text-muted);">Управлява се от Tasker & Сцени</small>
-                </div>
-                <span class="status-badge status-auto">SYSTEM ACTIVE</span>
-            </div>
-            
-            <!-- Power History Table -->
-            <div style="margin-top: 20px;">
-                <h3 style="font-size: 1rem; margin: 0 0 15px 0; color: var(--text-main);">
-                    <span class="material-symbols-outlined" style="vertical-align: middle; margin-right: 8px; font-size: 20px;">history</span>
-                    История (последния месец)
-                </h3>
-                <div class="table-responsive">
-                    <table id="powerHistoryTable">
-                        <thead>
-                            <tr>
-                                <th>Време</th>
-                                <th>Състояние</th>
-                                <th>Източник</th>
-                                <th>Актьор</th>
-                            </tr>
-                        </thead>
-                        <tbody id="powerHistoryBody">
-                            <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Зареждане...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            </div>
-
-        <div class="card">
-            <h2><span class="material-symbols-outlined">lock_open</span> Склад за Пароли (PIN Depot)</h2>
-            
-            <div class="pin-stats">
-                <span style="font-size: 0.9rem; color: var(--text-muted);">Заредете пароли, които работят в Tuya</span>
-                <span id="pinCounterBadge" class="count-bubble count-low">...</span>
-            </div>
-
-            <div class="form-grid" style="margin-bottom: 0; align-items: end;">
-                <div class="form-group">
-                    <label>Име (напр. "User 5")</label>
-                    <input type="text" id="pinName" placeholder="Tuya Slot...">
-                </div>
-                <div class="form-group">
-                    <label>ПИН Код</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="text" id="pinCode" placeholder="123456" style="width: 100%;">
-                        <button class="btn" style="background: var(--success); color: white;" onclick="addPin()">
-                            <span class="material-symbols-outlined">add</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="pinList" class="pin-list-container">
-                </div>
-        </div>
-
-        <div class="card">
-            <h2><span class="material-symbols-outlined">calendar_add_on</span> Нова Резервация</h2>
-            
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>Име на гост</label>
-                    <input type="text" id="guestName" placeholder="Име Фамилия">
-                </div>
-                <div class="form-group">
-                    <label>Код на резервация</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="text" id="resCode" placeholder="Код за резервация">
-                        <button class="btn" style="background: #e5e7eb; padding: 0 10px;" onclick="generateCode()">🎲</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>Настаняване (Start)</label>
-                    <input type="datetime-local" id="checkIn">
-                </div>
-                <div class="form-group">
-                    <label>Напускане (End)</label>
-                    <input type="datetime-local" id="checkOut">
-                </div>
-            </div>
-
-            <p id="errorMsg" style="color: var(--danger); font-size: 0.9rem; display: none; margin-top: 0;">⚠️ Засичане на дати!</p>
-            <button class="btn btn-primary" onclick="addBooking()">Запиши Резервация</button>
-        </div>
-
-        <div class="card">
-            <h2><span class="material-symbols-outlined">list_alt</span> Активни Гости</h2>
-            <div class="table-responsive">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Гост</th>
-                            <th>Период</th>
-                            <th>ПИН</th>
-                            <th>Действие</th>
-                        </tr>
-                    </thead>
-                    <tbody id="bookingList">
-                        </tbody>
-                </table>
-            </div>
-            <div style="margin-top: 15px; text-align: right;">
-                <a href="/feed.ics" target="_blank" style="color: var(--primary); text-decoration: none; font-size: 0.9rem; font-weight: 600;">
-                    📥 Свали iCal Календар
-                </a>
-            </div>
-        </div>
-
+      </div>
+      <div class="meter-stat">
+        <div class="text-xs text-muted mb-1">Последна</div>
+        <div class="font-mono text-xs font-medium text-slate-300" id="last-cmd-time">—</div>
+      </div>
+      <div class="meter-stat">
+        <div class="text-xs text-muted mb-1">Команда</div>
+        <div class="font-mono text-xs font-medium text-slate-300" id="last-cmd-val">—</div>
+      </div>
     </div>
 
-    <script>
-        /* =========================================
-           1. LEGACY TUYA CONTROL (COMMENTED OUT)
-           =========================================
-           Функциите за директен контрол са спрени,
-           защото вече ползваме Tasker/Backend Scenes.
-        */
-        
-        // async function togglePower() {
-        //     console.log("Legacy Toggle pressed - Action handled by automation now.");
-        //     alert("Тази функция вече е автоматична!");
-        // }
+    <!-- Big buttons -->
+    <div class="card p-6 flex flex-col items-center gap-6">
+      <p class="text-xs text-muted uppercase tracking-widest font-semibold">Управление на тока</p>
+      <div class="flex items-center gap-8">
+        <button class="power-btn power-on" onclick="sendPowerCmd('on')">
+          <span class="material-icons-round" style="font-size:36px;">power</span>
+          ВКЛЮЧИ
+        </button>
+        <button class="power-btn power-off" onclick="sendPowerCmd('off')">
+          <span class="material-icons-round" style="font-size:36px;">power_off</span>
+          ИЗКЛЮЧИ
+        </button>
+      </div>
+      <div id="cmd-feedback" class="text-xs text-muted h-5"></div>
+    </div>
 
-        /* =========================================
-           2. BASIC CONFIG & HELPERS
-           ========================================= */
-        let currentBookings = [];
+    <!-- Log rows -->
+    <div class="card mt-4 overflow-hidden">
+      <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+        <span class="text-sm font-semibold">История</span>
+        <span class="text-xs text-muted">последни 5</span>
+      </div>
+      <div id="power-log">
+        <div class="px-4 py-3 text-xs text-muted row-hover">Зареждане...</div>
+      </div>
+    </div>
+  </div>
 
-        function formatBG(dateStr) {
-            if (!dateStr) return '---';
-            return new Date(dateStr).toLocaleString('bg-BG', { 
-                timeZone: 'UTC', 
-                day: '2-digit', month: '2-digit', 
-                hour: '2-digit', minute: '2-digit' 
-            });
-        }
+  <!-- TAB: СКЛАД ПАРОЛИ -->
+  <div class="tab-content" id="tab-depot">
+    <h2 class="text-base font-bold mb-4 flex items-center gap-2 text-slate-300">
+      <span class="material-icons-round text-brand" style="font-size:18px;">vpn_key</span> Склад Пароли
+    </h2>
 
-        function generateCode() {
-            const rnd = Math.floor(Math.random() * 900000) + 100000;
-            document.getElementById('resCode').value = 'HM' + rnd;
-        }
+    <!-- New PIN form -->
+    <div class="card p-5 mb-4 space-y-4">
+      <div class="text-sm font-semibold text-slate-400">Нов ПИН слот</div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-muted block mb-1">Потребител</label>
+          <input type="text" id="pin-name" placeholder="Tuya Slot 5"/>
+        </div>
+        <div>
+          <label class="text-xs text-muted block mb-1">ПИН Код</label>
+          <div class="relative">
+            <input type="text" id="pin-code" placeholder="123456" class="font-mono pr-20"/>
+            <button onclick="genPin()" class="absolute right-2 top-1/2 -translate-y-1/2 text-brand text-xs font-bold">Генерирай</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn-primary w-full">Запази в Depot</button>
+    </div>
 
-        /* =========================================
-           2.5 POWER HISTORY LOADER
-           ========================================= */
-        async function loadPowerHistory() {
-            try {
-                const res = await fetch('/api/power-history?days=30');
-                const { data } = await res.json();
-                
-                const tbody = document.getElementById('powerHistoryBody');
-                if (!data || data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Няма история</td></tr>';
-                    return;
-                }
-                
-                tbody.innerHTML = '';
-                data.forEach(record => {
-                    const actorLabel = (record.booking_id || '').toString().trim() || (record.source || '').toString().trim() || '---';
-                    
-                    const stateText = record.is_on ? '✅ ВКЛ' : '❌ ИЗКЛ';
-                    const normalizedSource = (record.source || '').toString().toLowerCase();
-                    const sourceEmoji = normalizedSource.includes('tasker') ? '📱' : 
-                                       normalizedSource.includes('scheduler') || normalizedSource.includes('cron') ? '⏰' : 
-                                       normalizedSource.includes('guest') ? '👤' : 
-                                       normalizedSource.includes('host') ? '🧑‍💼' : '🔧';
-                    
-                    const row = `
-                        <tr>
-                            <td>${formatBG(record.timestamp)}</td>
-                            <td><strong>${stateText}</strong></td>
-                            <td>${sourceEmoji} ${record.source}</td>
-                            <td>${actorLabel}</td>
-                        </tr>
-                    `;
-                    tbody.innerHTML += row;
-                });
-            } catch (e) {
-                console.error('[POWER HISTORY] Грешка:', e);
-                document.getElementById('powerHistoryBody').innerHTML = 
-                    '<tr><td colspan="4" style="text-align: center; color: var(--danger);">Грешка при зареждане</td></tr>';
-            }
-        }
+    <!-- PIN list -->
+    <div class="card overflow-hidden">
+      <div class="px-4 py-3 border-b border-border flex justify-between items-center">
+        <span class="text-sm font-semibold">Активни слотове</span>
+        <div class="text-xs font-mono bg-brand/10 text-brand px-2 py-1 rounded-full">12 / 20</div>
+      </div>
+      <div id="pin-list">
+        <!-- sample rows -->
+        <div class="px-4 py-3 flex items-center justify-between row-hover border-b border-border/50">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-border flex items-center justify-center font-mono text-sm font-bold text-brand">01</div>
+            <div>
+              <div class="text-sm font-semibold">Парола 0</div>
+              <div class="font-mono text-xs text-muted">123456</div>
+            </div>
+          </div>
+          <span class="pin-badge-used text-xs font-bold px-3 py-1 rounded-full">Заета</span>
+        </div>
+        <div class="px-4 py-3 flex items-center justify-between row-hover border-b border-border/50">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-border flex items-center justify-center font-mono text-sm font-bold text-brand">02</div>
+            <div>
+              <div class="text-sm font-semibold">Тест 1</div>
+              <div class="font-mono text-xs text-muted">111111</div>
+            </div>
+          </div>
+          <span class="pin-badge-used text-xs font-bold px-3 py-1 rounded-full">Заета</span>
+        </div>
+        <div class="px-4 py-3 flex items-center justify-between row-hover">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-border flex items-center justify-center font-mono text-sm font-bold text-brand">03</div>
+            <div>
+              <div class="text-sm font-semibold">Test 3</div>
+              <div class="font-mono text-xs text-muted">333333</div>
+            </div>
+          </div>
+          <span class="pin-badge-free text-xs font-bold px-3 py-1 rounded-full">Свободна</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        /* =========================================
-           3. BOOKING LOGIC
-           ========================================= */
-        async function loadBookings() {
-            try {
-                const res = await fetch('/bookings');
-                currentBookings = await res.json();
-                renderTable(currentBookings);
-            } catch (e) { console.error("Load error:", e); }
-        }
+  <!-- TAB: НОВА РЕЗЕРВАЦИЯ -->
+  <div class="tab-content" id="tab-booking">
+    <h2 class="text-base font-bold mb-4 flex items-center gap-2 text-slate-300">
+      <span class="material-icons-round text-brand" style="font-size:18px;">calendar_add_on</span> Нова Резервация
+    </h2>
 
-        function renderTable(bookings) {
-            const tbody = document.getElementById('bookingList');
-            tbody.innerHTML = '';
-            bookings.forEach(b => {
-                const row = `
-                    <tr>
-                        <td>
-                            <div style="font-weight: 600;">${b.guest_name}</div>
-                            <span class="badge badge-res">${b.reservation_code}</span>
-                        </td>
-                        <td>
-                            <div style="font-size: 0.85rem;">
-                                <span style="color:var(--success)">IN:</span> ${formatBG(b.check_in)}<br>
-                                <span style="color:var(--danger)">OUT:</span> ${formatBG(b.check_out)}
-                            </div>
-                        </td>
-                        <td>
-                            <span class="pin-code">${b.lock_pin || '---'}</span>
-                        </td>
-                        <td style="text-align: right;">
-                            <button class="btn btn-icon" onclick="deleteBooking(${b.id})">
-                                <span class="material-symbols-outlined">delete</span>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-                tbody.innerHTML += row;
-            });
-        }
+    <!-- Check emails -->
+    <button onclick="checkEmails()" class="w-full mb-4 flex items-center justify-center gap-2 py-4 rounded-2xl font-bold text-sm transition-all"
+      style="background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(34,211,238,0.05));border:1.5px solid rgba(34,211,238,0.2);color:#22d3ee;" id="email-check-btn">
+      <span class="material-icons-round" style="font-size:20px;">mark_email_unread</span>
+      Провери имейли
+    </button>
+    <div id="email-result" class="mb-4 text-sm text-muted text-center h-5"></div>
 
-        async function addBooking() {
-            const name = document.getElementById('guestName').value;
-            const code = document.getElementById('resCode').value;
-            const inVal = document.getElementById('checkIn').value;
-            const outVal = document.getElementById('checkOut').value;
-            
-            if (!name || !code || !inVal || !outVal) return alert("Моля попълнете всички полета!");
+    <!-- Manual form -->
+    <div class="card p-5 space-y-4">
+      <div class="text-sm font-semibold text-slate-400">Ръчно въвеждане</div>
+      <div>
+        <label class="text-xs text-muted block mb-1">Код на резервация</label>
+        <input type="text" placeholder="HMT5ZF8BMN"/>
+      </div>
+      <div>
+        <label class="text-xs text-muted block mb-1">Гост</label>
+        <input type="text" placeholder="Tatjana Lepp"/>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-muted block mb-1">Настаняване</label>
+          <input type="datetime-local"/>
+        </div>
+        <div>
+          <label class="text-xs text-muted block mb-1">Напускане</label>
+          <input type="datetime-local"/>
+        </div>
+      </div>
+      <button class="btn-primary w-full">Запази резервация</button>
+    </div>
+  </div>
 
-            // Валидация за застъпване
-            const start = new Date(inVal);
-            const end = new Date(outVal);
-            const hasOverlap = currentBookings.some(b => {
-                const bStart = new Date(b.check_in);
-                const bEnd = new Date(b.check_out);
-                return start < bEnd && end > bStart;
-            });
+  <!-- TAB: ГОСТИ -->
+  <div class="tab-content" id="tab-guests">
+    <h2 class="text-base font-bold mb-4 flex items-center gap-2 text-slate-300">
+      <span class="material-icons-round text-brand" style="font-size:18px;">group</span> Гости
+    </h2>
 
-            if (hasOverlap) {
-                document.getElementById('errorMsg').style.display = 'block';
-                return;
-            }
-            document.getElementById('errorMsg').style.display = 'none';
+    <div class="card overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr style="border-bottom:1px solid #1f2937;">
+              <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Гост</th>
+              <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Период</th>
+              <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Действие</th>
+            </tr>
+          </thead>
+          <tbody id="guests-table">
+            <tr class="row-hover border-b border-border/40">
+              <td class="px-4 py-3">
+                <div class="font-semibold">Tatjana Lepp</div>
+                <div class="font-mono text-xs text-muted">HMT5ZF8BMN</div>
+              </td>
+              <td class="px-4 py-3">
+                <div class="text-xs">2.03 — 8.03</div>
+                <div class="text-xs text-muted">14:00 / 12:00</div>
+              </td>
+              <td class="px-4 py-3">
+                <span class="flex items-center gap-1.5 text-xs font-bold" style="color:#10b981;">
+                  <span class="status-dot dot-on"></span> Активен
+                </span>
+              </td>
+            </tr>
+            <tr class="row-hover border-b border-border/40">
+              <td class="px-4 py-3">
+                <div class="font-semibold">Jon Murphy</div>
+                <div class="font-mono text-xs text-muted">HMPPNX84JY</div>
+              </td>
+              <td class="px-4 py-3">
+                <div class="text-xs">14.02 — 19.02</div>
+                <div class="text-xs text-muted">14:00 / 12:00</div>
+              </td>
+              <td class="px-4 py-3">
+                <span class="flex items-center gap-1.5 text-xs font-bold text-muted">
+                  <span class="status-dot dot-off"></span> Завършен
+                </span>
+              </td>
+            </tr>
+            <tr class="row-hover">
+              <td class="px-4 py-3">
+                <div class="font-semibold">Sample Guest</div>
+                <div class="font-mono text-xs text-muted">HM123456</div>
+              </td>
+              <td class="px-4 py-3">
+                <div class="text-xs">15.03 — 20.03</div>
+                <div class="text-xs text-muted">14:00 / 12:00</div>
+              </td>
+              <td class="px-4 py-3">
+                <span class="flex items-center gap-1.5 text-xs font-bold" style="color:#f59e0b;">
+                  <span class="status-dot dot-warn"></span> Предстои
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-            // Изпращане към сървъра
-            try {
-                const res = await fetch('/add-booking', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        guest_name: name,
-                        reservation_code: code,
-                        check_in: start.toISOString(),
-                        check_out: end.toISOString()
-                    })
-                });
+</main>
 
-                if (res.ok) {
-                    const data = await res.json();
-                    alert(`Резервация успешна!\nПИН Код: ${data.pin}`);
-                    document.getElementById('guestName').value = '';
-                    document.getElementById('resCode').value = '';
-                    loadBookings();
-                    loadPins(); // Обновяваме склада
-                } else {
-                    alert("Грешка при запис!");
-                }
-            } catch (e) { console.error(e); }
-        }
+<!-- BOTTOM NAV -->
+<nav class="nav-bottom fixed bottom-0 left-0 right-0 px-2 py-3 flex items-center justify-around z-50">
+  <button class="tab-btn active flex flex-col items-center gap-1 px-4 py-1" onclick="switchTab('meter', this)">
+    <div class="tab-icon w-10 h-10 rounded-xl flex items-center justify-center transition-all" style="background:rgba(34,211,238,0.12);">
+      <span class="material-icons-round" style="font-size:20px;color:#22d3ee;">electric_meter</span>
+    </div>
+    <span class="text-[10px] font-bold text-brand">Електромер</span>
+  </button>
+  <button class="tab-btn flex flex-col items-center gap-1 px-4 py-1" onclick="switchTab('depot', this)">
+    <div class="tab-icon w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-border">
+      <span class="material-icons-round text-muted" style="font-size:20px;">vpn_key</span>
+    </div>
+    <span class="text-[10px] font-bold text-muted">Пароли</span>
+  </button>
+  <button class="tab-btn flex flex-col items-center gap-1 px-4 py-1" onclick="switchTab('booking', this)">
+    <div class="tab-icon w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-border">
+      <span class="material-icons-round text-muted" style="font-size:20px;">calendar_add_on</span>
+    </div>
+    <span class="text-[10px] font-bold text-muted">Резервация</span>
+  </button>
+  <button class="tab-btn flex flex-col items-center gap-1 px-4 py-1" onclick="switchTab('guests', this)">
+    <div class="tab-icon w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-border">
+      <span class="material-icons-round text-muted" style="font-size:20px;">group</span>
+    </div>
+    <span class="text-[10px] font-bold text-muted">Гости</span>
+  </button>
+</nav>
 
-        async function deleteBooking(id) {
-            if(confirm('Изтриване на тази резервация?')) {
-                await fetch(`/bookings/${id}`, { method: 'DELETE' });
-                loadBookings();
-            }
-        }
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
 
-        async function manualSync() {
-            const btn = document.getElementById('syncBtn');
-            btn.innerText = 'Checking...';
-            btn.disabled = true;
-            try {
-                await fetch('/sync');
-                loadBookings();
-                loadPins();
-            } catch(e) { alert("Sync Error"); }
-            finally { 
-                btn.innerHTML = '<span class="material-symbols-outlined">sync</span> Sync';
-                btn.disabled = false;
-            }
-        }
+<script>
+  const BASE_URL = 'https://smart-stay.onrender.com';
+  let powerState = true;
 
-        /* =========================================
-           4. PIN DEPOT LOGIC (NEW)
-           ========================================= */
-        async function loadPins() {
-            try {
-                const res = await fetch('/api/pins');
-                const pins = await res.json();
-                
-                const listDiv = document.getElementById('pinList');
-                const badge = document.getElementById('pinCounterBadge');
-                listDiv.innerHTML = '';
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.remove('active');
+      b.querySelector('.tab-icon').style.background = '#1f2937';
+      b.querySelector('.material-icons-round').style.color = '#6b7280';
+      b.querySelector('span:last-child').style.color = '#6b7280';
+    });
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+    btn.querySelector('.tab-icon').style.background = 'rgba(34,211,238,0.12)';
+    btn.querySelector('.material-icons-round').style.color = '#22d3ee';
+    btn.querySelector('span:last-child').style.color = '#22d3ee';
+  }
 
-                const freeCount = pins.filter(p => !p.is_used).length;
-                badge.innerText = `${freeCount} Свободни`;
-                badge.className = freeCount < 2 ? 'count-bubble count-low' : 'count-bubble count-ok';
+  function showToast(msg, color) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.borderColor = color || '#374151';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2800);
+  }
 
-                pins.forEach(p => {
-                    const item = document.createElement('div');
-                    item.className = 'pin-item';
-                    item.innerHTML = `
-                        <div>
-                            <span class="${p.is_used ? 'pin-used' : ''}" style="font-weight:600;">${p.pin_name}</span>
-                            <span class="pin-code" style="margin-left: 8px;">${p.pin_code}</span>
-                            ${p.is_used ? '<span style="font-size:0.75rem; color:var(--text-muted); margin-left:5px;">(USED)</span>' : ''}
-                        </div>
-                        <button class="btn btn-icon" onclick="deletePin(${p.id})">
-                            <span class="material-symbols-outlined" style="font-size:18px;">close</span>
-                        </button>
-                    `;
-                    listDiv.appendChild(item);
-                });
-            } catch (e) { console.error(e); }
-        }
+  function updatePowerUI(isOn) {
+    powerState = isOn;
+    const dot = document.getElementById('meter-dot');
+    const txt = document.getElementById('meter-status-text');
+    const hdot = document.getElementById('header-dot');
+    const htxt = document.getElementById('header-status');
+    dot.className = 'status-dot ' + (isOn ? 'dot-on' : 'dot-off');
+    hdot.className = 'status-dot ' + (isOn ? 'dot-on' : 'dot-off');
+    txt.textContent = isOn ? 'ВКЛ' : 'ИЗКЛ';
+    txt.style.color = isOn ? '#10b981' : '#ef4444';
+    htxt.textContent = 'ТОК: ' + (isOn ? 'ВКЛ' : 'ИЗКЛ');
+  }
 
-        async function addPin() {
-            const name = document.getElementById('pinName').value;
-            const code = document.getElementById('pinCode').value;
-            if(!name || !code) return alert("Нужно е име и код!");
+  async function sendPowerCmd(cmd) {
+    const fb = document.getElementById('cmd-feedback');
+    fb.innerHTML = '<span class="spinner"></span>';
+    try {
+      const r = await fetch(`${BASE_URL}/api/meter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: cmd, host: true })
+      });
+      const data = await r.json();
+      updatePowerUI(cmd === 'on');
+      const now = new Date().toLocaleTimeString('bg');
+      document.getElementById('last-cmd-time').textContent = now;
+      document.getElementById('last-cmd-val').textContent = cmd === 'on' ? 'ВКЛЮЧИ' : 'ИЗКЛЮЧИ';
+      showToast(cmd === 'on' ? '✅ Токът е включен' : '🔴 Токът е изключен', cmd === 'on' ? '#10b981' : '#ef4444');
+      fb.textContent = '✓ Изпратено';
+      loadPowerLog();
+    } catch(e) {
+      fb.textContent = '✗ Грешка';
+      showToast('❌ Грешка при команда');
+    }
+  }
 
-            try {
-                const response = await fetch('/api/pins', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ pin_name: name, pin_code: code })
-                });
+  async function loadPowerLog() {
+    try {
+      const r = await fetch(`${BASE_URL}/api/power-history`);
+      const data = await r.json();
+      const rows = (data.history || data || []).slice(0, 5);
+      const container = document.getElementById('power-log');
+      if (!rows.length) { container.innerHTML = '<div class="px-4 py-3 text-xs text-muted">Няма история</div>'; return; }
+      container.innerHTML = rows.map(row => {
+        const isOn = row.is_on;
+        const time = new Date(row.timestamp).toLocaleString('bg');
+        return `<div class="px-4 py-3 flex items-center justify-between row-hover border-b border-border/30">
+          <div class="flex items-center gap-3">
+            <span class="status-dot ${isOn ? 'dot-on' : 'dot-off'}"></span>
+            <span class="text-sm font-semibold" style="color:${isOn ? '#10b981' : '#ef4444'}">${isOn ? 'ВКЛЮЧЕН' : 'ИЗКЛЮЧЕН'}</span>
+          </div>
+          <span class="font-mono text-xs text-muted">${time}</span>
+        </div>`;
+      }).join('');
+    } catch(e) {}
+  }
 
-                if (response.ok) {
-                    document.getElementById('pinName').value = '';
-                    document.getElementById('pinCode').value = '';
-                } else {
-                    const errorData = await response.json().catch(() => ({ error: 'Невалиден JSON отговор от сървъра' }));
-                    alert(`Грешка при запис: ${errorData.error || response.statusText}`);
-                }
-            } catch (e) {
-                console.error('Add PIN fetch error:', e);
-                alert(`Критична грешка при изпращане на заявката: ${e.message}`);
-            }
-            
-            loadPins();
-        }
+  async function checkEmails() {
+    const btn = document.getElementById('email-check-btn');
+    const res = document.getElementById('email-result');
+    btn.innerHTML = '<span class="spinner"></span> Проверявам...';
+    btn.disabled = true;
+    try {
+      const r = await fetch(`${BASE_URL}/api/email/sync`, { method: 'POST' });
+      const data = await r.json();
+      res.textContent = data.message || 'Готово';
+      res.style.color = '#10b981';
+      showToast('📧 Имейлите са проверени', '#22d3ee');
+    } catch(e) {
+      res.textContent = 'Грешка при проверка';
+      res.style.color = '#ef4444';
+    }
+    btn.innerHTML = '<span class="material-icons-round" style="font-size:20px;">mark_email_unread</span> Провери имейли';
+    btn.disabled = false;
+  }
 
-        async function deletePin(id) {
-            if(confirm('Изтриване на този ПИН от склада?')) {
-                await fetch(`/api/pins/${id}`, { method: 'DELETE' });
-                loadPins();
-            }
-        }
+  function genPin() {
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    document.getElementById('pin-code').value = pin;
+  }
 
-        // --- INIT ---
-        loadBookings();
-        loadPins();
-        loadPowerHistory();
-        
-        // Обновяване на историята всеки 30 секунди
-        // setInterval(loadPowerHistory, 30000);
-
-    </script>
+  // Init
+  loadPowerLog();
+</script>
 </body>
 </html>
