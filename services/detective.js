@@ -91,14 +91,19 @@ export async function syncBookingsFromGmail() {
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
         // ФИЛТЪР
-        // филтърът вече търси само българския шаблон, който хваща
-        // и оригинални, и препратени (Fwd:) писма от Airbnb
-        const query = `(from:automated@airbnb.com OR from:pepetrow@gmail.com) subject:"резервацията е потвърдена" ${afterFilter}`;
+        // по-широк филтър: търсим думи, които означават потвърждение/анулиране/резервация
+        // + само непрочетени и в рамките на последните 30 дни
+        const baseQuery = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) is:unread newer_than:30d';
+        // широкият (без subject) за статистика
+        const baseRes = await gmail.users.messages.list({ userId: 'me', q: baseQuery });
+        const totalCount = baseRes.data?.messages?.length || 0;
+
+        const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (subject:потвърдена OR subject:потвърдено OR subject:confirmed OR subject:cancelled OR subject:canceled OR subject:анулирана OR subject:резервация) is:unread newer_than:30d';
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
 
-        console.log(`🔎 Намерени писма: ${messages.length}`);
+        console.log(`🔎 Всички подходящи (без subject): ${totalCount}, след subject-филтър: ${messages.length}`);
 
         // after processing we'll update last check timestamp
 
