@@ -421,8 +421,10 @@
     dot.className = 'status-dot ' + (isOn ? 'dot-on' : 'dot-off');
     hdot.className = 'status-dot ' + (isOn ? 'dot-on' : 'dot-off');
     txt.textContent = isOn ? 'ВКЛ' : 'ИЗКЛ';
-    txt.style.color = isOn ? '#10b981' : '#ef4444';
+    // текстът в meter-stat да остане бял, цветовете се виждат чрез status-dot
+    txt.style.color = '#ffffff';
     htxt.textContent = 'ТОК: ' + (isOn ? 'ВКЛ' : 'ИЗКЛ');
+    htxt.style.color = '#ffffff'; // always white on dark background
   }
 
   async function sendPowerCmd(cmd) {
@@ -622,6 +624,16 @@
   loadPowerLog();
   loadPinList();
   loadGuests();
+
+  // fetch current real status for header
+  async function refreshPowerStatus() {
+    try {
+      const r = await fetch(`${BASE_URL}/api/power-status`);
+      const obj = await r.json();
+      if (obj.isOn !== undefined) updatePowerUI(obj.isOn);
+    } catch(e) { console.warn('power status refresh failed', e); }
+  }
+  refreshPowerStatus();
 
   // datepickers for reservation fields
   flatpickr('#res-checkin', { enableTime: true, dateFormat: 'Y-m-d H:i' });
