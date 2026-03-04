@@ -373,6 +373,22 @@ app.post('/api/alert', (req, res) => {
 // Използвайте Render Cron Jobs и извиквайте:
 //   POST /api/reservations/sync (на всеки 10 мин)
 //   POST /api/email/sync        (на всеки 15 мин)
+//
+// Ако за някаква причина няма да конфигурирате Render cron,
+// има резервен вътрешен scheduler по‑долу. Той изпълнява
+// syncBookingsFromGmail() на всеки 2 часа и може да се активира
+// със среда USE_LOCAL_CRON=true (или по подразбиране при dev).
+
+function initializeDetectiveScheduler() {
+    const interval = 2 * 60 * 60 * 1000; // 2 часа
+    console.log('[SCHEDULER] 🕵️ Детективът ще проверява имейли на всеки 2h (локален cron)');
+    // run immediately once
+    syncBookingsFromGmail().catch(err => console.error('[SCHEDULER] 🔴', err.message));
+    setInterval(() => {
+        console.log('[SCHEDULER] ⏰ Локален cron задейства email sync');
+        syncBookingsFromGmail().catch(err => console.error('[SCHEDULER] 🔴', err.message));
+    }, interval);
+}
 
 // ============================================================================
 // GRACEFUL SHUTDOWN - Чисто затваряне на DB връзки при SIGTERM/SIGINT
@@ -417,7 +433,10 @@ const server = app.listen(PORT, async () => {
     await initializeDatabase();
     
     // ❌ ИЗКЛЮЧЕНО: initializeScheduler(); - използвайте Render Cron Jobs
-    // ❌ ИЗКЛЮЧЕНО: initializeDetectiveScheduler(); - използвайте Render Cron Jobs
+    // Локален detective scheduler (работи в dev или когато явно е поискан):
+    if (process.env.USE_LOCAL_CRON === 'true' || !process.env.RENDER) {
+        initializeDetectiveScheduler();
+    }
 
     // ❌ ИЗКЛЮЧЕНО: setInterval за cleanupExpiredTokens
     // console.log('[SESSION] ✅ Периодичното почистване на токени е активно (на всеки 5 минути)');
