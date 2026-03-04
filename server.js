@@ -117,6 +117,10 @@ async function initializeDatabase() {
         try {
             await sql`ALTER TABLE bookings ADD COLUMN power_status_updated_at TIMESTAMPTZ;`;
         } catch (e) { /* колона вече съществува */ }
+        // колона за момента, в който е назначен PIN/lock_code
+        try {
+            await sql`ALTER TABLE bookings ADD COLUMN pin_assigned_at TIMESTAMPTZ;`;
+        } catch (e) { /* колона вече съществува */ }
 
         // pin_depot таблица за dashboard pin CRUD
         await sql`

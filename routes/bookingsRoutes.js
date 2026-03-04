@@ -59,8 +59,10 @@ export function registerBookingsRoutes(app, {
             `;
 
             let lockPin = existing[0]?.lock_pin || null;
+            const bookingId = existing[0]?.id || null;
             if (!lockPin) {
-                lockPin = await assignPinFromDepot({ reservation_code, guest_name });
+                // pass at least id or reservation_code so assignment updates row
+                lockPin = await assignPinFromDepot({ id: bookingId, reservation_code, guest_name });
             }
 
             const result = await sql`

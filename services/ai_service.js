@@ -1010,6 +1010,22 @@ async function verifyGuestByHMCode(authCode, userMessage, history = []) {
 export async function assignPinFromDepot(booking) {
     console.log('[PIN_DEPOT] Проверявам дали гост вече има щифт...');
     
+    // Normalize booking object: must have either id or reservation_code
+    if (!booking) booking = {};
+    if (!booking.id && booking.reservation_code && sql) {
+        // lookup id if missing
+        try {
+            const rows = await sql`
+                SELECT id, lock_pin FROM bookings WHERE reservation_code = ${booking.reservation_code} LIMIT 1
+            `;
+            if (rows.length) {
+                booking = { ...booking, ...rows[0] };
+            }
+        } catch (e) {
+            console.warn('[PIN_DEPOT] Неуспешно търсене на резервация по код:', e.message);
+        }
+    }
+
     // Ако гост вече има щифт, го върни
     if (booking.lock_pin) {
         console.log('[PIN_DEPOT] Гост вече има назначен щифт:', booking.lock_pin);
@@ -1049,13 +1065,25 @@ export async function assignPinFromDepot(booking) {
         console.log('[PIN_DEPOT] ✅ Щифт маркиран като използван в хранилището');
 
         // Актуализира резервацията с новия щифт
-        console.log('[DATABASE] Назначавам щифт на запис резервация...');
-        await sql`
-            UPDATE bookings 
-            SET lock_pin = ${pin.pin_code}, pin_assigned_at = NOW()
-            WHERE id = ${booking.id}
-        `;
-        console.log('[PIN_DEPOT] ✅ Щифт назначен на резервация на гост:', pin.pin_code);
+        if (booking.id) {
+            console.log('[DATABASE] Назначавам щифт на запис резервация...');
+            await sql`
+                UPDATE bookings 
+                SET lock_pin = ${pin.pin_code}, pin_assigned_at = NOW()
+                WHERE id = ${booking.id}
+            `;
+            console.log('[PIN_DEPOT] ✅ Щифт назначен на резервация на гост:', pin.pin_code);
+        } else if (booking.reservation_code) {
+            console.log('[DATABASE] Назначавам щифт на резервация по код...');
+            await sql`
+                UPDATE bookings 
+                SET lock_pin = ${pin.pin_code}, pin_assigned_at = NOW()
+                WHERE reservation_code = ${booking.reservation_code}
+            `;
+            console.log('[PIN_DEPOT] ✅ Щифт назначен по резервационен код:', pin.pin_code);
+        } else {
+            console.warn('[PIN_DEPOT] Нямам начин да актуализирам резервация (липсва id и код)');
+        }
 
         return pin.pin_code;
     } catch (e) {

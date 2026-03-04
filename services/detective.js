@@ -143,7 +143,7 @@ export async function syncBookingsFromGmail() {
                     // Вземи съществуващ PIN, или алокирай нов само за нова резервация
                     const existingBooking = await executeQueryWithRetry(async () => {
                         const rows = await sql`
-                            SELECT lock_pin
+                            SELECT id, lock_pin
                             FROM bookings
                             WHERE reservation_code = ${details.reservation_code}
                             LIMIT 1
@@ -153,8 +153,8 @@ export async function syncBookingsFromGmail() {
 
                     let pin = existingBooking?.lock_pin || null;
                     if (!pin) {
-                        const tempBooking = { lock_pin: null };
-                        pin = await assignPinFromDepot(tempBooking);
+                        // pass id plus reservation_code so assignPin can update correctly
+                        pin = await assignPinFromDepot({ id: existingBooking?.id, reservation_code: details.reservation_code });
                     }
                     
                     await executeQueryWithRetry(async () => {
