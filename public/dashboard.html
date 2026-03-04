@@ -396,6 +396,10 @@
     btn.querySelector('.tab-icon').style.background = 'rgba(34,211,238,0.12)';
     btn.querySelector('.material-icons-round').style.color = '#22d3ee';
     btn.querySelector('span:last-child').style.color = '#22d3ee';
+    // когато отваряме склада, зареждаме списъка от сървъра
+    if (name === 'depot') {
+      loadPinList();
+    }
   }
 
   function showToast(msg, color) {
@@ -487,8 +491,62 @@
     document.getElementById('pin-code').value = pin;
   }
 
+  async function loadPinList() {
+    const container = document.getElementById('pin-list');
+    container.innerHTML = '<div class="px-4 py-3 text-xs text-muted">Зареждане...</div>';
+    try {
+      const r = await fetch(`${BASE_URL}/api/pins`);
+      const pins = await r.json();
+      if (!Array.isArray(pins) || pins.length === 0) {
+        container.innerHTML = '<div class="px-4 py-3 text-xs text-muted">Няма пароли</div>';
+        return;
+      }
+      container.innerHTML = pins.map(pin => {
+        const usedBadge = pin.is_used
+          ? '<span class="pin-badge-used text-xs font-bold px-3 py-1 rounded-full">Заета</span>'
+          : '<span class="pin-badge-free text-xs font-bold px-3 py-1 rounded-full">Свободна</span>';
+        const delBtn = pin.is_used
+          ? `<button class="text-red-400 text-xs" onclick="deletePin(${pin.id})">🗑</button>`
+          : '';
+        return `<div class="px-4 py-3 flex items-center justify-between row-hover border-b border-border/50">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-border flex items-center justify-center font-mono text-sm font-bold text-brand">${String(pin.id).padStart(2,'0')}</div>
+            <div>
+              <div class="text-sm font-semibold">${pin.pin_name || '–'}</div>
+              <div class="font-mono text-xs text-muted">${pin.pin_code}</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            ${usedBadge}
+            ${delBtn}
+          </div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      container.innerHTML = '<div class="px-4 py-3 text-xs text-muted">Грешка при зареждане</div>';
+    }
+  }
+
+  async function deletePin(id) {
+    if (!confirm('Наистина ли искате да изтриете тази парола?')) return;
+    try {
+      const r = await fetch(`${BASE_URL}/api/pins/${id}`, { method: 'DELETE' });
+      const data = await r.json();
+      if (r.ok) {
+        showToast('Паролата е изтрита', '#ef4444');
+        loadPinList();
+      } else {
+        console.error('delete pin error', data);
+        showToast('Грешка при изтриване', '#ef4444');
+      }
+    } catch (e) {
+      showToast('Грешка при изтриване', '#ef4444');
+    }
+  }
+
   // Init
   loadPowerLog();
+  loadPinList();
 </script>
 </body>
 </html>
