@@ -64,6 +64,22 @@ export async function syncBookingsFromGmail() {
         }
 
         const sql = neon(process.env.DATABASE_URL);
+
+        // read last check timestamp from settings table
+        let lastCheck = null;
+        try {
+            const row = await sql`SELECT value FROM system_settings WHERE key = 'last_email_check'`;
+            if (row.length) {
+                lastCheck = row[0].value;
+            }
+        } catch (e) {
+            console.warn('[DETECTIVE] ⚠️ Няма last_email_check или грешка при четене:', e.message);
+        }
+
+        const afterFilter = lastCheck
+            ? `after:${Math.floor(new Date(lastCheck).getTime() / 1000)}`
+            : 'newer_than:30d';
+
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const oauth2Client = new google.auth.OAuth2(
             process.env.GMAIL_CLIENT_ID,
@@ -75,12 +91,14 @@ export async function syncBookingsFromGmail() {
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
         // ФИЛТЪР
-        const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (confirmed OR потвърдена OR потвърдено OR резервация OR reservation OR cancelled OR canceled OR анулирана OR анулиране OR code OR код) is:unread';
+        const query = `(from:automated@airbnb.com OR from:pepetrow@gmail.com) (subject:"резервация е потвърдена" OR subject:"reservation confirmed" OR cancelled OR canceled OR анулирана) ${afterFilter}`;
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
 
         console.log(`🔎 Намерени писма: ${messages.length}`);
+
+        // after processing we'll update last check timestamp
 
         for (const msg of messages) {
             const details = await processMessage(msg.id, gmail, genAI);
@@ -158,6 +176,14 @@ export async function syncBookingsFromGmail() {
                 console.warn(`⚠️ Писмо ${msg.id}: Неуспешен анализ.`);
             }
         }
+
+        // record current time as last email check
+        try {
+            await sql`INSERT INTO system_settings (key, value) VALUES ('last_email_check', NOW()) ON CONFLICT (key) DO UPDATE SET value = NOW()`;
+        } catch (e) {
+            console.warn('[DETECTIVE] ⚠️ Неуспешен запис на last_email_check:', e.message);
+        }
+
     } catch (err) { console.error('❌ Критична грешка:', err); }
 }
 
