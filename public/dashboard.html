@@ -553,7 +553,8 @@
         document.getElementById('res-checkout').value = '';
         loadGuests();
       } else {
-        showToast('Грешка при запис', '#ef4444');
+        const errMsg = data.error || 'Грешка при запис';
+        showToast(errMsg, '#ef4444');
         console.error(data);
       }
     } catch (e) {

@@ -49,6 +49,25 @@ export function registerBookingsRoutes(app, {
                 return res.status(400).json({ error: 'Невалидни дати за резервация' });
             }
 
+            // проверка за дублиране на дати (с изключение на самата резервация ако кодът я съществува)
+            try {
+                const overlapping = await sql`
+                    SELECT id
+                    FROM bookings
+                    WHERE reservation_code != ${reservation_code}
+                      AND NOT (
+                            check_out <= ${checkInDate.toISOString()} OR
+                            check_in >= ${checkOutDate.toISOString()}
+                          )
+                    LIMIT 1
+                `;
+                if (overlapping.length) {
+                    return res.status(409).json({ error: 'Съществува резервация със засичащ се период' });
+                }
+            } catch (err) {
+                console.error('[BOOKINGS:CHECK] 🔴 Грешка при проверка за припокриване:', err.message);
+            }
+
             const powerOn = new Date(checkInDate.getTime() - 2 * 60 * 60 * 1000);
             const powerOff = new Date(checkOutDate.getTime() + 1 * 60 * 60 * 1000);
 

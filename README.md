@@ -99,6 +99,14 @@ AI / Dashboard / API
   │
   ▼
 server.js (Express)
+
+>>> **Web Dashboard:**
+The single‑page dashboard (`public/dashboard.html`) provides an admin interface
+with tabs for controlling the meter, viewing recent power history, managing
+pin codes, browsing active/ past guests and manually creating bookings.  It
+calls the same REST API (`/api/meter`, `/api/power-history`, `/api/pins`, etc.)
+and is mobile‑responsive.
+
   │
   ▼
 services/autoremote.js
