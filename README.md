@@ -36,7 +36,8 @@
    └─ Данни се записват в Neon DB (bookings таблица)
 
 2. POWER COMMAND (AI / Dashboard / API)
-  ├─ Render endpoint (`/api/meter`, `/api/meter/on`, `/api/meter/off`)
+  ├─ Render endpoint (`/api/meter` POST accepts {action:on|off}, plus convenience `/api/meter/on` and `/api/meter/off`)
+  ├─ `GET /api/power-status` returns cached/real state; `GET /api/power-history` returns recent log
   ├─ Директно към Samsung SmartThings API
   └─ SmartThings управлява Tuya/SmartLife интегрирания електромер
 
@@ -146,7 +147,11 @@ smart-stay/
 │
 ├── public/
 │   ├── index.html              # Guest chat interface (Ико асистент)
-│   ├── dashboard.html          # Admin panel + Power history
+│   ├── dashboard.html          # **Modern admin panel**: tabs for електромер, история, склад пароли, гости, резервации + email sync
+│   │                              #   - управлява ток (on/off)
+│   │                              #   - показва история от /api/power-history
+│   │                              #   - CRUD и изтриване на PIN кодове
+│   │                              #   - динамичен списък с гости и формуляр за нова резервация (flatpickr)
 │   ├── remote.html             # Manual power control interface
 │   ├── aaadmin.html            # Legacy admin panel
 │   └── dddesign.html           # UI design reference
@@ -580,10 +585,10 @@ Complete documentation available:
 | ✅ AI Assistant (Gemini) | DONE | Intelligent mode със SSoT |
 | ✅ Автоматичен check-in контрол | DONE | 2 часа преди |
 | ✅ Автоматичен check-out контрол | DONE | 1 час след |
-| ✅ SmartThings direct control | DONE | Render → SmartThings → Device |
+| ✅ SmartThings direct control | DONE | Render → SmartThings → Device (через `/api/meter`) |
 | ✅ Tasker feedback only | DONE | `POST /api/power-status` on change |
 | ✅ Power history logging | DONE | Всяка промяна логвана |
-| ✅ Dashboard visualization | DONE | История в таблица |
+| ✅ Dashboard visualization | DONE | Приложение с няколко таба: електромер, история, пинове, гости, резервации |
 | ✅ pin_depot (брава кодове) | DONE | CRUD операции |
 | ✅ Guest chat интерфейс | DONE | index.html |
 | ✅ Admin dashboard | DONE | dashboard.html |

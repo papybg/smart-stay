@@ -945,6 +945,29 @@ async function verifyGuestByHMCode(authCode, userMessage, history = []) {
 
     if (!codeToVerify) {
         console.log('[SECURITY] Не е намерен HM код в authCode или съобщение');
+        // опит за поименна верификация (две имена)
+        if (userMessage && sql) {
+            const nameMatch = userMessage.match(/\b([A-Za-zА-Яа-я]+)\s+([A-Za-zА-Яа-я]+)\b/);
+            if (nameMatch) {
+                const n1 = nameMatch[1].toLowerCase();
+                const n2 = nameMatch[2].toLowerCase();
+                console.log('[SECURITY] Опит за верификация по имена:', n1, n2);
+                try {
+                    const rows = await sql`
+                        SELECT * FROM bookings
+                        WHERE LOWER(guest_name) LIKE ${'%' + n1 + '%'}
+                          AND LOWER(guest_name) LIKE ${'%' + n2 + '%'}
+                        LIMIT 1
+                    `;
+                    if (rows.length) {
+                        console.log('[SECURITY] Намерена резервация по име:', rows[0].guest_name);
+                        return { role: 'guest', booking: rows[0] };
+                    }
+                } catch (e) {
+                    console.warn('[SECURITY] Грешка при верификация по име:', e.message);
+                }
+            }
+        }
         return { role: 'stranger', booking: null };
     }
 
@@ -1293,7 +1316,7 @@ export function buildSystemInstruction(role, data, powerStatus, manual, currentD
      → Начало: "Според информацията ми, имотът е в Разлог..."
      → Следом: "...около 200km от плажа на Южния черноморски бряг"
    • Ако гост пита нещо специално което не е в MANUAL:
-     → "В информацията за имота това не е описано. Препоръчвам свързване със собственика."
+     → "За допълнителна информация, моля предоставете Вашата резервация или имена."
 
 ════════════════════════════════════════════════════════════════════════
 `;
@@ -1335,7 +1358,7 @@ ${strictInstructions}
    • НЕ предполагай информация която НЕ е в manual
    • НЕ "помисли си" детайли за имота
    • НЕ измислявай кодове, пароли или контакти
-   • Ако питат за нещо което НЕ е в manual → "Това не е описано в наръчника"
+   • Ако питат за нещо което НЕ е в manual → "За допълнителна информация, моля предоставете Вашата резервация или имена."
 
 ❌ ЗАБРАНЕНО: Халюцинирани умения
    • НЕ казвай "Мога да контролирам" системи които НЕ са в manual
@@ -1344,7 +1367,7 @@ ${strictInstructions}
 
 ✅ ПРАВИЛНО ДЕЙСТВИЕ:
    Ако гост/домакин пита за нещо което НЕ можеш:
-   → Кажи директно: "Това не мога да направя. Това не е описано в наръчника / системата не поддържа това."
+   → Кажи директно: "Това не мога да направя. За допълнителна информация, моля предоставете Вашата резервация или имена."
    → Препоръчай контакт със собственика ако е спешно
 
 ════════════════════════════════════════════════════════════════════════
@@ -2229,10 +2252,11 @@ async function getLockCodeLookupReply(role, bookingData, language = 'bg') {
     }
 
     if (role === 'guest') {
+        // require a reservation number / recognized booking
         if (!bookingData?.booking_id) {
             return language === 'en'
-                ? 'I cannot find an active reservation linked to this chat.'
-                : 'Не намирам активна резервация, свързана с този чат.';
+                ? 'A lock code is provided only when a reservation number is supplied or detected.'
+                : 'Код за брава се дава само срещу номер на резервация. Моля, изпратете вашия HM код.';
         }
 
         try {
