@@ -770,9 +770,7 @@ function isHostVerified(authCode, userMessage) {
         const normalizedAuthCode = String(authCode).trim().toLowerCase();
         const normalizedHostCode = String(HOST_CODE).trim().toLowerCase();
         
-        console.log(`[SECURITY] DEBUG: authCode="${normalizedAuthCode}" (${normalizedAuthCode.length} знака)`);
-        console.log(`[SECURITY] DEBUG: HOST_CODE="${normalizedHostCode}" (${normalizedHostCode.length} знака)`);
-        
+        // DEBUG: authCode/HOST_CODE values suppressed        
         // Проверява ТОЧНО съответствие (case-insensitive)
         if (normalizedAuthCode === normalizedHostCode) {
             console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: authCode съвпада с HOST_CODE');
@@ -917,7 +915,7 @@ async function verifyGuestByHMCode(authCode, userMessage, history = []) {
     let codeToVerify = null;
     if (authCode && hmCodePattern.test(authCode)) {
         codeToVerify = authCode.toUpperCase();
-        console.log('[SECURITY] HM код намерен в authCode:', codeToVerify);
+        console.log('[SECURITY] HM код намерен в authCode');
     }
     
     // Проверя userMessage за вграден HM код
@@ -925,7 +923,7 @@ async function verifyGuestByHMCode(authCode, userMessage, history = []) {
         const match = userMessage.match(hmCodePattern);
         if (match) {
             codeToVerify = match[0].toUpperCase();
-            console.log('[SECURITY] HM код намерен в userMessage:', codeToVerify);
+            console.log('[SECURITY] HM код намерен в userMessage');
         }
     }
 
@@ -937,7 +935,7 @@ async function verifyGuestByHMCode(authCode, userMessage, history = []) {
             const match = msg.content.match(hmCodePattern);
             if (match) {
                 codeToVerify = match[0].toUpperCase();
-                console.log('[SECURITY] HM код намерен в history:', codeToVerify);
+                console.log('[SECURITY] HM код намерен в history');
                 break;
             }
         }
@@ -1051,7 +1049,7 @@ export async function assignPinFromDepot(booking) {
 
     // Ако гост вече има щифт, го върни
     if (booking.lock_pin) {
-        console.log('[PIN_DEPOT] Гост вече има назначен щифт:', booking.lock_pin);
+        console.log('[PIN_DEPOT] Гост вече има назначен щифт');
         return booking.lock_pin;
     }
 
@@ -1077,7 +1075,7 @@ export async function assignPinFromDepot(booking) {
         }
 
         const pin = freePins[0];
-        console.log('[PIN_DEPOT] Намерен налична щифт, маркирам като използван:', pin.pin_code);
+        console.log('[PIN_DEPOT] Намерен налична щифт, маркирам като използван');
 
         // Маркира щифта като използван в хранилището
         await sql`
@@ -1095,7 +1093,7 @@ export async function assignPinFromDepot(booking) {
                 SET lock_pin = ${pin.pin_code}, pin_assigned_at = NOW()
                 WHERE id = ${booking.id}
             `;
-            console.log('[PIN_DEPOT] ✅ Щифт назначен на резервация на гост:', pin.pin_code);
+            console.log('[PIN_DEPOT] ✅ Щифт назначен на резервация на гост');
         } else if (booking.reservation_code) {
             console.log('[DATABASE] Назначавам щифт на резервация по код...');
             await sql`
@@ -1103,7 +1101,7 @@ export async function assignPinFromDepot(booking) {
                 SET lock_pin = ${pin.pin_code}, pin_assigned_at = NOW()
                 WHERE reservation_code = ${booking.reservation_code}
             `;
-            console.log('[PIN_DEPOT] ✅ Щифт назначен по резервационен код:', pin.pin_code);
+            console.log('[PIN_DEPOT] ✅ Щифт назначен по резервационен код');
         } else {
             console.warn('[PIN_DEPOT] Нямам начин да актуализирам резервация (липсва id и код)');
         }

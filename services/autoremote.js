@@ -60,7 +60,7 @@ const SMARTTHINGS_DEVICE_ID_ON = process.env.SMARTTHINGS_DEVICE_ID_ON || process
 const SMARTTHINGS_DEVICE_ID_OFF = process.env.SMARTTHINGS_DEVICE_ID_OFF || process.env.SMARTTHINGS_DEVICE_ID;
 const SMARTTHINGS_COMMAND_ON = process.env.SMARTTHINGS_COMMAND_ON || 'on';
 const SMARTTHINGS_COMMAND_OFF = process.env.SMARTTHINGS_COMMAND_OFF || 'off';
-console.log('[SMARTTHINGS:DEBUG] ENV DEVICE IDs ON/OFF:', SMARTTHINGS_DEVICE_ID_ON, SMARTTHINGS_DEVICE_ID_OFF);
+// DEBUG: device IDs hidden for security
 /* DEPRECATED: OAuth refresh logic
 async function refreshSTToken() {
     if (!process.env.ST_CLIENT_ID || !process.env.ST_CLIENT_SECRET || !stRefreshToken) {
@@ -69,7 +69,7 @@ async function refreshSTToken() {
     }
     try {
         const previewParams = { grant_type: 'refresh_token', refresh_token: stRefreshToken ? stRefreshToken.substring(0,10) + '...' : undefined };
-        console.log('[SMARTTHINGS:REFRESH_DEBUG] Request params (body):', previewParams);
+        // console.log('[SMARTTHINGS:REFRESH_DEBUG] Request params (body):', previewParams); // removed sensitive data
         const basicAuth = Buffer.from(`${process.env.ST_CLIENT_ID}:${process.env.ST_CLIENT_SECRET}`).toString('base64');
         console.log('[SMARTTHINGS:REFRESH_DEBUG] Using Basic Auth header for client credentials');
         const response = await axios.post('https://api.smartthings.com/oauth/token', new URLSearchParams({
@@ -108,14 +108,14 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
     try {
         const token = await ensureValidSTAccessToken();
         global.lastTokenRefresh = global.lastTokenRefresh || null;
-        console.log('[SMARTTHINGS:DEBUG] Използван токен:', token ? 'От паметта (fresh)' : 'От env (може да е изтекъл)');
-        console.log('[SMARTTHINGS:DEBUG] Token value (първи 20 символа):', (token || process.env.ST_ACCESS_TOKEN || '').substring(0, 20));
-        console.log('[SMARTTHINGS:DEBUG] Token последно обновен:', global.lastTokenRefresh || 'Никога');
-        console.log('[SMARTTHINGS:DEBUG] Времето сега:', new Date().toISOString());
+        // DEBUG token source suppressed
+        // DEBUG token value suppressed
+        // DEBUG token refresh time suppressed
+        // DEBUG time info removed
         const url = `https://api.smartthings.com/v1/devices/${deviceId}/commands`;
-        console.log('[SMARTTHINGS:DEBUG] Request URL:', url);
-        console.log('[SMARTTHINGS:DEBUG] Device ID:', deviceId);
-        console.log('[SMARTTHINGS:DEBUG] Command:', cmd);
+        // DEBUG URL suppressed
+        // DEBUG device ID suppressed
+        // DEBUG command suppressed
         await axios.post(url, { commands: [{ component: 'main', capability: 'switch', command: cmd }] }, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 });
         console.log(`[SMARTTHINGS] 📤 Успешно: ${cmd}`);
         return true;
@@ -135,8 +135,7 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
             }
         }
         console.error('[SMARTTHINGS] ❌ Грешка (команда):', err.response?.data || err.message);
-        console.error('[SMARTTHINGS:DEBUG] Full error:', err.response?.data);
-        return false;
+        // console.error('[SMARTTHINGS:DEBUG] Full error:', err.response?.data); // potentially sensitive        return false;
     }
 }
 async function discoverDeviceId(failedId) {

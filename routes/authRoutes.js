@@ -110,7 +110,7 @@ export function registerSmartThingsCallbackRoute(app) {
 
             // Подробно логване на параметрите за token exchange
             const redirectUri = `${process.env.APP_BASE_URL || 'https://smart-stay.onrender.com'}/callback`;
-            console.log('[ST-CALLBACK] Token exchange params:', {
+            // console.log('[ST-CALLBACK] Token exchange params:', {
                 grant_type: 'authorization_code',
                 client_id: ST_CLIENT_ID,
                 client_secret: ST_CLIENT_SECRET ? '***' : undefined,
@@ -146,10 +146,7 @@ export function registerSmartThingsCallbackRoute(app) {
                     `);
                 }
                 // Логване на токените
-                console.log('[ST-TOKENS] ACCESS_TOKEN:', tokenResponse.data.access_token);
-                console.log('[ST-TOKENS] REFRESH_TOKEN:', tokenResponse.data.refresh_token);
-                console.log('[ST-TOKENS] REFRESH_TOKEN FULL:', tokenResponse.data.refresh_token);
-                console.log('[ST-TOKENS] ACCESS_TOKEN FULL:', tokenResponse.data.access_token);
+                // token values suppressed for security
                 // ...existing code for success (всички използвания на tokenResponse трябва да са тук)...
             } catch (error) {
                 if (error.response) {
@@ -173,14 +170,12 @@ export function registerSmartThingsCallbackRoute(app) {
             console.log('[ST-CALLBACK] ✅ Токени получени успешно');
 
             // ⚠️ ВАЖНО: Безопасна персистиране на tokens
-            // Вариант 1: Излез в console за копиране в .env (ВРЕМЕННО за dev/test)
+            // Вариант 1: изход може да бъде пренасочен в открит лог—актуално скрит
             console.log('\n');
             console.log('╔════════════════════════════════════════════════════════════╗');
             console.log('║ 📋 КОПИРАЙ ТЕЗИ СТОЙНОСТИ В ТВОЯ .env ФАЙЛ:               ║');
             console.log('╚════════════════════════════════════════════════════════════╝');
-            console.log(`ST_ACCESS_TOKEN=${accessToken}`);
-            console.log(`ST_REFRESH_TOKEN=${refreshToken}`);
-            console.log('');
+            // token values suppressed for security (dev helper)            console.log('');
 
             // Вариант 2: Праву се потребител да го направи вручно (по-безопасно)
             // В реален сценарий, можеш да запазиш в DB или секретен store

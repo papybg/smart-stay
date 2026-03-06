@@ -33,6 +33,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
@@ -55,6 +56,37 @@ const TASKER_NOISE_WINDOW_MS = Number(process.env.TASKER_NOISE_WINDOW_MS || 4500
 const REQUEST_LOG_SUPPRESS_MS = Number(process.env.REQUEST_LOG_SUPPRESS_MS || 30000);
 let lastPowerStatusRequestLogTs = 0;
 const recentTaskerStatusBySource = new Map();
+
+// === rate limiters ===
+const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Твърде много заявки, опитай по-късно' }
+});
+
+const powerLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Твърде много команди за ток' }
+});
+
+const emailLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Синхронизацията е ограничена' }
+});
+
+// apply general limiter to all /api routes
+app.use('/api', generalLimiter);
+// apply stricter rules
+app.use(['/api/meter', '/api/meter/on', '/api/meter/off'], powerLimiter);
+app.use('/api/email/sync', emailLimiter);
 
 // ============================================================================
 // ИНИЦИАЛИЗАЦИЯ
