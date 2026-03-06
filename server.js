@@ -517,4 +517,3 @@ const server = app.listen(PORT, async () => {
     // console.log('[SESSION] ✅ Периодичното почистване на токени е активно (на всеки 5 минути)');
     console.log('[SESSION] ℹ️ Token cleanup сега е ON-DEMAND (извиква се при заявки за вход)');
 });
-
