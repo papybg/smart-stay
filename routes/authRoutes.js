@@ -110,6 +110,7 @@ export function registerSmartThingsCallbackRoute(app) {
 
             // Подробно логване на параметрите за token exchange
             const redirectUri = `${process.env.APP_BASE_URL || 'https://smart-stay.onrender.com'}/callback`;
+            /*
             // console.log('[ST-CALLBACK] Token exchange params:', {
                 grant_type: 'authorization_code',
                 client_id: ST_CLIENT_ID,
@@ -117,6 +118,7 @@ export function registerSmartThingsCallbackRoute(app) {
                 code,
                 redirect_uri: redirectUri
             });
+            */
 
             let tokenResponse;
             try {
