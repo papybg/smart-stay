@@ -285,6 +285,22 @@
     <h2 class="text-base font-bold mb-4 flex items-center gap-2 text-slate-300">
       <span class="material-icons-round text-brand" style="font-size:18px;">group</span> Гости
     </h2>
+    <div class="mb-4">
+      <button id="export-btn" class="btn-primary text-sm">Експорт</button>
+      <div id="export-panel" class="mt-3 hidden card p-4 space-y-3">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-muted block mb-1">От дата</label>
+            <input id="export-from" type="text" class="form-input"/>
+          </div>
+          <div>
+            <label class="text-xs text-muted block mb-1">До дата</label>
+            <input id="export-to" type="text" class="form-input"/>
+          </div>
+        </div>
+        <button id="export-download" class="btn-primary">Изтегли</button>
+      </div>
+    </div>
 
     <div class="card overflow-hidden">
       <div class="overflow-x-auto">
@@ -383,6 +399,7 @@
 
 <script>
   const BASE_URL = 'https://smart-stay.onrender.com';
+  const API_KEY = 'YOUR_KEY_HERE'; // replace with DASHBOARD_API_KEY from environment
   let powerState = true;
 
   function switchTab(name, btn) {
@@ -433,7 +450,7 @@
     try {
       const r = await fetch(`${BASE_URL}/api/meter`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: cmd, host: true })
       });
       const data = await r.json();
@@ -452,7 +469,7 @@
 
   async function loadPowerLog() {
     try {
-      const r = await fetch(`${BASE_URL}/api/power-history`);
+      const r = await fetch(`${BASE_URL}/api/power-history`, { headers: { 'X-API-Key': API_KEY } });
       const data = await r.json();
       console.log('[POWER_LOG] response', data);
       // server returns { count, data: [...], period } so prefer data.data
@@ -476,12 +493,61 @@
   }
 
   async function checkEmails() {
+
+  // ---------- export functionality ----------
+  function csvFromArray(arr) {
+    // simple CSV escape
+    return arr.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(',');
+  }
+
+  function downloadCSV(rows) {
+    const header = ['reservation_code','guest_name','check_in','check_out','lock_pin','payment_status'];
+    const lines = [csvFromArray(header)];
+    rows.forEach(r => {
+      lines.push(csvFromArray([r.reservation_code, r.guest_name, r.check_in, r.check_out, r.lock_pin, r.payment_status]));
+    });
+    const blob = new Blob([lines.join("\r\n")], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bookings-export.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function openExportPanel() {
+    document.getElementById('export-panel').classList.toggle('hidden');
+  }
+
+  document.getElementById('export-btn').addEventListener('click', openExportPanel);
+  flatpickr('#export-from', { dateFormat: 'Y-m-d' });
+  flatpickr('#export-to', { dateFormat: 'Y-m-d' });
+  document.getElementById('export-download').addEventListener('click', async () => {
+    const from = document.getElementById('export-from').value;
+    const to = document.getElementById('export-to').value;
+    let url = `${BASE_URL}/api/bookings`;
+    if (from || to) {
+      const params = new URLSearchParams();
+      if (from) params.append('from', from);
+      if (to) params.append('to', to);
+      url += '?' + params.toString();
+    }
+    try {
+      const r = await fetch(url, { headers: { 'X-API-Key': API_KEY } });
+      const data = await r.json();
+      if (Array.isArray(data)) {
+        downloadCSV(data);
+      }
+    } catch(e) { console.error('export error', e); }
+  });
+
+  async function checkEmails() {
     const btn = document.getElementById('email-check-btn');
     const res = document.getElementById('email-result');
     btn.innerHTML = '<span class="spinner"></span> Проверявам...';
     btn.disabled = true;
     try {
-      const r = await fetch(`${BASE_URL}/api/email/sync`, { method: 'POST' });
+      const r = await fetch(`${BASE_URL}/api/email/sync`, { method: 'POST', headers: { 'X-API-Key': API_KEY } });
       const data = await r.json();
       res.textContent = data.message || 'Готово';
       res.style.color = '#10b981';
@@ -496,7 +562,7 @@
 
   async function loadGuests() {
     try {
-      const r = await fetch(`${BASE_URL}/api/bookings`);
+      const r = await fetch(`${BASE_URL}/api/bookings`, { headers: { 'X-API-Key': API_KEY } });
       const bookings = await r.json();
       const tbody = document.getElementById('guests-table');
       if (!Array.isArray(bookings)) return;

@@ -4,12 +4,28 @@ export function registerBookingsRoutes(app, {
     controlPower,
     syncBookingsFromGmail
 }) {
-    app.get('/api/bookings', async (_req, res) => {
+    app.get('/api/bookings', async (req, res) => {
         try {
             if (!sql) {
                 return res.status(500).json({ error: 'Database not connected' });
             }
-            const bookings = await sql`SELECT * FROM bookings ORDER BY check_in DESC LIMIT 50`;
+            let query = sql`SELECT * FROM bookings`;
+            const from = req.query.from;
+            const to = req.query.to;
+            if (from) {
+                const fromDate = new Date(from);
+                if (!Number.isNaN(fromDate.getTime())) {
+                    query = sql`${query} WHERE check_in >= ${fromDate}`;
+                }
+            }
+            if (to) {
+                const toDate = new Date(to);
+                if (!Number.isNaN(toDate.getTime())) {
+                    query = sql`${query} ${from ? sql`AND` : sql`WHERE`} check_out <= ${toDate}`;
+                }
+            }
+            query = sql`${query} ORDER BY check_in DESC LIMIT 500`;
+            const bookings = await query;
             return res.json(bookings);
         } catch (error) {
             console.error('[BOOKINGS] 🔴 Грешка:', error.message);

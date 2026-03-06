@@ -88,6 +88,21 @@ app.use('/api', generalLimiter);
 app.use(['/api/meter', '/api/meter/on', '/api/meter/off'], powerLimiter);
 app.use('/api/email/sync', emailLimiter);
 
+// === API key guard for dashboard ===
+const dashboardApiKey = process.env.DASHBOARD_API_KEY || '';
+function dashboardKeyGuard(req, res, next) {
+    // skip certain public endpoints
+    const open = ['/api/power-status', '/api/chat'];
+    if (req.url.startsWith('/api/guest/') || open.some(p => req.url.startsWith(p))) {
+        return next();
+    }
+    const key = req.headers['x-api-key'];
+    if (key && key === dashboardApiKey) return next();
+    return res.status(401).json({ error: 'Неоторизиран достъп' });
+}
+app.use('/api', dashboardKeyGuard);
+
+
 // ============================================================================
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================================================
@@ -238,6 +253,20 @@ app.use((req, res, next) => {
     next();
 });
 
+// serve dashboard with key injection
+app.get('/dashboard.html', async (req, res) => {
+    try {
+        const dashPath = path.join(__dirname, 'public', 'dashboard.html');
+        let html = await fs.promises.readFile(dashPath, 'utf-8');
+        const key = process.env.DASHBOARD_API_KEY || '';
+        html = html.replace(/YOUR_KEY_HERE/g, key);
+        res.send(html);
+    } catch (err) {
+        console.error('[SERVER] 🔴 Error serving dashboard:', err.message);
+        res.status(500).send('Server error');
+    }
+});
+// static middleware for other assets
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================================================
