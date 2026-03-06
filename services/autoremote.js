@@ -57,7 +57,8 @@ async function loadTokenFromDB() {
 const SMARTTHINGS_DEVICE_ID_ON = process.env.SMARTTHINGS_DEVICE_ID_ON || process.env.SMARTTHINGS_DEVICE_ID;
 const SMARTTHINGS_DEVICE_ID_OFF = process.env.SMARTTHINGS_DEVICE_ID_OFF || process.env.SMARTTHINGS_DEVICE_ID;
 const SMARTTHINGS_COMMAND_ON = process.env.SMARTTHINGS_COMMAND_ON || 'on';
-const SMARTTHINGS_COMMAND_OFF = process.env.SMARTTHINGS_COMMAND_OFF || 'off';
+const smartThingsCommandOffFromEnv = String(process.env.SMARTTHINGS_COMMAND_OFF || 'on').trim().toLowerCase();
+const SMARTTHINGS_COMMAND_OFF = smartThingsCommandOffFromEnv === 'off' ? 'on' : (process.env.SMARTTHINGS_COMMAND_OFF || 'on');
 // DEBUG: device IDs hidden for security
 async function refreshSTToken() {
     if (!process.env.ST_CLIENT_ID || !process.env.ST_CLIENT_SECRET || !stRefreshToken) {
