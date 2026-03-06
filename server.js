@@ -53,6 +53,15 @@ const __dirname = path.dirname(__filename);
 const app = express();
 // behind Render’s proxy; ensures rate limiter sees real IP
 app.set('trust proxy', 1);
+
+// CORS – трябва да е ПРЕДИ всичко друго
+const allowedOrigins = [
+    'https://stay.bgm-design.com',
+    'https://smart-stay.onrender.com',
+    'http://localhost:3000'
+];
+app.use(cors({ origin: allowedOrigins }));
+
 const PORT = process.env.PORT || 10000;
 const TASKER_NOISE_WINDOW_MS = Number(process.env.TASKER_NOISE_WINDOW_MS || 45000);
 const REQUEST_LOG_SUPPRESS_MS = Number(process.env.REQUEST_LOG_SUPPRESS_MS || 30000);
@@ -204,13 +213,6 @@ async function initializeDatabase() {
 // MIDDLEWARE
 // ============================================================================
 
-// CORS configuration – only allow known frontends
-const allowedOrigins = [
-    'https://stay.bgm-design.com',
-    'https://smart-stay.onrender.com',
-    'http://localhost:3000' // development fallback
-];
-app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
