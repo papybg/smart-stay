@@ -204,7 +204,13 @@ async function initializeDatabase() {
 // MIDDLEWARE
 // ============================================================================
 
-app.use(cors());
+// CORS configuration – only allow known frontends
+const allowedOrigins = [
+    'https://stay.bgm-design.com',
+    'https://smart-stay.onrender.com',
+    'http://localhost:3000' // development fallback
+];
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
