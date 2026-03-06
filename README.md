@@ -131,6 +131,7 @@ Tasker (feedback only) ──► POST /api/power-status
 Gmail (Airbnb) → detective.js → Gemini AI → DB (bookings)
 AI queries → bookings (read-only for reports/status)
 Power command → server.js → autoremote.js → SmartThings → device ON/OFF
+*NEW* fallbacks: if SmartThings fails with timeout/401/403, `autoremote.js` will send an AutoRemote message (`meter_on`/`meter_off`) using AUTOREMOTE_URL and wait up to 20s for Tasker feedback in `power_history`. Trace IDs are logged ([POWER_FLOW], [SMARTTHINGS_FLOW]).
 Tasker feedback (only on state change) → POST /api/power/status → power_history
 power_history (latest) → detective sync → bookings.power_status
 Dashboard / AI reports → read from bookings (+ power_history for audit/history)
@@ -194,6 +195,8 @@ smart-stay/
 - HTTP запитване към Samsung SmartThings API
 - Поддържа single-device или split ON/OFF scene device IDs
 - Legacy Tasker command flow е оставен само като коментар
+- Добавен е нов AutoRemote fallback в services/autoremote.js (см. TASKER_AUTOREMOTE_FALLBACK)
+
 
 ---
 
@@ -593,6 +596,8 @@ Complete documentation available:
 | ✅ Автоматичен check-in контрол | DONE | 2 часа преди |
 | ✅ Автоматичен check-out контрол | DONE | 1 час след |
 | ✅ SmartThings direct control | DONE | Render → SmartThings → Device (через `/api/meter`) |
+| ✅ AutoRemote fallback (timeout/401/403) | DONE | `AUTOREMOTE_URL` + Tasker profile meter_on/off, confirm via /api/power-status |
+
 | ✅ Tasker feedback only | DONE | `POST /api/power-status` on change |
 | ✅ Power history logging | DONE | Всяка промяна логвана |
 | ✅ Dashboard visualization | DONE | Приложение с няколко таба: електромер, история, пинове, гости, резервации |
@@ -689,12 +694,20 @@ SMARTTHINGS_DEVICE_ID_OFF=
 # SMARTTHINGS_SCENE_COMMAND=on
 # SMARTTHINGS_COMMAND_ON=on
 # SMARTTHINGS_COMMAND_OFF=off
+# --- SMARTTHINGS REMOTE TOKENS ---
+# ST_ACCESS_TOKEN, ST_REFRESH_TOKEN, ST_CLIENT_ID, ST_CLIENT_SECRET
+#   stored via /callback or in .env; required for OAuth control
+
 
 # === API SECURITY ===
 METER_API_KEY=
 
 # === TASKER FEEDBACK TUNING (optional) ===
 # TASKER_NOISE_WINDOW_MS=45000
+# TASKER_AUTOREMOTE_FALLBACK=true        # Enable AutoRemote fallback when SMARTTHINGS fails (timeout/401/403)
+# TASKER_CONFIRM_TIMEOUT_MS=20000        # How long to wait (ms) for Tasker confirmation after fallback
+# TASKER_CONFIRM_POLL_MS=1000            # Poll interval (ms) while awaiting confirmation from feedback
+
 # REQUEST_LOG_SUPPRESS_MS=30000
 
 # === OPTIONAL: Tuya (НЕ ИЗПОЛЗВАМ) ===

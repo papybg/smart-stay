@@ -209,16 +209,38 @@ async function waitForTaskerFallbackConfirmation(expectedState, traceContext) {
 
 async function executeWithTaskerTimeoutFallback({ turnOn, command, targetDeviceId, traceContext }) {
     const traceId = traceContext.traceId;
+    traceLog(traceId, 'EXEC/1', 'Подадена команда към SmartThings', {
+        executor: 'SmartThings',
+        action: turnOn ? 'on' : 'off',
+        command,
+        deviceId: sanitizeDeviceId(targetDeviceId)
+    });
+
     const stResultMeta = { failureReason: null, statusCode: null, errorMessage: null };
     const stSuccess = await sendSTCommand(targetDeviceId, command, 0, traceContext, stResultMeta);
 
     if (stSuccess) {
+        traceLog(traceId, 'EXEC/2', 'SmartThings върна успех - командата е изпълнена', {
+            executor: 'SmartThings',
+            result: 'executed',
+            action: turnOn ? 'on' : 'off'
+        });
         return { success: true, usedTaskerFallback: false, taskerConfirmed: false };
     }
 
-    const shouldFallback = stResultMeta.failureReason === 'timeout';
+    traceLog(traceId, 'EXEC/2', 'SmartThings върна неуспех', {
+        executor: 'SmartThings',
+        result: 'failed',
+        failureReason: stResultMeta.failureReason,
+        statusCode: stResultMeta.statusCode,
+        error: stResultMeta.errorMessage
+    }, 'warn');
+
+    const shouldFallback = stResultMeta.failureReason === 'timeout'
+        || stResultMeta.statusCode === 403
+        || stResultMeta.statusCode === 401;
     if (!shouldFallback) {
-        traceLog(traceId, 'FB/SKIP', 'No Tasker fallback: SmartThings failed for non-timeout reason', {
+        traceLog(traceId, 'FB/SKIP', 'Fallback пропуснат: грешката не е timeout/401/403', {
             failureReason: stResultMeta.failureReason,
             statusCode: stResultMeta.statusCode,
             error: stResultMeta.errorMessage
@@ -227,7 +249,13 @@ async function executeWithTaskerTimeoutFallback({ turnOn, command, targetDeviceI
     }
 
     const taskerCommand = turnOn ? 'meter_on' : 'meter_off';
-    traceLog(traceId, 'FB/START', 'SmartThings timeout detected, starting AutoRemote fallback', {
+    traceLog(traceId, 'EXEC/3', 'Подавам команда към AutoRemote (fallback)', {
+        executor: 'AutoRemote',
+        taskerCommand,
+        trigger: stResultMeta.failureReason || stResultMeta.statusCode || 'unknown'
+    }, 'warn');
+
+    traceLog(traceId, 'FB/START', 'SmartThings failure eligible for AutoRemote fallback', {
         taskerCommand,
         stFailureReason: stResultMeta.failureReason,
         stStatusCode: stResultMeta.statusCode
@@ -235,6 +263,11 @@ async function executeWithTaskerTimeoutFallback({ turnOn, command, targetDeviceI
 
     const sent = await sendTaskerFallbackCommand(taskerCommand, traceContext);
     if (!sent) {
+        traceLog(traceId, 'EXEC/4', 'AutoRemote: командата НЕ е изпълнена (изпращането се провали)', {
+            executor: 'AutoRemote',
+            taskerCommand,
+            result: 'send_failed'
+        }, 'error');
         return { success: false, usedTaskerFallback: true, taskerConfirmed: false };
     }
 
@@ -245,6 +278,18 @@ async function executeWithTaskerTimeoutFallback({ turnOn, command, targetDeviceI
             source: 'tasker_fallback_autoremote',
             last_update: new Date().toISOString()
         };
+
+        traceLog(traceId, 'EXEC/4', 'AutoRemote: командата е изпълнена и потвърдена', {
+            executor: 'AutoRemote',
+            taskerCommand,
+            result: 'confirmed'
+        }, 'warn');
+    } else {
+        traceLog(traceId, 'EXEC/4', 'AutoRemote: командата е подадена, но няма потвърждение', {
+            executor: 'AutoRemote',
+            taskerCommand,
+            result: 'unconfirmed'
+        }, 'error');
     }
 
     return { success: confirmed, usedTaskerFallback: true, taskerConfirmed: confirmed };
@@ -417,7 +462,14 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0, context = {}, result
                 retryNext: retryCount + 1
             }, 'warn');
             const refreshed = await refreshSTToken();
-            if (!refreshed) return false;
+            if (!refreshed) {
+                if (resultMeta && typeof resultMeta === 'object') {
+                    resultMeta.failureReason = 'error';
+                    resultMeta.statusCode = 401;
+                    resultMeta.errorMessage = 'Token refresh failed after 401';
+                }
+                return false;
+            }
             global.lastTokenRefresh = new Date().toISOString();
             return sendSTCommand(deviceId, cmd, retryCount + 1, traceContext, resultMeta);
         }
