@@ -162,7 +162,6 @@ smart-stay/
 │   │                              #   - динамичен списък с гости и формуляр за нова резервация (flatpickr)
 │   ├── remote.html             # Manual power control interface
 │   ├── aaadmin.html            # Legacy admin panel
-│   └── dddesign.html           # UI design reference
 │
 ├── README.md                    # Main documentation (current state)
 └── [cache files]

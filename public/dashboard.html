@@ -4,28 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Smart Stay — Команден Център</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/dashboard.tailwind.css"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
-<script>
-  tailwind.config = {
-    darkMode: 'class',
-    theme: {
-      extend: {
-        fontFamily: { sans: ['DM Sans', 'sans-serif'], mono: ['DM Mono', 'monospace'] },
-        colors: {
-          brand: '#22d3ee',
-          surface: '#0e1117',
-          card: '#161b26',
-          border: '#1f2937',
-          muted: '#6b7280',
-        }
-      }
-    }
-  }
-</script>
 <style>
   * { font-family: 'DM Sans', sans-serif; }
   body { background: #0e1117; color: #f1f5f9; min-height: 100dvh; }
@@ -396,7 +379,6 @@
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
-//оправено тук
 <script>
   const BASE_URL = 'https://smart-stay.onrender.com';
   const API_KEY = 'YOUR_KEY_HERE';
@@ -491,8 +473,6 @@
       console.error('[POWER_LOG] error', e);
     }
   }
-
-  async function checkEmails() {
 
   // ---------- export functionality ----------
   function csvFromArray(arr) {
@@ -638,7 +618,7 @@
     const container = document.getElementById('pin-list');
     container.innerHTML = '<div class="px-4 py-3 text-xs text-muted">Зареждане...</div>';
     try {
-      const r = await fetch(`${BASE_URL}/api/pins`);
+      const r = await fetch(`${BASE_URL}/api/pins`, { headers: { 'X-API-Key': API_KEY } });
       const pins = await r.json();
       if (!Array.isArray(pins) || pins.length === 0) {
         container.innerHTML = '<div class="px-4 py-3 text-xs text-muted">Няма пароли</div>';
@@ -673,7 +653,7 @@
   async function deletePin(id) {
     if (!confirm('Наистина ли искате да изтриете тази парола?')) return;
     try {
-      const r = await fetch(`${BASE_URL}/api/pins/${id}`, { method: 'DELETE' });
+      const r = await fetch(`${BASE_URL}/api/pins/${id}`, { method: 'DELETE', headers: { 'X-API-Key': API_KEY } });
       const data = await r.json();
       if (r.ok) {
         showToast('Паролата е изтрита', '#ef4444');
@@ -707,7 +687,6 @@
   flatpickr('#res-checkout', { enableTime: true, dateFormat: 'Y-m-d H:i' });
 
   document.getElementById('save-booking-btn').addEventListener('click', saveBooking);
-  }
-  </script>
+</script>
 </body>
 </html>
