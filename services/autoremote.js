@@ -60,6 +60,9 @@ const SMARTTHINGS_COMMAND_ON = process.env.SMARTTHINGS_COMMAND_ON || 'on';
 const smartThingsCommandOffFromEnv = String(process.env.SMARTTHINGS_COMMAND_OFF || 'on').trim().toLowerCase();
 const SMARTTHINGS_COMMAND_OFF = smartThingsCommandOffFromEnv === 'off' ? 'on' : (process.env.SMARTTHINGS_COMMAND_OFF || 'on');
 const POWER_TRACE_LOGS_ENABLED = (process.env.POWER_TRACE_LOGS || 'true').toLowerCase() !== 'false';
+const TASKER_AUTOREMOTE_FALLBACK_ENABLED = (process.env.TASKER_AUTOREMOTE_FALLBACK || 'true').toLowerCase() !== 'false';
+const TASKER_CONFIRM_TIMEOUT_MS = Number(process.env.TASKER_CONFIRM_TIMEOUT_MS || 20000);
+const TASKER_CONFIRM_POLL_MS = Number(process.env.TASKER_CONFIRM_POLL_MS || 1000);
 
 function createTraceId() {
     return `st_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -70,6 +73,181 @@ function sanitizeDeviceId(deviceId) {
     if (!value) return 'missing';
     if (value.length <= 10) return value;
     return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function isSmartThingsTimeoutError(err) {
+    if (!err) return false;
+    if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') return true;
+    const msg = String(err.message || '').toLowerCase();
+    return msg.includes('timeout') || msg.includes('timed out');
+}
+
+function parsePowerState(raw) {
+    if (typeof raw === 'boolean') return raw;
+    if (typeof raw === 'number') {
+        if (raw === 1) return true;
+        if (raw === 0) return false;
+        return null;
+    }
+    if (typeof raw === 'string') {
+        const value = raw.trim().toLowerCase();
+        if (['on', 'true', '1', 'вкл', 'включен', 'active'].includes(value)) return true;
+        if (['off', 'false', '0', 'изкл', 'изключен', 'inactive'].includes(value)) return false;
+    }
+    return null;
+}
+
+async function readLatestPowerStateFromHistory() {
+    if (!sql) return null;
+    try {
+        const rows = await sql`
+            SELECT is_on, source, timestamp
+            FROM power_history
+            ORDER BY timestamp DESC
+            LIMIT 1
+        `;
+
+        if (!rows.length) return null;
+        return {
+            isOn: parsePowerState(rows[0].is_on),
+            source: rows[0].source || 'db',
+            timestamp: rows[0].timestamp || null
+        };
+    } catch (error) {
+        console.warn('[TASKER_FALLBACK] ⚠️ Неуспех при четене на power_history:', error.message);
+        return null;
+    }
+}
+
+function buildAutoRemoteMessageUrl(taskerCommand) {
+    const raw = String(process.env.AUTOREMOTE_URL || '').trim();
+    if (!raw) return '';
+    const separator = raw.includes('?') ? '&' : '?';
+    return `${raw}${separator}message=${encodeURIComponent(taskerCommand)}`;
+}
+
+async function sendTaskerFallbackCommand(taskerCommand, traceContext) {
+    const traceId = traceContext.traceId;
+
+    if (!TASKER_AUTOREMOTE_FALLBACK_ENABLED) {
+        traceLog(traceId, 'FB/0', 'Tasker AutoRemote fallback is disabled by env', null, 'warn');
+        return false;
+    }
+
+    const messageUrl = buildAutoRemoteMessageUrl(taskerCommand);
+    if (!messageUrl) {
+        traceLog(traceId, 'FB/0', 'AUTOREMOTE_URL is missing, cannot execute fallback', null, 'error');
+        return false;
+    }
+
+    try {
+        traceLog(traceId, 'FB/1', 'Sending fallback command to AutoRemote', {
+            taskerCommand,
+            timeoutMs: 8000
+        }, 'warn');
+
+        const response = await axios.get(messageUrl, { timeout: 8000 });
+
+        traceLog(traceId, 'FB/2', 'AutoRemote fallback request accepted', {
+            taskerCommand,
+            httpStatus: response.status
+        }, 'warn');
+
+        return true;
+    } catch (error) {
+        traceLog(traceId, 'FB/ERR', 'AutoRemote fallback request failed', {
+            taskerCommand,
+            error: error.message
+        }, 'error');
+        return false;
+    }
+}
+
+async function waitForTaskerFallbackConfirmation(expectedState, traceContext) {
+    const traceId = traceContext.traceId;
+    const timeoutMs = Number.isFinite(TASKER_CONFIRM_TIMEOUT_MS) ? TASKER_CONFIRM_TIMEOUT_MS : 20000;
+    const pollMs = Number.isFinite(TASKER_CONFIRM_POLL_MS) ? TASKER_CONFIRM_POLL_MS : 1000;
+    const startedAt = Date.now();
+
+    traceLog(traceId, 'FB/3', 'Waiting for Tasker confirmation', {
+        expectedState: expectedState ? 'on' : 'off',
+        timeoutMs,
+        pollMs
+    }, 'warn');
+
+    while (Date.now() - startedAt < timeoutMs) {
+        const latest = await readLatestPowerStateFromHistory();
+        if (latest && typeof latest.isOn === 'boolean' && latest.isOn === expectedState) {
+            traceLog(traceId, 'FB/4', 'Tasker confirmation received from power_history', {
+                expectedState: expectedState ? 'on' : 'off',
+                source: latest.source,
+                timestamp: latest.timestamp,
+                waitedMs: Date.now() - startedAt
+            }, 'warn');
+            return true;
+        }
+
+        const globalState = parsePowerState(global.powerState?.is_on);
+        if (typeof globalState === 'boolean' && globalState === expectedState) {
+            traceLog(traceId, 'FB/4', 'Tasker confirmation observed via global.powerState', {
+                expectedState: expectedState ? 'on' : 'off',
+                source: global.powerState?.source || 'memory',
+                waitedMs: Date.now() - startedAt
+            }, 'warn');
+            return true;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, pollMs));
+    }
+
+    traceLog(traceId, 'FB/5', 'Tasker confirmation timeout expired', {
+        expectedState: expectedState ? 'on' : 'off',
+        timeoutMs
+    }, 'error');
+    return false;
+}
+
+async function executeWithTaskerTimeoutFallback({ turnOn, command, targetDeviceId, traceContext }) {
+    const traceId = traceContext.traceId;
+    const stResultMeta = { failureReason: null, statusCode: null, errorMessage: null };
+    const stSuccess = await sendSTCommand(targetDeviceId, command, 0, traceContext, stResultMeta);
+
+    if (stSuccess) {
+        return { success: true, usedTaskerFallback: false, taskerConfirmed: false };
+    }
+
+    const shouldFallback = stResultMeta.failureReason === 'timeout';
+    if (!shouldFallback) {
+        traceLog(traceId, 'FB/SKIP', 'No Tasker fallback: SmartThings failed for non-timeout reason', {
+            failureReason: stResultMeta.failureReason,
+            statusCode: stResultMeta.statusCode,
+            error: stResultMeta.errorMessage
+        }, 'warn');
+        return { success: false, usedTaskerFallback: false, taskerConfirmed: false };
+    }
+
+    const taskerCommand = turnOn ? 'meter_on' : 'meter_off';
+    traceLog(traceId, 'FB/START', 'SmartThings timeout detected, starting AutoRemote fallback', {
+        taskerCommand,
+        stFailureReason: stResultMeta.failureReason,
+        stStatusCode: stResultMeta.statusCode
+    }, 'warn');
+
+    const sent = await sendTaskerFallbackCommand(taskerCommand, traceContext);
+    if (!sent) {
+        return { success: false, usedTaskerFallback: true, taskerConfirmed: false };
+    }
+
+    const confirmed = await waitForTaskerFallbackConfirmation(turnOn, traceContext);
+    if (confirmed) {
+        global.powerState = {
+            is_on: turnOn,
+            source: 'tasker_fallback_autoremote',
+            last_update: new Date().toISOString()
+        };
+    }
+
+    return { success: confirmed, usedTaskerFallback: true, taskerConfirmed: confirmed };
 }
 
 function getTraceContext(context = {}) {
@@ -181,7 +359,7 @@ async function refreshSTToken() {
     }
 }
 
-async function sendSTCommand(deviceId, cmd, retryCount = 0, context = {}) {
+async function sendSTCommand(deviceId, cmd, retryCount = 0, context = {}, resultMeta = null) {
     const traceContext = getTraceContext(context);
     const traceId = traceContext.traceId;
 
@@ -216,9 +394,17 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0, context = {}) {
 
         traceLog(traceId, '5/6', 'Command flow completed successfully');
         console.log(`[SMARTTHINGS] 📤 Успешно: ${cmd}`);
+
+        if (resultMeta && typeof resultMeta === 'object') {
+            resultMeta.failureReason = null;
+            resultMeta.statusCode = null;
+            resultMeta.errorMessage = null;
+        }
+
         return true;
     } catch (err) {
         const statusCode = err.response?.status || null;
+        const timeoutFailure = isSmartThingsTimeoutError(err);
 
         traceLog(traceId, '4/6', 'SmartThings request failed', {
             statusCode,
@@ -233,7 +419,7 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0, context = {}) {
             const refreshed = await refreshSTToken();
             if (!refreshed) return false;
             global.lastTokenRefresh = new Date().toISOString();
-            return sendSTCommand(deviceId, cmd, retryCount + 1, traceContext);
+            return sendSTCommand(deviceId, cmd, retryCount + 1, traceContext, resultMeta);
         }
         if (err.response?.status === 403 && retryCount < 1) {
             console.warn('[SMARTTHINGS] ⚠️ 403 Forbidden - проверявам налични устройства');
@@ -247,13 +433,21 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0, context = {}) {
                 });
                 if (deviceId === SMARTTHINGS_DEVICE_ID_ON) process.env.SMARTTHINGS_DEVICE_ID_ON = newId;
                 if (deviceId === SMARTTHINGS_DEVICE_ID_OFF) process.env.SMARTTHINGS_DEVICE_ID_OFF = newId;
-                return sendSTCommand(newId, cmd, retryCount + 1, traceContext);
+                return sendSTCommand(newId, cmd, retryCount + 1, traceContext, resultMeta);
             }
         }
+
+        if (resultMeta && typeof resultMeta === 'object') {
+            resultMeta.failureReason = timeoutFailure ? 'timeout' : 'error';
+            resultMeta.statusCode = statusCode;
+            resultMeta.errorMessage = err.message;
+        }
+
         traceLog(traceId, '6/6', 'Command flow failed permanently', {
             statusCode,
             command: cmd,
-            retryCount
+            retryCount,
+            timeoutFailure
         }, 'error');
         console.error('[SMARTTHINGS] ❌ Грешка (команда):', err.response?.data || err.message);
         return false;
@@ -335,9 +529,20 @@ export async function controlPower(turnOn, context = {}) {
         return false;
     }
 
-    const success = await sendSTCommand(targetDeviceId, command, 0, traceContext);
-    traceLog(traceId, 'CP/2', 'controlPower finished', { success });
-    return success;
+    const result = await executeWithTaskerTimeoutFallback({
+        turnOn,
+        command,
+        targetDeviceId,
+        traceContext
+    });
+
+    traceLog(traceId, 'CP/2', 'controlPower finished', {
+        success: result.success,
+        usedTaskerFallback: result.usedTaskerFallback,
+        taskerConfirmed: result.taskerConfirmed
+    });
+
+    return result.success;
 }
 export async function controlMeterByAction(action, context = {}) {
     const traceContext = getTraceContext({ ...context, action });
@@ -376,13 +581,26 @@ export async function controlMeterByAction(action, context = {}) {
         targetDeviceId: sanitizeDeviceId(targetDeviceId)
     });
 
-    const success = await sendSTCommand(targetDeviceId, command, 0, traceContext);
-
-    traceLog(traceId, 'CM/4', 'controlMeterByAction finished', {
-        success,
-        normalized,
-        command
+    const result = await executeWithTaskerTimeoutFallback({
+        turnOn,
+        command,
+        targetDeviceId,
+        traceContext
     });
 
-    return { success, command, traceId };
+    traceLog(traceId, 'CM/4', 'controlMeterByAction finished', {
+        success: result.success,
+        normalized,
+        command,
+        usedTaskerFallback: result.usedTaskerFallback,
+        taskerConfirmed: result.taskerConfirmed
+    });
+
+    return {
+        success: result.success,
+        command,
+        traceId,
+        usedTaskerFallback: result.usedTaskerFallback,
+        taskerConfirmed: result.taskerConfirmed
+    };
 }

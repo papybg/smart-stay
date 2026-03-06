@@ -173,6 +173,8 @@ export function registerPowerRoutes(app, {
 				recordPowerTrace('error', traceId, '❌ 4/6', 'SmartThings adapter returned failure', {
 					action,
 					command: result?.command || '',
+					usedTaskerFallback: Boolean(result?.usedTaskerFallback),
+					taskerConfirmed: Boolean(result?.taskerConfirmed),
 					elapsedMs: Date.now() - startedAt
 				});
 				return res.status(502).json({
@@ -180,6 +182,8 @@ export function registerPowerRoutes(app, {
 					traceId,
 					action,
 					command: result?.command || '',
+					usedTaskerFallback: Boolean(result?.usedTaskerFallback),
+					taskerConfirmed: Boolean(result?.taskerConfirmed),
 					error: 'SmartThings command failed'
 				});
 			}
@@ -187,6 +191,8 @@ export function registerPowerRoutes(app, {
 			recordPowerTrace('info', traceId, '✅ 4/6', 'SmartThings adapter success', {
 				action,
 				command: result.command || action,
+				usedTaskerFallback: Boolean(result?.usedTaskerFallback),
+				taskerConfirmed: Boolean(result?.taskerConfirmed),
 				elapsedMs: Date.now() - startedAt
 			});
 
@@ -213,6 +219,8 @@ export function registerPowerRoutes(app, {
 				traceId,
 				action,
 				command: result.command || action,
+				usedTaskerFallback: Boolean(result?.usedTaskerFallback),
+				taskerConfirmed: Boolean(result?.taskerConfirmed),
 				timestamp: nowIso
 			});
 		} catch (error) {
