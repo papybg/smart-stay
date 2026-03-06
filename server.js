@@ -51,6 +51,8 @@ import { registerSystemRoutes } from './routes/systemRoutes.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
+// behind Render’s proxy; ensures rate limiter sees real IP
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 10000;
 const TASKER_NOISE_WINDOW_MS = Number(process.env.TASKER_NOISE_WINDOW_MS || 45000);
 const REQUEST_LOG_SUPPRESS_MS = Number(process.env.REQUEST_LOG_SUPPRESS_MS || 30000);
