@@ -13,6 +13,67 @@ function normalizePowerState(value) {
 	return null;
 }
 
+function createPowerTraceId() {
+	return `pwr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getPowerTraceStore() {
+	if (!global.__powerTraceStore) {
+		global.__powerTraceStore = {
+			maxEvents: Number(process.env.POWER_TRACE_MAX_EVENTS || 800),
+			events: [],
+			lastTraceId: null
+		};
+	}
+
+	if (!Number.isFinite(global.__powerTraceStore.maxEvents) || global.__powerTraceStore.maxEvents < 100) {
+		global.__powerTraceStore.maxEvents = 800;
+	}
+
+	return global.__powerTraceStore;
+}
+
+function recordPowerTrace(level, traceId, stage, message, payload = null, channel = 'route') {
+	const store = getPowerTraceStore();
+	const event = {
+		ts: new Date().toISOString(),
+		traceId,
+		channel,
+		level,
+		stage,
+		message,
+		payload: payload && typeof payload === 'object' ? payload : null
+	};
+
+	store.lastTraceId = traceId || store.lastTraceId;
+	store.events.push(event);
+	if (store.events.length > store.maxEvents) {
+		store.events.splice(0, store.events.length - store.maxEvents);
+	}
+
+	const line = `[POWER_FLOW:${traceId}] ${stage} ${message}`;
+	if (level === 'error') {
+		if (event.payload) console.error(line, event.payload);
+		else console.error(line);
+		return;
+	}
+	if (level === 'warn') {
+		if (event.payload) console.warn(line, event.payload);
+		else console.warn(line);
+		return;
+	}
+	if (event.payload) console.log(line, event.payload);
+	else console.log(line);
+}
+
+function summarizeClient(req) {
+	const ip = String(req.headers['x-forwarded-for'] || req.ip || req.connection?.remoteAddress || 'unknown')
+		.split(',')[0]
+		.trim();
+	const ua = String(req.headers['user-agent'] || 'unknown').slice(0, 60);
+	return { ip, ua };
+}
+
 function resolveMeterAction(req) {
 	const fromBody = String(req.body?.action || req.body?.command || '').trim().toLowerCase();
 	if (fromBody === 'on' || fromBody === 'off') return fromBody;
@@ -71,20 +132,63 @@ export function registerPowerRoutes(app, {
 }) {
 	async function handleMeterCommand(req, res) {
 		try {
+			const traceId = String(req.headers['x-trace-id'] || '').trim() || createPowerTraceId();
+			const startedAt = Date.now();
+			const client = summarizeClient(req);
+			res.setHeader('x-trace-id', traceId);
+
+			recordPowerTrace('info', traceId, '▶️ 1/6', 'Route received', {
+				path: req.path,
+				method: req.method,
+				client: client.ip,
+				hasApiKey: Boolean(req.headers['x-api-key'] || req.headers['x-meter-api-key'])
+			});
+
 			const action = resolveMeterAction(req);
 			if (action !== 'on' && action !== 'off') {
+				recordPowerTrace('warn', traceId, '⛔ 2/6', 'Invalid action', {
+					actionRaw: req.body?.action ?? req.body?.command ?? null,
+					path: req.path
+				});
 				return res.status(400).json({ error: "Invalid action. Use 'on' or 'off'." });
 			}
 
-			const result = await controlMeterByAction(action);
+			recordPowerTrace('info', traceId, '✅ 2/6', 'Action resolved', {
+				action,
+				path: req.path,
+				ua: client.ua
+			});
+
+			recordPowerTrace('info', traceId, '📡 3/6', 'Dispatch to SmartThings adapter', {
+				action,
+				adapter: 'controlMeterByAction'
+			});
+
+			const result = await controlMeterByAction(action, {
+				traceId,
+				source: 'api_meter',
+				requestPath: req.path
+			});
 			if (!result?.success) {
+				recordPowerTrace('error', traceId, '❌ 4/6', 'SmartThings adapter returned failure', {
+					action,
+					command: result?.command || '',
+					elapsedMs: Date.now() - startedAt
+				});
 				return res.status(502).json({
 					success: false,
+					traceId,
 					action,
 					command: result?.command || '',
 					error: 'SmartThings command failed'
 				});
 			}
+
+			recordPowerTrace('info', traceId, '✅ 4/6', 'SmartThings adapter success', {
+				action,
+				command: result.command || action,
+				elapsedMs: Date.now() - startedAt
+			});
 
 			const nowIso = new Date().toISOString();
 			global.powerState = {
@@ -93,14 +197,27 @@ export function registerPowerRoutes(app, {
 				last_update: nowIso
 			};
 
+			recordPowerTrace('info', traceId, '🧠 5/6', 'Global power state updated', {
+				is_on: global.powerState.is_on,
+				source: global.powerState.source,
+				last_update: global.powerState.last_update
+			});
+
+			recordPowerTrace('info', traceId, '🏁 6/6', 'Command flow finished', {
+				action,
+				totalMs: Date.now() - startedAt
+			});
+
 			return res.status(200).json({
 				success: true,
+				traceId,
 				action,
 				command: result.command || action,
 				timestamp: nowIso
 			});
 		} catch (error) {
-			console.error('[METER] 🔴 Command error:', error.message);
+			const traceId = String(req.headers['x-trace-id'] || '').trim() || 'no-trace';
+			recordPowerTrace('error', traceId, '🔴', 'Route error', { error: error.message });
 			return res.status(500).json({ error: 'Meter command error' });
 		}
 	}
@@ -236,6 +353,42 @@ export function registerPowerRoutes(app, {
 				lastUpdate: snapshot.lastUpdate,
 				sourceType: 'fallback'
 			});
+		}
+	});
+
+	app.get('/api/power/trace-help', (req, res) => {
+		try {
+			const store = getPowerTraceStore();
+			const requestedTraceId = String(req.query.traceId || '').trim();
+			const effectiveTraceId = requestedTraceId || store.lastTraceId || '';
+			const requestedLimit = Number.parseInt(String(req.query.limit || '80'), 10);
+			const limit = Number.isFinite(requestedLimit)
+				? Math.max(1, Math.min(requestedLimit, 300))
+				: 80;
+
+			const sourceEvents = effectiveTraceId
+				? store.events.filter(event => event.traceId === effectiveTraceId)
+				: store.events;
+
+			const events = sourceEvents.slice(-limit);
+			const traces = [];
+			for (let index = store.events.length - 1; index >= 0 && traces.length < 10; index--) {
+				const value = store.events[index]?.traceId;
+				if (!value || traces.includes(value)) continue;
+				traces.push(value);
+			}
+
+			return res.status(200).json({
+				success: true,
+				traceId: effectiveTraceId || null,
+				count: events.length,
+				availableTraceIds: traces,
+				events,
+				hint: 'Use /api/power/trace-help?traceId=<id>&limit=120 to inspect a specific command flow.'
+			});
+		} catch (error) {
+			console.error('[POWER_TRACE] 🔴 Trace-help error:', error.message);
+			return res.status(500).json({ success: false, error: 'Trace help error' });
 		}
 	});
 
