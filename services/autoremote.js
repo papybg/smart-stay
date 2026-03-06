@@ -1,22 +1,22 @@
 // ============================================================================
-// SMARTTHINGS AUTH (deprecated)
+// SMARTTHINGS AUTH (OAuth enabled with auto-refresh)
 // ============================================================================
 //
-// Автентикацията вече не използва OAuth refresh tokens, client id/secret
-// или каквато и да е логика за обновяване. Вместо това:
-//   • Използва се PERSONAL ACCESS TOKEN (ST_ACCESS_TOKEN), който е
-//     постоянен и не изтича.
-//   • Устройствата се управляват директно чрез SmartThings API с два
-//     deviceId-а: SMARTTHINGS_DEVICE_ID_ON (on) и
-//     SMARTTHINGS_DEVICE_ID_OFF (off).
-//   • Командата се изпраща като POST към
-//     /v1/devices/{deviceId}/commands (capability "switch").
-//   • Няма нужда от refresh логика, OAuth flow или client credentials.
+// Тази версия използва стандартен OAuth2 поток за SmartThings. Token-ите
+// се съхраняват и автоматично се обновяват чрез refresh token. Стойностите
+// се зареждат от база данни и/или .env (ST_ACCESS_TOKEN / ST_REFRESH_TOKEN).
+// 
+// Логиката включва:
+//   • loadTokenFromDB() – извлича refresh token от system_settings таблицата.
+//   • refreshSTToken() – извърша OAuth refresh, записва новите токени в DB.
+//   • ensureValidSTAccessToken() – гарантира валиден access token, с optional
+//     forceRefresh.
+//   • фонова IIFE, която при стартиране зарежда/обновява токена и поставя
+//     setInterval за обновяване на всеки 12 часа.
+//   • sendSTCommand() – при 401 опитва повторно след обновяване на токена.
 //
-// Всичко свързано с ST_REFRESH_TOKEN, ST_CLIENT_ID, ST_CLIENT_SECRET,
-// функцията refreshSTToken(), ensureValidSTAccessToken(), стартовия IIFE и
-// setInterval от 12 часа е маркирано по-долу като deprecated и може да бъде
-// премахнато в бъдеща версия.
+// Персоналният token (ST_ACCESS_TOKEN) е резервен път, но стандартният OAuth
+// е предпочитан.  
 
 import axios from 'axios';
 import { neon } from '@neondatabase/serverless';
@@ -26,13 +26,15 @@ let stAccessToken = process.env.ST_ACCESS_TOKEN;
 let stRefreshToken = process.env.ST_REFRESH_TOKEN;
 export { stAccessToken };
 
-// active helper: simply return the personal access token (no refresh)
+// helper ensures a valid access token, refreshing if needed
 export async function ensureValidSTAccessToken({ forceRefresh = false } = {}) {
-    // refresh logic is deprecated; access token is permanent
-    return process.env.ST_ACCESS_TOKEN || null;
+    if (forceRefresh || !stAccessToken) {
+        const refreshed = await refreshSTToken();
+        if (!refreshed) return null;
+    }
+    return stAccessToken || null;
 }
 
-/* DEPRECATED: OAuth refresh/storage helpers (see header comment)
 async function loadTokenFromDB() {
     if (!sql) return;
     try {
@@ -41,27 +43,22 @@ async function loadTokenFromDB() {
         if (rows.length > 0 && rows[0].value) {
             stRefreshToken = rows[0].value;
             console.log('[SMARTTHINGS] ℹ️ Refresh token зареден от базата данни');
+        } else if (process.env.ST_REFRESH_TOKEN) {
+            stRefreshToken = process.env.ST_REFRESH_TOKEN;
+            await sql`INSERT INTO system_settings (key, value) VALUES ('st_refresh_token', ${stRefreshToken}) ON CONFLICT (key) DO UPDATE SET value = ${stRefreshToken}`;
+            console.log('[SMARTTHINGS] ℹ️ Refresh token записан от ENV в базата данни');
         }
     } catch (e) {
         console.error('[SMARTTHINGS] ⚠️ Грешка при зареждане на токена от DB:', e.message);
     }
 }
-*/
-/* DEPRECATED: OAuth access token management
-export async function ensureValidSTAccessToken({ forceRefresh = false } = {}) {
-    if (forceRefresh || !stAccessToken) {
-        const refreshed = await refreshSTToken();
-        if (!refreshed) return null;
-    }
-    return stAccessToken || null;
-}
-*/
+
+
 const SMARTTHINGS_DEVICE_ID_ON = process.env.SMARTTHINGS_DEVICE_ID_ON || process.env.SMARTTHINGS_DEVICE_ID;
 const SMARTTHINGS_DEVICE_ID_OFF = process.env.SMARTTHINGS_DEVICE_ID_OFF || process.env.SMARTTHINGS_DEVICE_ID;
 const SMARTTHINGS_COMMAND_ON = process.env.SMARTTHINGS_COMMAND_ON || 'on';
 const SMARTTHINGS_COMMAND_OFF = process.env.SMARTTHINGS_COMMAND_OFF || 'off';
 // DEBUG: device IDs hidden for security
-/* DEPRECATED: OAuth refresh logic
 async function refreshSTToken() {
     if (!process.env.ST_CLIENT_ID || !process.env.ST_CLIENT_SECRET || !stRefreshToken) {
         console.error('[SMARTTHINGS] ❌ Липсват ST_CLIENT_ID/ST_CLIENT_SECRET/ST_REFRESH_TOKEN за OAuth refresh');
@@ -69,7 +66,6 @@ async function refreshSTToken() {
     }
     try {
         const previewParams = { grant_type: 'refresh_token', refresh_token: stRefreshToken ? stRefreshToken.substring(0,10) + '...' : undefined };
-        // console.log('[SMARTTHINGS:REFRESH_DEBUG] Request params (body):', previewParams); // removed sensitive data
         const basicAuth = Buffer.from(`${process.env.ST_CLIENT_ID}:${process.env.ST_CLIENT_SECRET}`).toString('base64');
         console.log('[SMARTTHINGS:REFRESH_DEBUG] Using Basic Auth header for client credentials');
         const response = await axios.post('https://api.smartthings.com/oauth/token', new URLSearchParams({
@@ -103,26 +99,21 @@ async function refreshSTToken() {
         return false;
     }
 }
-*/
+
 async function sendSTCommand(deviceId, cmd, retryCount = 0) {
     try {
         const token = await ensureValidSTAccessToken();
         global.lastTokenRefresh = global.lastTokenRefresh || null;
-        // DEBUG token source suppressed
-        // DEBUG token value suppressed
-        // DEBUG token refresh time suppressed
-        // DEBUG time info removed
         const url = `https://api.smartthings.com/v1/devices/${deviceId}/commands`;
-        // DEBUG URL suppressed
-        // DEBUG device ID suppressed
-        // DEBUG command suppressed
         await axios.post(url, { commands: [{ component: 'main', capability: 'switch', command: cmd }] }, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 });
         console.log(`[SMARTTHINGS] 📤 Успешно: ${cmd}`);
         return true;
     } catch (err) {
         if (err.response?.status === 401 && retryCount < 1) {
-            console.log('[SMARTTHINGS] ⚠️ 401 - Personal Access Token невалиден, проверете ST_ACCESS_TOKEN');
-            return false;
+            const refreshed = await refreshSTToken();
+            if (!refreshed) return false;
+            global.lastTokenRefresh = new Date().toISOString();
+            return sendSTCommand(deviceId, cmd, retryCount + 1);
         }
         if (err.response?.status === 403 && retryCount < 1) {
             console.warn('[SMARTTHINGS] ⚠️ 403 Forbidden - проверявам налични устройства');
@@ -135,7 +126,7 @@ async function sendSTCommand(deviceId, cmd, retryCount = 0) {
             }
         }
         console.error('[SMARTTHINGS] ❌ Грешка (команда):', err.response?.data || err.message);
-        // console.error('[SMARTTHINGS:DEBUG] Full error:', err.response?.data); // potentially sensitive        return false;
+        return false;
     }
 }
 async function discoverDeviceId(failedId) {
@@ -157,7 +148,6 @@ async function discoverDeviceId(failedId) {
         return null;
     }
 }
-/* DEPRECATED: startup & periodic refresh
 (async () => {
     await loadTokenFromDB();
     if (stRefreshToken) {
@@ -184,7 +174,7 @@ async function discoverDeviceId(failedId) {
         if (typeof tokenRefreshInterval.unref === 'function') tokenRefreshInterval.unref();
     }
 })();
-*/
+
 export async function controlPower(turnOn) {
     const command = turnOn ? SMARTTHINGS_COMMAND_ON : SMARTTHINGS_COMMAND_OFF;
     const targetDeviceId = turnOn ? SMARTTHINGS_DEVICE_ID_ON : SMARTTHINGS_DEVICE_ID_OFF;
