@@ -169,6 +169,10 @@ export function registerSmartThingsCallbackRoute(app) {
             const accessToken = tokenResponse.data.access_token;
             const refreshToken = tokenResponse.data.refresh_token;
 
+            // temporary debug logs – remove after verifying tokens
+            console.log('[ST-CALLBACK] NEW_REFRESH_TOKEN:', refreshToken);
+            console.log('[ST-CALLBACK] NEW_ACCESS_TOKEN:', accessToken);
+
             console.log('[ST-CALLBACK] ✅ Токени получени успешно');
 
             // ⚠️ ВАЖНО: Безопасна персистиране на tokens
