@@ -110,6 +110,15 @@ function dashboardKeyGuard(req, res, next) {
     }
     const key = req.headers['x-api-key'];
     if (key && key === dashboardApiKey) return next();
+
+    if (req.url.startsWith('/meter')) {
+        const meterIncoming = req.headers['x-meter-api-key'] || req.headers['x-api-key'];
+        const expectedMeterKey = process.env.METER_API_KEY || '';
+        if (expectedMeterKey && meterIncoming && String(meterIncoming).trim() === expectedMeterKey) {
+            return next();
+        }
+    }
+
     return res.status(401).json({ error: 'Неоторизиран достъп' });
 }
 app.use('/api', dashboardKeyGuard);
@@ -221,11 +230,30 @@ const chatRateLimiter = createSimpleRateLimiter({ windowMs: 60_000, maxRequests:
 const meterRateLimiter = createSimpleRateLimiter({ windowMs: 60_000, maxRequests: 20, methods: ['POST'] });
 const powerStatusRateLimiter = createSimpleRateLimiter({ windowMs: 60_000, maxRequests: 60, methods: ['POST'] });
 
-const meterApiKeyGuard = createApiKeyGuard({
-    envVar: 'METER_API_KEY',
-    headerName: 'x-meter-api-key',
-    methods: ['POST']
-});
+const meterCommandGuard = (req, res, next) => {
+    if (req.method.toUpperCase() !== 'POST') return next();
+
+    const incoming = String(
+        req.headers['x-meter-api-key']
+        || req.headers['x-api-key']
+        || req.body?.apiKey
+        || req.query?.apiKey
+        || ''
+    ).trim();
+
+    const meterKey = String(process.env.METER_API_KEY || '').trim();
+    const dashKey = String(process.env.DASHBOARD_API_KEY || '').trim();
+
+    if (!incoming) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if ((meterKey && incoming === meterKey) || (dashKey && incoming === dashKey)) {
+        return next();
+    }
+
+    return res.status(401).json({ error: 'Unauthorized' });
+};
 
 const taskerFeedbackGuard = createApiKeyGuard({
     envVar: 'TASKER_STATUS_API_KEY',
@@ -235,7 +263,7 @@ const taskerFeedbackGuard = createApiKeyGuard({
 });
 
 app.use('/api/chat', chatRateLimiter);
-app.use(['/api/meter', '/api/meter/on', '/api/meter/off'], meterApiKeyGuard, meterRateLimiter);
+app.use(['/api/meter', '/api/meter/on', '/api/meter/off'], meterCommandGuard, meterRateLimiter);
 app.use(['/api/power/status', '/api/power-status'], taskerFeedbackGuard, powerStatusRateLimiter);
 
 /**
