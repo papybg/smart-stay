@@ -104,7 +104,7 @@ app.use('/api/email/sync', emailLimiter);
 const dashboardApiKey = process.env.DASHBOARD_API_KEY || '';
 function dashboardKeyGuard(req, res, next) {
     // skip certain public endpoints (middleware mounted at /api, so urls start after it)
-    const open = ['/power-status', '/chat'];
+    const open = ['/power-status', '/chat', '/inquiry'];
     if (req.url.startsWith('/api/guest/') || open.some(p => req.url.startsWith(p))) {
         return next();
     }

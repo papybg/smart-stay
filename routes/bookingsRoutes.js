@@ -282,6 +282,39 @@ export function registerBookingsRoutes(app, {
         }
     });
 
+    // public inquiry form for website
+    app.post('/api/inquiry', async (req, res) => {
+        try {
+            const { guest_name, guest_email, guest_phone, check_in, check_out, guests_count, message } = req.body || {};
+            if (!guest_name || !guest_email || !check_in || !check_out) {
+                return res.status(400).json({ error: 'Липсват задължителни полета' });
+            }
+            const checkInDate = new Date(check_in);
+            const checkOutDate = new Date(check_out);
+            const reservation_code = 'INQ' + Date.now().toString(36).toUpperCase();
+            const powerOn = new Date(checkInDate.getTime() - 2 * 60 * 60 * 1000);
+            const powerOff = new Date(checkOutDate.getTime() + 1 * 60 * 60 * 1000);
+
+            await sql`
+                INSERT INTO bookings (
+                    reservation_code, guest_name, guest_email, guest_phone,
+                    check_in, check_out, payment_status, power_on_time, power_off_time,
+                    source, notes
+                ) VALUES (
+                    ${reservation_code}, ${guest_name}, ${guest_email}, ${guest_phone || null},
+                    ${checkInDate.toISOString()}, ${checkOutDate.toISOString()},
+                    'pending', ${powerOn.toISOString()}, ${powerOff.toISOString()},
+                    'direct', ${message || null}
+                )
+            `;
+
+            return res.status(200).json({ success: true, reservation_code });
+        } catch (error) {
+            console.error('[INQUIRY] 🔴 Грешка:', error.message);
+            return res.status(500).json({ error: 'Unexpected error' });
+        }
+    });
+
     app.get('/sync', async (_req, res) => {
         try {
             console.log('[DETECTIVE] 🔄 Ръчен sync стартиран от dashboard');
