@@ -54,9 +54,9 @@
 <div class="absolute bottom-0 left-0 right-0 p-6 z-20 text-center">
 <h2 class="font-display text-white text-3xl font-bold mb-2">Aspen Valley Retreat</h2>
 <p class="text-gold/90 text-lg mb-6 italic">Уют, СПА и планински въздух край Разлог</p>
-<button class="w-full bg-gold hover:bg-gold/90 text-primary font-bold py-4 rounded-lg shadow-xl transition-all">
-                    Направи запитване
-                </button>
+<a href="#inquiry-form" class="block w-full bg-gold hover:bg-gold/90 text-primary font-bold py-4 rounded-lg shadow-xl transition-all">
+          Направи запитване
+        </a>
 </div>
 </div>
 </section>
@@ -190,6 +190,25 @@
 </li>
 </ul>
 </section>
+<!-- Photo Gallery -->
+<section class="px-6 py-8">
+<h3 class="font-display text-2xl font-bold mb-6 text-center">Галерия</h3>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<img alt="Интериор на апартамента" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAv09leI-RggsLHZ98aXZ2NrjuZpKxIm7LsRjdU8jI71nuifiMCcW4ldHgYDqYP-dj7aYpvIZSJwO1427i2-blZx8FCAqAegnB23SeF4BRg4jzHvvrvA9k5OufiqCIsCq5dEYtRPsHT6rlkKypyrDVgDip21q-de2iMZdhRnxO1S916hP5NqQ7gmB0zMtyVwrFs6hohVbyBjFTRb-8lDfkuyCwfHZNCNci8wpTHXTLKDq5H0eYSQxitXJqBFvt-BgcLgObT2WAynQ"/>
+<img alt="Планинска гледка" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZGR6SBeOFyw3Nhlb5xQ75Bn9p09vXVUjkthI6l1D4AEbfpyAzq3ze5C1hy-YwWPsFO27Vvj69BLeV8dySn8poTpGyp7Hi_f5ruDnJosGgsA1o9Mc4Q0qVTSMwVnDiBIwl_J_kdSqoflsl9zReu9SebzvaN1hUBt-roVflG8MSZBvUZPuD8ZcbPiLJGuQyMq5cfMS7MovBPJDbM3DTwYhGHPk5eL5rPp7aBGlGey-gOW9-YKkrlcVldzr9bj-5ifB95R05bLIyUA"/>
+</div>
+</section>
+<!-- AI Concierge -->
+<section class="px-6 py-8">
+<div class="bg-primary/30 dark:bg-neutral-dark border border-gold/20 rounded-2xl p-6 text-center">
+<h3 class="font-display text-2xl font-bold mb-2 text-gold">AI Concierge</h3>
+<p class="text-sm text-slate-300 mb-5">Имате въпроси за района, настаняване или удобства? Пишете директно на нашия AI асистент.</p>
+<a href="/" class="inline-flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-primary font-bold px-5 py-3 rounded-lg transition-all">
+<span class="material-symbols-outlined">smart_toy</span>
+<span>Отвори AI асистент</span>
+</a>
+</div>
+</section>
 <!-- Inquiry Form -->
 <section class="px-6 py-10 bg-neutral-dark">
 <div class="max-w-md mx-auto">
@@ -246,6 +265,10 @@
 </button>
 </form>
 <script>
+const INQUIRY_API_URL = window.__SMART_STAY_API_URL
+  ? `${window.__SMART_STAY_API_URL}/api/inquiry`
+  : `${window.location.origin}/api/inquiry`;
+
 async function submitInquiry() {
   const name = document.getElementById('f-name').value.trim();
   const email = document.getElementById('f-email').value.trim();
@@ -273,7 +296,7 @@ async function submitInquiry() {
   btn.disabled = true;
 
   try {
-    const res = await fetch('https://smart-stay.onrender.com/api/inquiry', {
+    const res = await fetch(INQUIRY_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -339,4 +362,7 @@ async function submitInquiry() {
 <span class="material-symbols-outlined">social_leaderboard</span>
 <span class="material-symbols-outlined">photo_camera</span>
 </div>
-<p class="text-[10px] text-slate-50
+<p class="text-[10px] text-slate-500">© 2026 Aspen Valley Retreat · Smart Stay</p>
+</footer>
+</body>
+</html>

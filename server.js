@@ -58,6 +58,7 @@ app.set('trust proxy', 1);
 // CORS – трябва да е ПРЕДИ всичко друго
 const allowedOrigins = [
     'https://stay.bgm-design.com',
+    'https://reservation.bgm-design.com',
     'https://smart-stay.onrender.com',
     'http://localhost:3000'
 ];
@@ -305,6 +306,17 @@ app.get('/dashboard.html', async (req, res) => {
         res.status(500).send('Server error');
     }
 });
+
+const reservationHosts = new Set(['reservation.bgm-design.com']);
+
+app.get(['/', '/index.html'], (req, res, next) => {
+    const host = String(req.headers.host || '').split(':')[0].toLowerCase();
+    if (reservationHosts.has(host)) {
+        return res.sendFile(path.join(__dirname, 'public', 'aspen-valley-retreat.html'));
+    }
+    return next();
+});
+
 // static middleware for other assets
 app.use(express.static(path.join(__dirname, 'public')));
 
