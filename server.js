@@ -59,6 +59,7 @@ app.set('trust proxy', 1);
 const allowedOrigins = [
     'https://stay.bgm-design.com',
     'https://reservation.bgm-design.com',
+    'https://www.reservation.bgm-design.com',
     'https://smart-stay.onrender.com',
     'http://localhost:3000'
 ];
@@ -307,10 +308,27 @@ app.get('/dashboard.html', async (req, res) => {
     }
 });
 
-const reservationHosts = new Set(['reservation.bgm-design.com']);
+// canonical hosts for reservation site (with and without www)
+const reservationHosts = new Set(['reservation.bgm-design.com', 'www.reservation.bgm-design.com']);
+
+function getIncomingHost(req) {
+    const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim().toLowerCase();
+    const direct = String(req.headers.host || '').split(':')[0].trim().toLowerCase();
+    return (forwarded || direct).replace(/\.$/, '');
+}
+
+app.use((req, res, next) => {
+    // if request comes to reservation.bgm-design.com without www, redirect to www
+    const host = getIncomingHost(req);
+    if (host === 'reservation.bgm-design.com') {
+        const target = 'https://www.reservation.bgm-design.com' + req.url;
+        return res.redirect(301, target);
+    }
+    return next();
+});
 
 app.get(['/', '/index.html'], (req, res, next) => {
-    const host = String(req.headers.host || '').split(':')[0].toLowerCase();
+    const host = getIncomingHost(req);
     if (reservationHosts.has(host)) {
         return res.sendFile(path.join(__dirname, 'public', 'aspen-valley-retreat.html'));
     }
