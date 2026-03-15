@@ -193,21 +193,66 @@
 <!-- Photo Gallery -->
 <section class="px-6 py-8">
 <h3 class="font-display text-2xl font-bold mb-6 text-center">Галерия</h3>
-<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-<img alt="Входна врата" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389253/PXL_20260201_122410687.MP_lc2tjt.webp"/>
-<img alt="Спалня 2" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773390116/%D1%81%D0%BF%D0%B0%D0%BB%D0%BD%D1%8F_2_%D0%9A%D0%BE%D0%BF%D0%B8%D0%B5_npwvss.webp"/>
-<img alt="Спалня" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773390175/%D1%81%D0%BF%D0%B0%D0%BB%D0%BD%D1%8F_%D0%9A%D0%BE%D0%BF%D0%B8%D0%B5_sipjzx.webp"/>
-<img alt="Изглед от комплекса" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389633/Gemini_Generated_Image_2l4cuj2l4cuj2l4c_sre0rj.webp"/>
-<img alt="Интериор" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389248/PXL_20260201_122702099_ayaodb.webp"/>
-<img alt="Интериор 2" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389231/PXL_20260201_122641566_vyd2hg.webp"/>
-<img alt="Интериор 3" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389099/PXL_20260201_122855136_ker1ot.webp"/>
-<img alt="Интериор 4" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389858/PXL_20260201_122714033.MP_cli0n4.webp"/>
-<img alt="Интериор 5" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389100/PXL_20260201_122741157_cmtnh3.webp"/>
-<img alt="Удобства" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389723/eeec4a13-7789-4e36-ba8e-903372555c1b_znoqdp.webp"/>
-<img alt="Удобства 2" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389715/7c0cf508-3e58-419a-bffd-73a0607d2707_uds40l.webp"/>
-<img alt="Удобства 3" class="w-full h-52 object-cover rounded-xl border border-white/10" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389677/c3ae5158-9636-4464-ba1b-28ae4291aee5_v9zinp.webp"/>
+<div class="grid grid-cols-4 gap-2" id="gallery">
+  <img alt="Входна врата" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389253/PXL_20260201_122410687.MP_lc2tjt.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389253/PXL_20260201_122410687.MP_lc2tjt.webp"/>
+  <img alt="Спалня 2" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773390116/%D1%81%D0%BF%D0%B0%D0%BB%D0%BD%D1%8F_2_%D0%9A%D0%BE%D0%BF%D0%B8%D0%B5_npwvss.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773390116/%D1%81%D0%BF%D0%B0%D0%BB%D0%BD%D1%8F_2_%D0%9A%D0%BE%D0%BF%D0%B8%D0%B5_npwvss.webp"/>
+  <img alt="Спалня" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773390175/%D1%81%D0%BF%D0%B0%D0%BB%D0%BD%D1%8F_%D0%9A%D0%BE%D0%BF%D0%B8%D0%B5_sipjzx.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773390175/%D1%81%D0%BF%D0%B0%D0%BB%D0%BD%D1%8F_%D0%9A%D0%BE%D0%BF%D0%B8%D0%B5_sipjzx.webp"/>
+  <img alt="Изглед от комплекса" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773583751/PXL_20260315_071505504_gtwixn.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773583751/PXL_20260315_071505504_gtwixn.webp"/>
+  <img alt="Интериор" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389248/PXL_20260201_122702099_ayaodb.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389248/PXL_20260201_122702099_ayaodb.webp"/>
+  <img alt="Интериор 2" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389231/PXL_20260201_122641566_vyd2hg.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389231/PXL_20260201_122641566_vyd2hg.webp"/>
+  <img alt="Интериор 3" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389099/PXL_20260201_122855136_ker1ot.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389099/PXL_20260201_122855136_ker1ot.webp"/>
+  <img alt="Интериор 4" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389858/PXL_20260201_122714033.MP_cli0n4.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389858/PXL_20260201_122714033.MP_cli0n4.webp"/>
+  <img alt="Интериор 5" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389100/PXL_20260201_122741157_cmtnh3.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389100/PXL_20260201_122741157_cmtnh3.webp"/>
+  <img alt="Удобства" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389723/eeec4a13-7789-4e36-ba8e-903372555c1b_znoqdp.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389723/eeec4a13-7789-4e36-ba8e-903372555c1b_znoqdp.webp"/>
+  <img alt="Удобства 2" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389715/7c0cf508-3e58-419a-bffd-73a0607d2707_uds40l.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389715/7c0cf508-3e58-419a-bffd-73a0607d2707_uds40l.webp"/>
+  <img alt="Удобства 3" class="gallery-thumb w-full h-20 object-cover rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_200/v1773389677/c3ae5158-9636-4464-ba1b-28ae4291aee5_v9zinp.webp" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773389677/c3ae5158-9636-4464-ba1b-28ae4291aee5_v9zinp.webp"/>
 </div>
 </section>
+
+<!-- Lightbox -->
+<div id="lightbox" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 hidden" onclick="closeLightbox()">
+  <button class="absolute top-4 right-4 text-white text-3xl leading-none hover:text-gold transition-colors" onclick="closeLightbox()">&times;</button>
+  <button id="lb-prev" class="absolute left-4 text-white text-4xl leading-none hover:text-gold transition-colors select-none" onclick="event.stopPropagation(); lbNav(-1)">&#8249;</button>
+  <img id="lightbox-img" src="" alt="" class="max-w-[90vw] max-h-[90vh] rounded-xl shadow-2xl object-contain"/>
+  <button id="lb-next" class="absolute right-4 text-white text-4xl leading-none hover:text-gold transition-colors select-none" onclick="event.stopPropagation(); lbNav(1)">&#8250;</button>
+  <p id="lightbox-caption" class="absolute bottom-4 text-slate-300 text-sm"></p>
+</div>
+
+<script>
+  const thumbs = Array.from(document.querySelectorAll('.gallery-thumb'));
+  let lbIndex = 0;
+
+  thumbs.forEach((img, i) => {
+    img.addEventListener('click', () => openLightbox(i));
+  });
+
+  function openLightbox(i) {
+    lbIndex = i;
+    const t = thumbs[i];
+    document.getElementById('lightbox-img').src = t.dataset.full;
+    document.getElementById('lightbox-img').alt = t.alt;
+    document.getElementById('lightbox-caption').textContent = t.alt;
+    document.getElementById('lightbox').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  function lbNav(dir) {
+    lbIndex = (lbIndex + dir + thumbs.length) % thumbs.length;
+    openLightbox(lbIndex);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (document.getElementById('lightbox').classList.contains('hidden')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') lbNav(-1);
+    if (e.key === 'ArrowRight') lbNav(1);
+  });
+</script>
 <!-- AI Concierge -->
 <section class="px-6 py-8">
 <div class="bg-primary/30 dark:bg-neutral-dark border border-gold/20 rounded-2xl p-6 text-center">
