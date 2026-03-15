@@ -21,7 +21,17 @@
 
 #### Рекламна страница
 - Създаден `public/aspen-valley-retreat.html` — landing page за апартамента
-- **⚠️ НЕ Е COMMIT-НАТО**
+- ✅ Commit-нато
+
+#### Галерия с lightbox (15.03.2026)
+- Заменена AI-генерирана снимка (`Gemini_Generated_Image_...`) с реална снимка от апартамента
+- Галерията е преработена: от `grid-cols-1 sm:grid-cols-2` на `grid-cols-4` с малки thumbnails (`h-20`)
+- Thumbnails зареждат намалена версия (`w_200` Cloudinary param) за бързо зареждане
+- Добавен lightbox (pure JS, без external lib):
+  - Клик на thumbnail → пълна снимка в overlay
+  - Навигация с ◀ ▶ бутони и ← → клавиши
+  - Затваряне с × / Esc / клик извън снимката
+- ✅ Commit-нато
 
 ---
 
