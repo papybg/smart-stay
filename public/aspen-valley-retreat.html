@@ -256,12 +256,17 @@
   const chatWidget = document.getElementById('iko-chat-widget');
   const openIkoBtns = Array.from(document.querySelectorAll('#open-iko-chat, #open-iko-chat-float'));
   const closeIkoBtn = document.getElementById('close-iko-chat');
+  const IKO_CHAT_URL = 'https://smart-stay.onrender.com/';
 
   function isWidgetOpen() {
     return !chatWidget.classList.contains('hidden');
   }
 
   function openWidget() {
+    const iframe = document.getElementById('iko-chat-iframe');
+    if (iframe && iframe.src !== IKO_CHAT_URL) {
+      iframe.src = IKO_CHAT_URL;
+    }
     chatWidget.classList.remove('hidden');
     chatWidget.focus();
     document.body.classList.add('overflow-hidden');
