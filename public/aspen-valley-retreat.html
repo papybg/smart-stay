@@ -254,7 +254,7 @@
 
 <script>
   const chatWidget = document.getElementById('iko-chat-widget');
-  const openIkoBtn = document.getElementById('open-iko-chat');
+  const openIkoBtns = Array.from(document.querySelectorAll('#open-iko-chat, #open-iko-chat-float'));
   const closeIkoBtn = document.getElementById('close-iko-chat');
 
   function isWidgetOpen() {
@@ -272,10 +272,12 @@
     document.body.classList.remove('overflow-hidden');
   }
 
-  if (openIkoBtn && chatWidget && closeIkoBtn) {
-    openIkoBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      isWidgetOpen() ? closeWidget() : openWidget();
+  if (openIkoBtns.length && chatWidget && closeIkoBtn) {
+    openIkoBtns.forEach((button) => {
+      button.addEventListener('click', (e) => {
+        e.preventDefault();
+        isWidgetOpen() ? closeWidget() : openWidget();
+      });
     });
 
     closeIkoBtn.addEventListener('click', (e) => {
@@ -482,9 +484,9 @@ async function submitInquiry() {
 </div>
 
 <!-- Floating AI Chat Button -->
-<a href="/index.html" class="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-primary/95 text-gold border border-gold/30 px-5 py-3 rounded-full shadow-2xl hover:scale-105 transition-all backdrop-blur-md">
+<button id="open-iko-chat-float" type="button" class="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-primary/95 text-gold border border-gold/30 px-5 py-3 rounded-full shadow-2xl hover:scale-105 transition-all backdrop-blur-md">
     <span class="material-symbols-outlined">smart_toy</span>
     <span class="font-bold text-sm">Попитай Ико</span>
-</a>
+</button>
 </body>
 </html>
