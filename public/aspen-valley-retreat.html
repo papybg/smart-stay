@@ -251,74 +251,49 @@
     <iframe id="iko-chat-iframe" src="https://smart-stay.onrender.com/" class="w-full h-full rounded-bl-2xl rounded-br-2xl border-0" title="AI Chat Widget"></iframe>
   </div>
 </div>
-
 <script>
   const chatWidget = document.getElementById('iko-chat-widget');
-  const openIkoBtns = Array.from(document.querySelectorAll('#open-iko-chat, #open-iko-chat-float'));
+  const openIkoBtn = document.getElementById('open-iko-chat');
+  const openIkoBtnFloat = document.getElementById('open-iko-chat-float');
   const closeIkoBtn = document.getElementById('close-iko-chat');
-  const IKO_CHAT_URL = 'https://smart-stay.onrender.com/';
 
-  function isWidgetOpen() {
-    return !chatWidget.classList.contains('hidden');
+  function toggleWidget() {
+    chatWidget.classList.toggle('hidden');
   }
 
-  function openWidget() {
-    const iframe = document.getElementById('iko-chat-iframe');
-    if (iframe && iframe.src !== IKO_CHAT_URL) {
-      iframe.src = IKO_CHAT_URL;
-    }
-    chatWidget.classList.remove('hidden');
-    chatWidget.focus();
-    document.body.classList.add('overflow-hidden');
-  }
-
-  function closeWidget() {
-    chatWidget.classList.add('hidden');
-    document.body.classList.remove('overflow-hidden');
-  }
-
-  if (openIkoBtns.length && chatWidget && closeIkoBtn) {
-    openIkoBtns.forEach((button) => {
-      button.addEventListener('click', (e) => {
-        e.preventDefault();
-        isWidgetOpen() ? closeWidget() : openWidget();
-      });
+  if (openIkoBtn) {
+    openIkoBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleWidget();
     });
+  }
 
+  if (openIkoBtnFloat) {
+    openIkoBtnFloat.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleWidget();
+    });
+  }
+
+  if (closeIkoBtn) {
     closeIkoBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      closeWidget();
+      chatWidget.classList.add('hidden');
     });
-
-    document.addEventListener('click', (event) => {
-      if (!isWidgetOpen()) return;
-      if (chatWidget.contains(event.target) || openIkoBtn.contains(event.target)) return;
-      closeWidget();
-    });
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && isWidgetOpen()) {
-        closeWidget();
-      }
-    });
-
-    const updateWidgetResponsive = () => {
-      if (window.matchMedia('(max-width: 768px)').matches) {
-        chatWidget.style.width = 'calc(100vw - 1rem)';
-        chatWidget.style.height = 'calc(100vh - 1rem)';
-        chatWidget.style.bottom = '0.5rem';
-        chatWidget.style.right = '0.5rem';
-      } else {
-        chatWidget.style.width = '340px';
-        chatWidget.style.height = '500px';
-        chatWidget.style.bottom = '1rem';
-        chatWidget.style.right = '1rem';
-      }
-    };
-
-    updateWidgetResponsive();
-    window.addEventListener('resize', updateWidgetResponsive);
   }
+
+  // Optional: close on outside click or escape
+  document.addEventListener('click', (e) => {
+    if (!chatWidget.classList.contains('hidden') && !chatWidget.contains(e.target) && !openIkoBtn.contains(e.target) && !openIkoBtnFloat.contains(e.target)) {
+      chatWidget.classList.add('hidden');
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !chatWidget.classList.contains('hidden')) {
+      chatWidget.classList.add('hidden');
+    }
+  });
 </script>
 <!-- Inquiry Form -->
 <section class="px-6 py-10 bg-neutral-dark">
