@@ -251,48 +251,74 @@
     <iframe id="iko-chat-iframe" src="https://smart-stay.onrender.com/" class="w-full h-full rounded-bl-2xl rounded-br-2xl border-0" title="AI Chat Widget"></iframe>
   </div>
 </div>
+
 <script>
-  const chatWidget = document.getElementById('iko-chat-widget');
-  const openIkoBtn = document.getElementById('open-iko-chat');
-  const openIkoBtnFloat = document.getElementById('open-iko-chat-float');
-  const closeIkoBtn = document.getElementById('close-iko-chat');
+  document.addEventListener('DOMContentLoaded', function() {
+    const chatWidget = document.getElementById('iko-chat-widget');
+    const closeIkoBtn = document.getElementById('close-iko-chat');
+    const IKO_CHAT_URL = 'https://smart-stay.onrender.com/';
 
-  function toggleWidget() {
-    chatWidget.classList.toggle('hidden');
-  }
-
-  if (openIkoBtn) {
-    openIkoBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      toggleWidget();
-    });
-  }
-
-  if (openIkoBtnFloat) {
-    openIkoBtnFloat.addEventListener('click', (e) => {
-      e.preventDefault();
-      toggleWidget();
-    });
-  }
-
-  if (closeIkoBtn) {
-    closeIkoBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      chatWidget.classList.add('hidden');
-    });
-  }
-
-  // Optional: close on outside click or escape
-  document.addEventListener('click', (e) => {
-    if (!chatWidget.classList.contains('hidden') && !chatWidget.contains(e.target) && !openIkoBtn.contains(e.target) && !openIkoBtnFloat.contains(e.target)) {
-      chatWidget.classList.add('hidden');
+    function isWidgetOpen() {
+      return chatWidget && !chatWidget.classList.contains('hidden');
     }
-  });
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !chatWidget.classList.contains('hidden')) {
-      chatWidget.classList.add('hidden');
+    function openWidget() {
+      const iframe = document.getElementById('iko-chat-iframe');
+      if (iframe && iframe.src !== IKO_CHAT_URL) {
+        iframe.src = IKO_CHAT_URL;
+      }
+      chatWidget.classList.remove('hidden');
+      document.body.classList.add('overflow-hidden');
     }
+
+    function closeWidget() {
+      chatWidget.classList.add('hidden');
+      document.body.classList.remove('overflow-hidden');
+    }
+
+    const openIkoBtns = Array.from(document.querySelectorAll('#open-iko-chat, #open-iko-chat-float'));
+    openIkoBtns.forEach((button) => {
+      button.addEventListener('click', (e) => {
+        e.preventDefault();
+        isWidgetOpen() ? closeWidget() : openWidget();
+      });
+    });
+
+    if (closeIkoBtn) {
+      closeIkoBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeWidget();
+      });
+    }
+
+    document.addEventListener('click', (event) => {
+      if (!isWidgetOpen()) return;
+      if (chatWidget.contains(event.target)) return;
+      if (openIkoBtns.some(btn => btn.contains(event.target))) return;
+      closeWidget();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && isWidgetOpen()) closeWidget();
+    });
+
+    const updateWidgetResponsive = () => {
+      if (!chatWidget) return;
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        chatWidget.style.width = 'calc(100vw - 1rem)';
+        chatWidget.style.height = 'calc(100vh - 1rem)';
+        chatWidget.style.bottom = '0.5rem';
+        chatWidget.style.right = '0.5rem';
+      } else {
+        chatWidget.style.width = '340px';
+        chatWidget.style.height = '500px';
+        chatWidget.style.bottom = '1rem';
+        chatWidget.style.right = '1rem';
+      }
+    };
+
+    updateWidgetResponsive();
+    window.addEventListener('resize', updateWidgetResponsive);
   });
 </script>
 <!-- Inquiry Form -->
@@ -446,7 +472,7 @@ async function submitInquiry() {
 </div>
 <div class="space-y-2 text-slate-400 text-sm mb-8">
 <p class="flex items-center justify-center gap-2">
-<span class="material-symbols-outlined text-xs">mail</span> <a href="mailto:pepetrow@gmail.com" class="hover:text-gold transition-colors">pepetrow@gmail.com</a>
+<span class="material-symbols-outlined text-xs">mail</span> <a href="/cdn-cgi/l/email-protection#6f1f0a1f0a1b1d00182f08020e0603410c0002" class="hover:text-gold transition-colors"><span class="__cf_email__" data-cfemail="5d2d382d38292f322a1d3a303c3431733e3230">[email&#160;protected]</span></a>
             </p>
 <p class="flex items-center justify-center gap-2">
 <span class="material-symbols-outlined text-xs">call</span> +359 888 600 851
@@ -465,8 +491,4 @@ async function submitInquiry() {
 
 <!-- Floating AI Chat Button -->
 <button id="open-iko-chat-float" type="button" class="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-primary/95 text-gold border border-gold/30 px-5 py-3 rounded-full shadow-2xl hover:scale-105 transition-all backdrop-blur-md">
-    <span class="material-symbols-outlined">smart_toy</span>
-    <span class="font-bold text-sm">Попитай Ико</span>
-</button>
-</body>
-</html>
+    <span class="m
