@@ -234,12 +234,85 @@
 <div class="bg-primary/30 dark:bg-neutral-dark border border-gold/20 rounded-2xl p-6 text-center">
 <h3 class="font-display text-2xl font-bold mb-2 text-gold">AI Concierge</h3>
 <p class="text-sm text-slate-300 mb-5">Имате въпроси за района, настаняване или удобства? Пишете директно на нашия AI асистент.</p>
-<a href="/" class="inline-flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-primary font-bold px-5 py-3 rounded-lg transition-all">
+<button id="open-iko-chat" type="button" class="inline-flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-primary font-bold px-5 py-3 rounded-lg transition-all">
 <span class="material-symbols-outlined">smart_toy</span>
-<span>Отвори AI асистент</span>
-</a>
+<span>Попитай Ико</span>
+</button>
 </div>
 </section>
+
+<!-- AI Chat Widget -->
+<div id="iko-chat-widget" class="hidden fixed bottom-4 right-4 w-[340px] h-[500px] rounded-2xl shadow-2xl bg-white dark:bg-neutral-dark text-slate-900 dark:text-slate-100 z-50 flex flex-col border border-neutral-dark dark:border-gold/20">
+  <div class="h-12 px-3 flex items-center justify-between border-b border-neutral-dark/20 dark:border-gold/20 bg-neutral-dark dark:bg-primary/30">
+    <span class="font-bold text-gold">Iko AI</span>
+    <button id="close-iko-chat" type="button" class="text-xl font-bold text-white hover:text-gold/80 transition-colors">&times;</button>
+  </div>
+  <div class="w-full flex-1">
+    <iframe id="iko-chat-iframe" src="/index.html" class="w-full h-full rounded-bl-2xl rounded-br-2xl border-0" title="AI Chat Widget"></iframe>
+  </div>
+</div>
+
+<script>
+  const chatWidget = document.getElementById('iko-chat-widget');
+  const openIkoBtn = document.getElementById('open-iko-chat');
+  const closeIkoBtn = document.getElementById('close-iko-chat');
+
+  function isWidgetOpen() {
+    return !chatWidget.classList.contains('hidden');
+  }
+
+  function openWidget() {
+    chatWidget.classList.remove('hidden');
+    chatWidget.focus();
+    document.body.classList.add('overflow-hidden');
+  }
+
+  function closeWidget() {
+    chatWidget.classList.add('hidden');
+    document.body.classList.remove('overflow-hidden');
+  }
+
+  if (openIkoBtn && chatWidget && closeIkoBtn) {
+    openIkoBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      isWidgetOpen() ? closeWidget() : openWidget();
+    });
+
+    closeIkoBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeWidget();
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!isWidgetOpen()) return;
+      if (chatWidget.contains(event.target) || openIkoBtn.contains(event.target)) return;
+      closeWidget();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && isWidgetOpen()) {
+        closeWidget();
+      }
+    });
+
+    const updateWidgetResponsive = () => {
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        chatWidget.style.width = 'calc(100vw - 1rem)';
+        chatWidget.style.height = 'calc(100vh - 1rem)';
+        chatWidget.style.bottom = '0.5rem';
+        chatWidget.style.right = '0.5rem';
+      } else {
+        chatWidget.style.width = '340px';
+        chatWidget.style.height = '500px';
+        chatWidget.style.bottom = '1rem';
+        chatWidget.style.right = '1rem';
+      }
+    };
+
+    updateWidgetResponsive();
+    window.addEventListener('resize', updateWidgetResponsive);
+  }
+</script>
 <!-- Inquiry Form -->
 <section class="px-6 py-10 bg-neutral-dark">
 <div class="max-w-md mx-auto">
