@@ -367,7 +367,7 @@
 <div id="inquiry-error" class="hidden bg-red-900/30 border border-red-500/30 rounded-lg p-3 mb-4 text-red-300 text-sm text-center"></div>
 <form id="inquiry-form" class="space-y-4">
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Ime *</label>
+<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Име *</label>
 <input id="f-name" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="Вашите имена" type="text"/>
 </div>
 <div class="grid grid-cols-1 gap-4">
@@ -400,14 +400,14 @@
 <option value="5">5 гости</option>
 </select>
 </div>
-<div class="flex items-center justify-between rounded-lg border border-white/10 bg-primary/20 px-4 py-3">
-  <label for="f-with-pet" class="text-sm text-slate-200 font-semibold">Домашен любимец</label>
+<div class="flex items-center justify-between rounded-lg border border-slate-300 bg-white px-4 py-3">
+  <label for="f-with-pet" class="text-sm text-black font-semibold">Домашен любимец</label>
   <input id="f-with-pet" type="checkbox" class="h-4 w-4 accent-gold" />
 </div>
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Обща цена</label>
-<input id="f-total-price" class="w-full bg-primary/20 border border-white/10 rounded-lg text-gold font-bold px-4 py-3" type="text" value="Избери дати" readonly/>
-<p id="f-price-breakdown" class="mt-1 text-[11px] text-slate-400"></p>
+<label class="block text-base font-bold uppercase tracking-wider text-slate-300 mb-1">Обща цена</label>
+<input id="f-total-price" class="w-1/2 bg-white border-2 border-slate-300 rounded-lg text-black font-bold px-4 py-3" type="text" value="" readonly/>
+<p id="f-price-breakdown" class="mt-1 text-[11px] text-slate-300"></p>
 </div>
 <div>
 <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Съобщение</label>
@@ -445,7 +445,7 @@ function renderQuote(quote) {
   const totalField = document.getElementById('f-total-price');
   const breakdown = document.getElementById('f-price-breakdown');
   if (!quote) {
-    totalField.value = 'Избери дати';
+    totalField.value = '';
     breakdown.textContent = '';
     return;
   }
@@ -533,11 +533,18 @@ async function setupDatePickers() {
   unavailableRanges = await loadUnavailableRanges();
   if (typeof flatpickr !== 'function') return;
 
+  const today = new Date();
+  const startOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
   const commonConfig = {
     dateFormat: 'Y-m-d',
-    disable: unavailableRanges,
+    disable: [
+      ...unavailableRanges,
+      (date) => date < startOfToday
+    ],
     disableMobile: true,
-    minDate: 'today'
+    minDate: startOfCurrentMonth
   };
 
   checkinPicker = flatpickr('#f-checkin', {
