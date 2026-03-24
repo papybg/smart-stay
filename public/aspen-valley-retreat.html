@@ -400,6 +400,15 @@
 <option value="5">5 гости</option>
 </select>
 </div>
+<div class="flex items-center justify-between rounded-lg border border-white/10 bg-primary/20 px-4 py-3">
+  <label for="f-with-pet" class="text-sm text-slate-200 font-semibold">Домашен любимец</label>
+  <input id="f-with-pet" type="checkbox" class="h-4 w-4 accent-gold" />
+</div>
+<div>
+<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Обща цена</label>
+<input id="f-total-price" class="w-full bg-primary/20 border border-white/10 rounded-lg text-gold font-bold px-4 py-3" type="text" value="Избери дати" readonly/>
+<p id="f-price-breakdown" class="mt-1 text-[11px] text-slate-400"></p>
+</div>
 <div>
 <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Съобщение</label>
 <textarea id="f-message" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="Допълнителни въпроси..." rows="4"></textarea>
@@ -412,6 +421,9 @@
 const INQUIRY_API_URL = window.__SMART_STAY_API_URL
   ? `${window.__SMART_STAY_API_URL}/api/inquiry`
   : `${window.location.origin}/api/inquiry`;
+const PRICING_QUOTE_URL = window.__SMART_STAY_API_URL
+  ? `${window.__SMART_STAY_API_URL}/api/pricing/quote`
+  : `${window.location.origin}/api/pricing/quote`;
 const UNAVAILABLE_RANGES_URL = window.__SMART_STAY_API_URL
   ? `${window.__SMART_STAY_API_URL}/api/bookings/unavailable-ranges`
   : `${window.location.origin}/api/bookings/unavailable-ranges`;
@@ -419,6 +431,57 @@ const UNAVAILABLE_RANGES_URL = window.__SMART_STAY_API_URL
 let unavailableRanges = [];
 let checkinPicker = null;
 let checkoutPicker = null;
+let latestQuote = null;
+
+function formatMoney(value, currency = 'BGN') {
+  try {
+    return new Intl.NumberFormat('bg-BG', { style: 'currency', currency }).format(Number(value || 0));
+  } catch {
+    return `${Number(value || 0).toFixed(2)} ${currency}`;
+  }
+}
+
+function renderQuote(quote) {
+  const totalField = document.getElementById('f-total-price');
+  const breakdown = document.getElementById('f-price-breakdown');
+  if (!quote) {
+    totalField.value = 'Избери дати';
+    breakdown.textContent = '';
+    return;
+  }
+  totalField.value = formatMoney(quote.total, quote.currency);
+  breakdown.textContent = `${quote.nights} нощувки | Основа: ${formatMoney(quote.base_total, quote.currency)} | Отстъпка: ${formatMoney(quote.discount_amount, quote.currency)} | Домашен любимец: ${formatMoney(quote.pet_fee, quote.currency)}`;
+}
+
+async function updateQuote() {
+  const checkin = document.getElementById('f-checkin').value;
+  const checkout = document.getElementById('f-checkout').value;
+  const withPet = document.getElementById('f-with-pet').checked;
+  latestQuote = null;
+
+  if (!checkin || !checkout || new Date(checkin) >= new Date(checkout)) {
+    renderQuote(null);
+    return;
+  }
+
+  try {
+    const res = await fetch(PRICING_QUOTE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ check_in: checkin, check_out: checkout, with_pet: withPet })
+    });
+    const data = await res.json();
+    if (res.ok && data?.success && data?.quote) {
+      latestQuote = data.quote;
+      renderQuote(data.quote);
+      return;
+    }
+  } catch {
+    // ignore and show placeholder below
+  }
+
+  renderQuote(null);
+}
 
 function normalizeDate(value) {
   const date = new Date(value);
@@ -486,12 +549,21 @@ async function setupDatePickers() {
       } else {
         checkoutPicker.set('minDate', 'today');
       }
+      updateQuote();
     }
   });
 
   checkoutPicker = flatpickr('#f-checkout', {
-    ...commonConfig
+    ...commonConfig,
+    onChange: () => updateQuote()
   });
+
+  const withPetCheckbox = document.getElementById('f-with-pet');
+  if (withPetCheckbox) {
+    withPetCheckbox.addEventListener('change', updateQuote);
+  }
+
+  updateQuote();
 }
 
 async function submitInquiry() {
@@ -501,6 +573,7 @@ async function submitInquiry() {
   const checkin = document.getElementById('f-checkin').value;
   const checkout = document.getElementById('f-checkout').value;
   const guests = document.getElementById('f-guests').value;
+  const withPet = document.getElementById('f-with-pet').checked;
   const message = document.getElementById('f-message').value.trim();
   const errEl = document.getElementById('inquiry-error');
   const btn = document.getElementById('inquiry-btn');
@@ -521,6 +594,11 @@ async function submitInquiry() {
     errEl.classList.remove('hidden');
     return;
   }
+  if (!latestQuote) {
+    errEl.textContent = 'Цената не е изчислена. Провери датите и опитай отново.';
+    errEl.classList.remove('hidden');
+    return;
+  }
 
   btn.textContent = 'Изпращане...';
   btn.disabled = true;
@@ -536,6 +614,7 @@ async function submitInquiry() {
         check_in: checkin,
         check_out: checkout,
         guests_count: guests,
+        with_pet: withPet,
         message: message || null
       })
     });

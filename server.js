@@ -218,10 +218,12 @@ async function initializeDatabase() {
                 check_in TIMESTAMPTZ NOT NULL,
                 check_out TIMESTAMPTZ NOT NULL,
                 guests_count INT,
+                with_pet BOOLEAN DEFAULT FALSE,
                 message TEXT,
                 status VARCHAR(20) DEFAULT 'pending',
                 payment_status VARCHAR(20) DEFAULT 'pending',
                 payment_received_at TIMESTAMPTZ,
+                quoted_total NUMERIC(12,2),
                 source VARCHAR(20) DEFAULT 'direct',
                 converted_booking_id INT,
                 converted_at TIMESTAMPTZ,
@@ -230,8 +232,49 @@ async function initializeDatabase() {
             );
         `;
         await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS payment_received_at TIMESTAMPTZ;`;
+        await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS with_pet BOOLEAN DEFAULT FALSE;`;
+        await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS quoted_total NUMERIC(12,2);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_requests_status_created_at ON "Requests"(status, created_at DESC);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_requests_checkin_checkout ON "Requests"(check_in, check_out);`;
+
+        // Pricing таблица за ценообразуване на заявки
+        await sql`
+            CREATE TABLE IF NOT EXISTS "Pricing" (
+                id SERIAL PRIMARY KEY,
+                night_price NUMERIC(12,2) NOT NULL,
+                weekend_night_price NUMERIC(12,2) NOT NULL,
+                weekly_discount_percent NUMERIC(5,2) DEFAULT 0,
+                monthly_discount_percent NUMERIC(5,2) DEFAULT 0,
+                pet_surcharge_once NUMERIC(12,2) DEFAULT 0,
+                currency VARCHAR(10) DEFAULT 'BGN',
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        `;
+
+        const pricingCount = await sql`SELECT COUNT(*)::INT AS cnt FROM "Pricing"`;
+        if ((pricingCount?.[0]?.cnt || 0) === 0) {
+            await sql`
+                INSERT INTO "Pricing" (
+                    night_price,
+                    weekend_night_price,
+                    weekly_discount_percent,
+                    monthly_discount_percent,
+                    pet_surcharge_once,
+                    currency,
+                    is_active
+                ) VALUES (
+                    120,
+                    150,
+                    10,
+                    20,
+                    40,
+                    'BGN',
+                    TRUE
+                )
+            `;
+        }
 
         console.log('[DB] ✅ power_history таблица готова');
 

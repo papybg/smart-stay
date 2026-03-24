@@ -4,6 +4,81 @@ export function registerBookingsRoutes(app, {
     controlPower,
     syncBookingsFromGmail
 }) {
+    function toUtcDateOnly(dateLike) {
+        const date = new Date(dateLike);
+        return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    }
+
+    function round2(value) {
+        return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+    }
+
+    async function getActivePricing() {
+        const rows = await sql`
+            SELECT night_price,
+                   weekend_night_price,
+                   weekly_discount_percent,
+                   monthly_discount_percent,
+                   pet_surcharge_once,
+                   currency
+            FROM "Pricing"
+            WHERE is_active = TRUE
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+        `;
+
+        if (!rows.length) {
+            throw new Error('Няма активна ценова конфигурация');
+        }
+
+        return rows[0];
+    }
+
+    function calculateQuote({ checkIn, checkOut, withPet, pricing }) {
+        const checkInDate = toUtcDateOnly(checkIn);
+        const checkOutDate = toUtcDateOnly(checkOut);
+        if (checkInDate >= checkOutDate) {
+            throw new Error('Невалиден период за цена');
+        }
+
+        const nightPrice = Number(pricing.night_price || 0);
+        const weekendNightPrice = Number(pricing.weekend_night_price || 0);
+        const weeklyDiscountPercent = Number(pricing.weekly_discount_percent || 0);
+        const monthlyDiscountPercent = Number(pricing.monthly_discount_percent || 0);
+        const petSurchargeOnce = Number(pricing.pet_surcharge_once || 0);
+
+        let nights = 0;
+        let baseTotal = 0;
+        const cursor = new Date(checkInDate);
+
+        while (cursor < checkOutDate) {
+            const day = cursor.getUTCDay(); // 0=Sun ... 6=Sat
+            const isWeekendNight = day === 5 || day === 6; // Friday/Saturday nights
+            baseTotal += isWeekendNight ? weekendNightPrice : nightPrice;
+            nights += 1;
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+        }
+
+        const discountPercent = nights >= 30
+            ? monthlyDiscountPercent
+            : (nights >= 7 ? weeklyDiscountPercent : 0);
+
+        const discountAmount = round2(baseTotal * (discountPercent / 100));
+        const subtotalAfterDiscount = round2(baseTotal - discountAmount);
+        const petFee = withPet ? round2(petSurchargeOnce) : 0;
+        const finalTotal = round2(subtotalAfterDiscount + petFee);
+
+        return {
+            nights,
+            base_total: round2(baseTotal),
+            discount_percent: discountPercent,
+            discount_amount: discountAmount,
+            pet_fee: petFee,
+            total: finalTotal,
+            currency: pricing.currency || 'BGN'
+        };
+    }
+
     app.get('/api/bookings', async (req, res) => {
         try {
             if (!sql) {
@@ -68,6 +143,32 @@ export function registerBookingsRoutes(app, {
         } catch (error) {
             console.error('[BOOKINGS:UNAVAILABLE] 🔴 Грешка:', error.message);
             return res.status(500).json({ error: 'Database error' });
+        }
+    });
+
+    app.post('/api/pricing/quote', async (req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database not connected' });
+            }
+
+            const { check_in, check_out, with_pet } = req.body || {};
+            if (!check_in || !check_out) {
+                return res.status(400).json({ error: 'Липсват дати за калкулация' });
+            }
+
+            const pricing = await getActivePricing();
+            const quote = calculateQuote({
+                checkIn: check_in,
+                checkOut: check_out,
+                withPet: Boolean(with_pet),
+                pricing
+            });
+
+            return res.status(200).json({ success: true, quote });
+        } catch (error) {
+            console.error('[PRICING:QUOTE] 🔴 Грешка:', error.message);
+            return res.status(400).json({ error: error.message || 'Грешка при калкулация' });
         }
     });
 
@@ -315,7 +416,7 @@ export function registerBookingsRoutes(app, {
                 return res.status(500).json({ error: 'Database connection is not available' });
             }
 
-            const { guest_name, guest_email, guest_phone, check_in, check_out, guests_count, message } = req.body || {};
+            const { guest_name, guest_email, guest_phone, check_in, check_out, guests_count, message, with_pet } = req.body || {};
             if (!guest_name || !guest_email || !check_in || !check_out) {
                 return res.status(400).json({ error: 'Липсват задължителни полета' });
             }
@@ -343,6 +444,14 @@ export function registerBookingsRoutes(app, {
                 return res.status(409).json({ error: 'Избраните дати не са налични' });
             }
 
+            const pricing = await getActivePricing();
+            const quote = calculateQuote({
+                checkIn: checkInDate,
+                checkOut: checkOutDate,
+                withPet: Boolean(with_pet),
+                pricing
+            });
+
             const requestCode = 'REQ' + Date.now().toString(36).toUpperCase();
 
             const inserted = await sql`
@@ -354,6 +463,8 @@ export function registerBookingsRoutes(app, {
                     check_in,
                     check_out,
                     guests_count,
+                    with_pet,
+                    quoted_total,
                     message,
                     status,
                     payment_status,
@@ -367,6 +478,8 @@ export function registerBookingsRoutes(app, {
                     ${checkInDate.toISOString()},
                     ${checkOutDate.toISOString()},
                     ${Number.isInteger(Number(guests_count)) ? Number(guests_count) : null},
+                    ${Boolean(with_pet)},
+                    ${quote.total},
                     ${message || null},
                     'pending',
                     'pending',
@@ -382,6 +495,7 @@ export function registerBookingsRoutes(app, {
                 request_code: inserted[0].request_code,
                 status: inserted[0].status,
                 payment_status: inserted[0].payment_status,
+                quote,
                 reservation_code: inserted[0].request_code
             });
         } catch (error) {
@@ -399,7 +513,7 @@ export function registerBookingsRoutes(app, {
 
             const rows = await sql`
                 SELECT id, request_code, guest_name, guest_email, guest_phone,
-                       check_in, check_out, guests_count, message,
+                      check_in, check_out, guests_count, with_pet, quoted_total, message,
                        status, payment_status, converted_booking_id,
                        payment_received_at, created_at, updated_at
                 FROM "Requests"
