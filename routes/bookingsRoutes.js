@@ -285,12 +285,25 @@ export function registerBookingsRoutes(app, {
     // public inquiry form for website
     app.post('/api/inquiry', async (req, res) => {
         try {
+            if (!sql) {
+                console.error('[INQUIRY] 🔴 Database connection is not available');
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
             const { guest_name, guest_email, guest_phone, check_in, check_out, guests_count, message } = req.body || {};
             if (!guest_name || !guest_email || !check_in || !check_out) {
                 return res.status(400).json({ error: 'Липсват задължителни полета' });
             }
+
             const checkInDate = new Date(check_in);
             const checkOutDate = new Date(check_out);
+            if (Number.isNaN(checkInDate.getTime()) || Number.isNaN(checkOutDate.getTime())) {
+                return res.status(400).json({ error: 'Невалидни дати за настаняване/напускане' });
+            }
+            if (checkInDate >= checkOutDate) {
+                return res.status(400).json({ error: 'Датата на напускане трябва да е след датата на настаняване' });
+            }
+
             const reservation_code = 'INQ' + Date.now().toString(36).toUpperCase();
             const powerOn = new Date(checkInDate.getTime() - 2 * 60 * 60 * 1000);
             const powerOff = new Date(checkOutDate.getTime() + 1 * 60 * 60 * 1000);
@@ -310,8 +323,9 @@ export function registerBookingsRoutes(app, {
 
             return res.status(200).json({ success: true, reservation_code });
         } catch (error) {
-            console.error('[INQUIRY] 🔴 Грешка:', error.message);
-            return res.status(500).json({ error: 'Unexpected error' });
+            console.error('[INQUIRY] 🔴 Грешка:', error);
+            const safe = error?.message || 'Unexpected error';
+            return res.status(500).json({ error: safe });
         }
     });
 
