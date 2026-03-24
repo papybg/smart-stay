@@ -263,6 +263,47 @@
     </div>
   </div>
 
+  <!-- TAB: ЗАЯВКИ -->
+  <div class="tab-content" id="tab-requests">
+    <h2 class="text-base font-bold mb-4 flex items-center gap-2 text-slate-300">
+      <span class="material-icons-round text-brand" style="font-size:18px;">request_quote</span> Заявки
+    </h2>
+
+    <div class="card p-5 mb-4">
+      <div class="text-sm font-semibold text-slate-400 mb-3">Маркиране като платена</div>
+      <div id="requests-pay-panel" class="hidden space-y-3">
+        <div class="text-xs text-muted" id="requests-pay-target">Заявка: —</div>
+        <div>
+          <label class="text-xs text-muted block mb-1">Дата и час на плащане</label>
+          <input id="request-payment-date" type="text" placeholder="YYYY-MM-DD HH:mm"/>
+        </div>
+        <div class="flex gap-2">
+          <button id="request-pay-submit" class="btn-primary">Потвърди платена</button>
+          <button id="request-pay-cancel" class="btn-ghost">Отказ</button>
+        </div>
+      </div>
+      <div id="requests-pay-hint" class="text-xs text-muted">Избери бутон „Платена“ от таблицата, за да въведеш дата.</div>
+    </div>
+
+    <div class="card overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr style="border-bottom:1px solid #1f2937;">
+              <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Код / Гост</th>
+              <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Период</th>
+              <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Статус</th>
+              <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Действие</th>
+            </tr>
+          </thead>
+          <tbody id="requests-table">
+            <tr><td class="px-4 py-3 text-xs text-muted" colspan="4">Зареждане...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- TAB: ГОСТИ -->
   <div class="tab-content" id="tab-guests">
     <h2 class="text-base font-bold mb-4 flex items-center gap-2 text-slate-300">
@@ -369,6 +410,12 @@
     </div>
     <span class="text-[10px] font-bold text-muted">Резервация</span>
   </button>
+  <button class="tab-btn flex flex-col items-center gap-1 px-4 py-1" onclick="switchTab('requests', this)">
+    <div class="tab-icon w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-border">
+      <span class="material-icons-round text-muted" style="font-size:20px;">request_quote</span>
+    </div>
+    <span class="text-[10px] font-bold text-muted">Заявки</span>
+  </button>
   <button class="tab-btn flex flex-col items-center gap-1 px-4 py-1" onclick="switchTab('guests', this)">
     <div class="tab-icon w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-border">
       <span class="material-icons-round text-muted" style="font-size:20px;">group</span>
@@ -383,6 +430,8 @@
   const BASE_URL = 'https://smart-stay.onrender.com';
   const API_KEY = 'YOUR_KEY_HERE';
   let powerState = true;
+  let pendingPaymentRequestId = null;
+  let paymentDatePicker = null;
 
   function switchTab(name, btn) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -400,6 +449,9 @@
     // когато отваряме склада, зареждаме списъка от сървъра
     if (name === 'depot') {
       loadPinList();
+    }
+    if (name === 'requests') {
+      loadRequests();
     }
   }
 
@@ -575,6 +627,130 @@
     } catch(e) { console.error('[GUESTS] 🔴', e); }
   }
 
+  function openPayPanel(requestId, requestCode) {
+    pendingPaymentRequestId = requestId;
+    document.getElementById('requests-pay-panel').classList.remove('hidden');
+    document.getElementById('requests-pay-hint').classList.add('hidden');
+    document.getElementById('requests-pay-target').textContent = `Заявка: ${requestCode}`;
+    if (paymentDatePicker) {
+      paymentDatePicker.setDate(new Date(), true);
+    } else {
+      document.getElementById('request-payment-date').value = '';
+    }
+  }
+
+  function closePayPanel() {
+    pendingPaymentRequestId = null;
+    document.getElementById('requests-pay-panel').classList.add('hidden');
+    document.getElementById('requests-pay-hint').classList.remove('hidden');
+    document.getElementById('requests-pay-target').textContent = 'Заявка: —';
+    document.getElementById('request-payment-date').value = '';
+  }
+
+  async function loadRequests() {
+    const tbody = document.getElementById('requests-table');
+    tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-muted" colspan="4">Зареждане...</td></tr>';
+    try {
+      const r = await fetch(`${BASE_URL}/api/requests`, { headers: { 'X-API-Key': API_KEY } });
+      const data = await r.json();
+      if (!Array.isArray(data) || !data.length) {
+        tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-muted" colspan="4">Няма заявки</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.map((row) => {
+        const ci = new Date(row.check_in);
+        const co = new Date(row.check_out);
+        const statusColor = row.status === 'confirmed' ? '#10b981' : (row.status === 'cancelled' ? '#ef4444' : '#f59e0b');
+        const canAct = row.status === 'pending' && !row.converted_booking_id;
+        const actions = canAct
+          ? `<div class="flex gap-2">
+              <button class="btn-primary" style="padding:8px 12px;font-size:12px" onclick="openPayPanel(${row.id}, '${row.request_code}')">Платена</button>
+              <button class="btn-ghost" style="padding:8px 12px;font-size:12px" onclick="cancelRequest(${row.id})">Канцелирана</button>
+            </div>`
+          : '<span class="text-xs text-muted">—</span>';
+
+        return `<tr class="row-hover border-b border-border/40">
+          <td class="px-4 py-3">
+            <div class="font-semibold">${row.guest_name}</div>
+            <div class="font-mono text-xs text-muted">${row.request_code}</div>
+          </td>
+          <td class="px-4 py-3">
+            <div class="text-xs">${ci.toLocaleDateString('bg')} — ${co.toLocaleDateString('bg')}</div>
+            <div class="text-xs text-muted">${ci.toLocaleTimeString('bg')} / ${co.toLocaleTimeString('bg')}</div>
+          </td>
+          <td class="px-4 py-3">
+            <span class="text-xs font-bold" style="color:${statusColor}">${row.status || '-'}</span>
+          </td>
+          <td class="px-4 py-3">${actions}</td>
+        </tr>`;
+      }).join('');
+    } catch (e) {
+      console.error('[REQUESTS] 🔴', e);
+      tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-red-400" colspan="4">Грешка при зареждане</td></tr>';
+    }
+  }
+
+  async function submitRequestPaid() {
+    if (!pendingPaymentRequestId) {
+      showToast('Избери заявка първо', '#ef4444');
+      return;
+    }
+
+    const paymentDate = document.getElementById('request-payment-date').value;
+    if (!paymentDate) {
+      showToast('Въведи дата на плащане', '#ef4444');
+      return;
+    }
+
+    const parsedPaymentDate = new Date(paymentDate);
+    if (Number.isNaN(parsedPaymentDate.getTime())) {
+      showToast('Невалидна дата на плащане', '#ef4444');
+      return;
+    }
+    if (parsedPaymentDate > new Date()) {
+      showToast('Датата на плащане не може да е в бъдеще', '#ef4444');
+      return;
+    }
+
+    try {
+      const r = await fetch(`${BASE_URL}/api/requests/${pendingPaymentRequestId}/mark-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify({ payment_date: paymentDate })
+      });
+      const data = await r.json();
+      if (r.ok && data.success) {
+        showToast('Заявката е маркирана като платена', '#10b981');
+        closePayPanel();
+        loadRequests();
+        loadGuests();
+      } else {
+        showToast(data.error || 'Грешка при потвърждение', '#ef4444');
+      }
+    } catch (e) {
+      showToast('Грешка при потвърждение', '#ef4444');
+    }
+  }
+
+  async function cancelRequest(requestId) {
+    try {
+      const r = await fetch(`${BASE_URL}/api/requests/${requestId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY }
+      });
+      const data = await r.json();
+      if (r.ok && data.success) {
+        showToast('Заявката е отказана', '#ef4444');
+        loadRequests();
+      } else {
+        showToast(data.error || 'Грешка при отказване', '#ef4444');
+      }
+    } catch (e) {
+      showToast('Грешка при отказване', '#ef4444');
+    }
+  }
+
   async function saveBooking() {
     const code = document.getElementById('res-code').value.trim();
     const guest = document.getElementById('res-guest').value.trim();
@@ -685,8 +861,17 @@
   // datepickers for reservation fields
   flatpickr('#res-checkin', { enableTime: true, dateFormat: 'Y-m-d H:i' });
   flatpickr('#res-checkout', { enableTime: true, dateFormat: 'Y-m-d H:i' });
+  paymentDatePicker = flatpickr('#request-payment-date', {
+    enableTime: true,
+    dateFormat: 'Y-m-d H:i',
+    defaultDate: new Date(),
+    maxDate: new Date(),
+    time_24hr: true
+  });
 
   document.getElementById('save-booking-btn').addEventListener('click', saveBooking);
+  document.getElementById('request-pay-submit').addEventListener('click', submitRequestPaid);
+  document.getElementById('request-pay-cancel').addEventListener('click', closePayPanel);
 </script>
 </body>
 </html>

@@ -4,6 +4,7 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;1,400&amp;family=Noto+Sans:wght@400;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
@@ -56,6 +57,12 @@
       .gallery-thumb {
         height: 140px;
       }
+    }
+
+    .flatpickr-day.flatpickr-disabled,
+    .flatpickr-day.notAllowed {
+      text-decoration: line-through;
+      opacity: 0.35;
     }
   </style>
   </head>
@@ -405,6 +412,87 @@
 const INQUIRY_API_URL = window.__SMART_STAY_API_URL
   ? `${window.__SMART_STAY_API_URL}/api/inquiry`
   : `${window.location.origin}/api/inquiry`;
+const UNAVAILABLE_RANGES_URL = window.__SMART_STAY_API_URL
+  ? `${window.__SMART_STAY_API_URL}/api/bookings/unavailable-ranges`
+  : `${window.location.origin}/api/bookings/unavailable-ranges`;
+
+let unavailableRanges = [];
+let checkinPicker = null;
+let checkoutPicker = null;
+
+function normalizeDate(value) {
+  const date = new Date(value);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function plusOneDay(date) {
+  const copy = new Date(date);
+  copy.setUTCDate(copy.getUTCDate() + 1);
+  return copy;
+}
+
+async function loadUnavailableRanges() {
+  try {
+    const res = await fetch(UNAVAILABLE_RANGES_URL, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const ranges = Array.isArray(data?.ranges) ? data.ranges : [];
+    return ranges
+      .map((range) => {
+        try {
+          return {
+            from: normalizeDate(range.start),
+            to: normalizeDate(range.end)
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function isSelectionAvailable(checkinValue, checkoutValue) {
+  if (!checkinValue || !checkoutValue) return true;
+  const checkInDate = normalizeDate(checkinValue);
+  const checkOutDate = normalizeDate(checkoutValue);
+  for (const range of unavailableRanges) {
+    if (!(checkOutDate <= range.from || checkInDate >= range.to)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function setupDatePickers() {
+  unavailableRanges = await loadUnavailableRanges();
+  if (typeof flatpickr !== 'function') return;
+
+  const commonConfig = {
+    dateFormat: 'Y-m-d',
+    disable: unavailableRanges,
+    disableMobile: true,
+    minDate: 'today'
+  };
+
+  checkinPicker = flatpickr('#f-checkin', {
+    ...commonConfig,
+    onChange: (selectedDates) => {
+      if (!checkoutPicker) return;
+      if (selectedDates.length) {
+        checkoutPicker.set('minDate', plusOneDay(selectedDates[0]));
+      } else {
+        checkoutPicker.set('minDate', 'today');
+      }
+    }
+  });
+
+  checkoutPicker = flatpickr('#f-checkout', {
+    ...commonConfig
+  });
+}
 
 async function submitInquiry() {
   const name = document.getElementById('f-name').value.trim();
@@ -425,6 +513,11 @@ async function submitInquiry() {
   }
   if (new Date(checkin) >= new Date(checkout)) {
     errEl.textContent = 'Датата на напускане трябва да е след датата на настаняване';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (!isSelectionAvailable(checkin, checkout)) {
+    errEl.textContent = 'Моля, изберете активни дати от календара.';
     errEl.classList.remove('hidden');
     return;
   }
@@ -464,6 +557,12 @@ async function submitInquiry() {
     btn.disabled = false;
   }
 }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+  if (typeof setupDatePickers === 'function') {
+    setupDatePickers();
+  }
 </script>
 </div>
 </section>

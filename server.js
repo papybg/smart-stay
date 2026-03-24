@@ -221,6 +221,7 @@ async function initializeDatabase() {
                 message TEXT,
                 status VARCHAR(20) DEFAULT 'pending',
                 payment_status VARCHAR(20) DEFAULT 'pending',
+                payment_received_at TIMESTAMPTZ,
                 source VARCHAR(20) DEFAULT 'direct',
                 converted_booking_id INT,
                 converted_at TIMESTAMPTZ,
@@ -228,6 +229,7 @@ async function initializeDatabase() {
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
         `;
+        await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS payment_received_at TIMESTAMPTZ;`;
         await sql`CREATE INDEX IF NOT EXISTS idx_requests_status_created_at ON "Requests"(status, created_at DESC);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_requests_checkin_checkout ON "Requests"(check_in, check_out);`;
 

@@ -46,6 +46,31 @@ export function registerBookingsRoutes(app, {
         }
     });
 
+    app.get('/api/bookings/unavailable-ranges', async (_req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database not connected' });
+            }
+
+            const rows = await sql`
+                SELECT check_in, check_out
+                FROM bookings
+                WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                ORDER BY check_in ASC
+            `;
+
+            const ranges = rows.map((row) => ({
+                start: row.check_in,
+                end: row.check_out
+            }));
+
+            return res.status(200).json({ success: true, ranges });
+        } catch (error) {
+            console.error('[BOOKINGS:UNAVAILABLE] 🔴 Грешка:', error.message);
+            return res.status(500).json({ error: 'Database error' });
+        }
+    });
+
     app.post('/add-booking', async (req, res) => {
         try {
             if (!sql) {
@@ -304,6 +329,20 @@ export function registerBookingsRoutes(app, {
                 return res.status(400).json({ error: 'Датата на напускане трябва да е след датата на настаняване' });
             }
 
+            const overlapping = await sql`
+                SELECT id
+                FROM bookings
+                WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                  AND NOT (
+                        check_out <= ${checkInDate.toISOString()} OR
+                        check_in >= ${checkOutDate.toISOString()}
+                      )
+                LIMIT 1
+            `;
+            if (overlapping.length) {
+                return res.status(409).json({ error: 'Избраните дати не са налични' });
+            }
+
             const requestCode = 'REQ' + Date.now().toString(36).toUpperCase();
 
             const inserted = await sql`
@@ -362,7 +401,7 @@ export function registerBookingsRoutes(app, {
                 SELECT id, request_code, guest_name, guest_email, guest_phone,
                        check_in, check_out, guests_count, message,
                        status, payment_status, converted_booking_id,
-                       created_at, updated_at
+                       payment_received_at, created_at, updated_at
                 FROM "Requests"
                 ORDER BY created_at DESC
                 LIMIT 300
@@ -384,6 +423,12 @@ export function registerBookingsRoutes(app, {
             const requestId = Number.parseInt(req.params.id, 10);
             if (Number.isNaN(requestId)) {
                 return res.status(400).json({ error: 'Невалидно request ID' });
+            }
+
+            const incomingPaymentDate = req.body?.payment_date || null;
+            const paymentReceivedAt = incomingPaymentDate ? new Date(incomingPaymentDate) : new Date();
+            if (Number.isNaN(paymentReceivedAt.getTime())) {
+                return res.status(400).json({ error: 'Невалидна дата на плащане' });
             }
 
             const requestRows = await sql`
@@ -476,6 +521,7 @@ export function registerBookingsRoutes(app, {
                 UPDATE "Requests"
                 SET payment_status = 'paid',
                     status = 'confirmed',
+                    payment_received_at = ${paymentReceivedAt.toISOString()},
                     converted_booking_id = ${booking.id},
                     converted_at = NOW(),
                     updated_at = NOW()
@@ -490,6 +536,38 @@ export function registerBookingsRoutes(app, {
         } catch (error) {
             console.error('[REQUESTS:MARK-PAID] 🔴 Грешка:', error);
             return res.status(500).json({ error: error?.message || 'Грешка при конвертиране на заявка' });
+        }
+    });
+
+    app.post('/api/requests/:id/cancel', async (req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
+            const requestId = Number.parseInt(req.params.id, 10);
+            if (Number.isNaN(requestId)) {
+                return res.status(400).json({ error: 'Невалидно request ID' });
+            }
+
+            const rows = await sql`
+                UPDATE "Requests"
+                SET status = 'cancelled',
+                    payment_status = 'cancelled',
+                    updated_at = NOW()
+                WHERE id = ${requestId}
+                  AND converted_booking_id IS NULL
+                RETURNING id, request_code, status, payment_status
+            `;
+
+            if (!rows.length) {
+                return res.status(404).json({ error: 'Заявката не е намерена или вече е конвертирана' });
+            }
+
+            return res.status(200).json({ success: true, request: rows[0] });
+        } catch (error) {
+            console.error('[REQUESTS:CANCEL] 🔴 Грешка:', error);
+            return res.status(500).json({ error: error?.message || 'Грешка при отказване на заявка' });
         }
     });
 
