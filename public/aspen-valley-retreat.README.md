@@ -34,7 +34,9 @@
    - AI chat widget и плаващ бутон (отворяне/затваряне + Esc + click-outside)
    - адаптация (desktop/tablet/mobile)
 2. бекенд (routes/bookingsRoutes.js и server.js)
-   - `/api/inquiry` записва запитване в таблица `bookings` с status `pending`
+   - `/api/inquiry` записва запитване в таблица `Requests` със status `pending`
+   - `POST /api/requests/:id/mark-paid` конвертира заявка към реална резервация в `bookings`
+   - `GET /api/requests` връща списък със заявки
    - API `/api/bookings` за listing
    - `/api/reservations/sync` scheduler за power on/off
    - email sync + book sync
@@ -67,8 +69,8 @@
    - `payment_reference` и `payment_received_at`
 2. Разширяване на `/api/inquiry`:
    - валидация на input (email, phone, dates)
-   - връща `bookingId`, `reservation_code`, `status`
-   - ако `payment_status`=pending, добавя reminder / confirm link
+   - връща `requestId`, `request_code`, `status`
+   - записва в `Requests`, не в `bookings`
 3. Добавяне на endpoint `POST /api/bookings/:id/pay`:
    - записва `payment_status='paid'`, `reservation_status='confirmed'`
    - изпраща host+guest известия

@@ -304,28 +304,192 @@ export function registerBookingsRoutes(app, {
                 return res.status(400).json({ error: 'Датата на напускане трябва да е след датата на настаняване' });
             }
 
-            const reservation_code = 'INQ' + Date.now().toString(36).toUpperCase();
-            const powerOn = new Date(checkInDate.getTime() - 2 * 60 * 60 * 1000);
-            const powerOff = new Date(checkOutDate.getTime() + 1 * 60 * 60 * 1000);
+            const requestCode = 'REQ' + Date.now().toString(36).toUpperCase();
 
-            await sql`
-                INSERT INTO bookings (
-                    reservation_code, guest_name, guest_email, guest_phone,
-                    check_in, check_out, payment_status, power_on_time, power_off_time,
-                    source, notes
+            const inserted = await sql`
+                INSERT INTO "Requests" (
+                    request_code,
+                    guest_name,
+                    guest_email,
+                    guest_phone,
+                    check_in,
+                    check_out,
+                    guests_count,
+                    message,
+                    status,
+                    payment_status,
+                    source,
+                    updated_at
                 ) VALUES (
-                    ${reservation_code}, ${guest_name}, ${guest_email}, ${guest_phone || null},
-                    ${checkInDate.toISOString()}, ${checkOutDate.toISOString()},
-                    'pending', ${powerOn.toISOString()}, ${powerOff.toISOString()},
-                    'direct', ${message || null}
+                    ${requestCode},
+                    ${guest_name},
+                    ${guest_email},
+                    ${guest_phone || null},
+                    ${checkInDate.toISOString()},
+                    ${checkOutDate.toISOString()},
+                    ${Number.isInteger(Number(guests_count)) ? Number(guests_count) : null},
+                    ${message || null},
+                    'pending',
+                    'pending',
+                    'direct',
+                    NOW()
                 )
+                RETURNING id, request_code, status, payment_status
             `;
 
-            return res.status(200).json({ success: true, reservation_code });
+            return res.status(200).json({
+                success: true,
+                request_id: inserted[0].id,
+                request_code: inserted[0].request_code,
+                status: inserted[0].status,
+                payment_status: inserted[0].payment_status,
+                reservation_code: inserted[0].request_code
+            });
         } catch (error) {
             console.error('[INQUIRY] 🔴 Грешка:', error);
             const safe = error?.message || 'Unexpected error';
             return res.status(500).json({ error: safe });
+        }
+    });
+
+    app.get('/api/requests', async (_req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
+            const rows = await sql`
+                SELECT id, request_code, guest_name, guest_email, guest_phone,
+                       check_in, check_out, guests_count, message,
+                       status, payment_status, converted_booking_id,
+                       created_at, updated_at
+                FROM "Requests"
+                ORDER BY created_at DESC
+                LIMIT 300
+            `;
+
+            return res.status(200).json(rows);
+        } catch (error) {
+            console.error('[REQUESTS] 🔴 Грешка:', error.message);
+            return res.status(500).json({ error: 'Грешка при четене на заявки' });
+        }
+    });
+
+    app.post('/api/requests/:id/mark-paid', async (req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
+            const requestId = Number.parseInt(req.params.id, 10);
+            if (Number.isNaN(requestId)) {
+                return res.status(400).json({ error: 'Невалидно request ID' });
+            }
+
+            const requestRows = await sql`
+                SELECT *
+                FROM "Requests"
+                WHERE id = ${requestId}
+                LIMIT 1
+            `;
+
+            if (!requestRows.length) {
+                return res.status(404).json({ error: 'Заявката не е намерена' });
+            }
+
+            const request = requestRows[0];
+            if (request.converted_booking_id) {
+                return res.status(200).json({
+                    success: true,
+                    message: 'Заявката вече е конвертирана в резервация',
+                    booking_id: request.converted_booking_id
+                });
+            }
+
+            const checkInDate = new Date(request.check_in);
+            const checkOutDate = new Date(request.check_out);
+
+            const overlapping = await sql`
+                SELECT id
+                FROM bookings
+                WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                  AND NOT (
+                        check_out <= ${checkInDate.toISOString()} OR
+                        check_in >= ${checkOutDate.toISOString()}
+                      )
+                LIMIT 1
+            `;
+            if (overlapping.length) {
+                return res.status(409).json({ error: 'Периодът вече е зает от друга резервация' });
+            }
+
+            await sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS guest_email VARCHAR(255)`;
+            await sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS guest_phone VARCHAR(50)`;
+            await sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS guests_count INT`;
+            await sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notes TEXT`;
+
+            const reservationCode = 'DIR' + Date.now().toString(36).toUpperCase();
+            const powerOn = new Date(checkInDate.getTime() - 2 * 60 * 60 * 1000);
+            const powerOff = new Date(checkOutDate.getTime() + 1 * 60 * 60 * 1000);
+
+            const lockPin = await assignPinFromDepot({
+                reservation_code: reservationCode,
+                guest_name: request.guest_name
+            });
+
+            const bookingRows = await sql`
+                INSERT INTO bookings (
+                    reservation_code,
+                    guest_name,
+                    guest_email,
+                    guest_phone,
+                    check_in,
+                    check_out,
+                    guests_count,
+                    lock_pin,
+                    payment_status,
+                    power_on_time,
+                    power_off_time,
+                    source,
+                    notes
+                ) VALUES (
+                    ${reservationCode},
+                    ${request.guest_name},
+                    ${request.guest_email},
+                    ${request.guest_phone || null},
+                    ${checkInDate.toISOString()},
+                    ${checkOutDate.toISOString()},
+                    ${request.guests_count || null},
+                    ${lockPin || null},
+                    'paid',
+                    ${powerOn.toISOString()},
+                    ${powerOff.toISOString()},
+                    'direct',
+                    ${request.message || null}
+                )
+                RETURNING id, reservation_code, guest_name, check_in, check_out, payment_status
+            `;
+
+            const booking = bookingRows[0];
+
+            await sql`
+                UPDATE "Requests"
+                SET payment_status = 'paid',
+                    status = 'confirmed',
+                    converted_booking_id = ${booking.id},
+                    converted_at = NOW(),
+                    updated_at = NOW()
+                WHERE id = ${requestId}
+            `;
+
+            return res.status(200).json({
+                success: true,
+                request_id: requestId,
+                booking
+            });
+        } catch (error) {
+            console.error('[REQUESTS:MARK-PAID] 🔴 Грешка:', error);
+            return res.status(500).json({ error: error?.message || 'Грешка при конвертиране на заявка' });
         }
     });
 

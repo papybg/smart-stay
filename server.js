@@ -206,6 +206,31 @@ async function initializeDatabase() {
         try {
             await sql`ALTER TABLE pin_depot ADD COLUMN pin_name VARCHAR(100);`;
         } catch (e) { /* колона вече съществува */ }
+
+        // Requests таблица за уеб заявки (преди финална резервация)
+        await sql`
+            CREATE TABLE IF NOT EXISTS "Requests" (
+                id SERIAL PRIMARY KEY,
+                request_code VARCHAR(50) UNIQUE NOT NULL,
+                guest_name VARCHAR(100) NOT NULL,
+                guest_email VARCHAR(255) NOT NULL,
+                guest_phone VARCHAR(50),
+                check_in TIMESTAMPTZ NOT NULL,
+                check_out TIMESTAMPTZ NOT NULL,
+                guests_count INT,
+                message TEXT,
+                status VARCHAR(20) DEFAULT 'pending',
+                payment_status VARCHAR(20) DEFAULT 'pending',
+                source VARCHAR(20) DEFAULT 'direct',
+                converted_booking_id INT,
+                converted_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        `;
+        await sql`CREATE INDEX IF NOT EXISTS idx_requests_status_created_at ON "Requests"(status, created_at DESC);`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_requests_checkin_checkout ON "Requests"(check_in, check_out);`;
+
         console.log('[DB] ✅ power_history таблица готова');
 
         // Информационна проверка (без синтетичен запис, за да не въвежда нереално състояние)
