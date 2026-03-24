@@ -566,6 +566,24 @@ async function setupDatePickers() {
   updateQuote();
 }
 
+function bindQuoteInputListeners() {
+  const checkinInput = document.getElementById('f-checkin');
+  const checkoutInput = document.getElementById('f-checkout');
+  const withPetCheckbox = document.getElementById('f-with-pet');
+
+  if (checkinInput) {
+    checkinInput.addEventListener('change', updateQuote);
+    checkinInput.addEventListener('input', updateQuote);
+  }
+  if (checkoutInput) {
+    checkoutInput.addEventListener('change', updateQuote);
+    checkoutInput.addEventListener('input', updateQuote);
+  }
+  if (withPetCheckbox) {
+    withPetCheckbox.addEventListener('change', updateQuote);
+  }
+}
+
 async function submitInquiry() {
   const name = document.getElementById('f-name').value.trim();
   const email = document.getElementById('f-email').value.trim();
@@ -639,6 +657,9 @@ async function submitInquiry() {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
+  if (typeof bindQuoteInputListeners === 'function') {
+    bindQuoteInputListeners();
+  }
   if (typeof setupDatePickers === 'function') {
     setupDatePickers();
   }

@@ -607,6 +607,7 @@ export function registerBookingsRoutes(app, {
                     guests_count,
                     lock_pin,
                     payment_status,
+                    total_price,
                     power_on_time,
                     power_off_time,
                     source,
@@ -621,12 +622,13 @@ export function registerBookingsRoutes(app, {
                     ${request.guests_count || null},
                     ${lockPin || null},
                     'paid',
+                    ${request.quoted_total || null},
                     ${powerOn.toISOString()},
                     ${powerOff.toISOString()},
                     'direct',
                     ${request.message || null}
                 )
-                RETURNING id, reservation_code, guest_name, check_in, check_out, payment_status
+                RETURNING id, reservation_code, guest_name, check_in, check_out, payment_status, total_price
             `;
 
             const booking = bookingRows[0];

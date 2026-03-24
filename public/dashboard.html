@@ -292,12 +292,13 @@
             <tr style="border-bottom:1px solid #1f2937;">
               <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Код / Гост</th>
               <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Период</th>
+              <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Обща цена</th>
               <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Статус</th>
               <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Действие</th>
             </tr>
           </thead>
           <tbody id="requests-table">
-            <tr><td class="px-4 py-3 text-xs text-muted" colspan="4">Зареждане...</td></tr>
+            <tr><td class="px-4 py-3 text-xs text-muted" colspan="5">Зареждане...</td></tr>
           </tbody>
         </table>
       </div>
@@ -649,12 +650,12 @@
 
   async function loadRequests() {
     const tbody = document.getElementById('requests-table');
-    tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-muted" colspan="4">Зареждане...</td></tr>';
+    tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-muted" colspan="5">Зареждане...</td></tr>';
     try {
       const r = await fetch(`${BASE_URL}/api/requests`, { headers: { 'X-API-Key': API_KEY } });
       const data = await r.json();
       if (!Array.isArray(data) || !data.length) {
-        tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-muted" colspan="4">Няма заявки</td></tr>';
+        tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-muted" colspan="5">Няма заявки</td></tr>';
         return;
       }
 
@@ -662,6 +663,7 @@
         const ci = new Date(row.check_in);
         const co = new Date(row.check_out);
         const statusColor = row.status === 'confirmed' ? '#10b981' : (row.status === 'cancelled' ? '#ef4444' : '#f59e0b');
+        const priceText = row.quoted_total != null ? `${Number(row.quoted_total).toFixed(2)} BGN` : '—';
         const canAct = row.status === 'pending' && !row.converted_booking_id;
         const actions = canAct
           ? `<div class="flex gap-2">
@@ -680,6 +682,9 @@
             <div class="text-xs text-muted">${ci.toLocaleTimeString('bg')} / ${co.toLocaleTimeString('bg')}</div>
           </td>
           <td class="px-4 py-3">
+            <span class="text-xs font-semibold text-slate-200">${priceText}</span>
+          </td>
+          <td class="px-4 py-3">
             <span class="text-xs font-bold" style="color:${statusColor}">${row.status || '-'}</span>
           </td>
           <td class="px-4 py-3">${actions}</td>
@@ -687,7 +692,7 @@
       }).join('');
     } catch (e) {
       console.error('[REQUESTS] 🔴', e);
-      tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-red-400" colspan="4">Грешка при зареждане</td></tr>';
+      tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-red-400" colspan="5">Грешка при зареждане</td></tr>';
     }
   }
 
