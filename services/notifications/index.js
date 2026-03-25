@@ -1,0 +1,170 @@
+import { formatNotification } from './formatters.js';
+import { sendTelegram } from './channels/telegram.js';
+import { sendEmail } from './channels/email.js';
+
+const MAX_ATTEMPTS = 3;
+const BASE_RETRY_DELAY_MS = 600;
+
+function getChannelTargets(eventType, payload) {
+    const targets = [];
+
+    const hasTelegram = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+    if (hasTelegram) {
+        targets.push({
+            channel: 'telegram',
+            recipient: process.env.TELEGRAM_CHAT_ID
+        });
+    }
+
+    if (process.env.NOTIF_HOST_EMAIL) {
+        targets.push({
+            channel: 'email',
+            recipient: process.env.NOTIF_HOST_EMAIL
+        });
+    }
+
+    const shouldNotifyGuest = eventType === 'request_paid' || eventType === 'request_cancelled';
+    if (shouldNotifyGuest && payload?.guest_email) {
+        targets.push({
+            channel: 'email',
+            recipient: payload.guest_email
+        });
+    }
+
+    return targets;
+}
+
+export function createNotificationService({ sql }) {
+    const queue = [];
+    let processing = false;
+
+    async function logAttempt({ eventType, channel, recipient, status, attempt, error, payload }) {
+        if (!sql) return;
+        try {
+            await sql`
+                INSERT INTO notification_log (
+                    event_type,
+                    channel,
+                    recipient,
+                    status,
+                    attempt,
+                    error_message,
+                    payload
+                ) VALUES (
+                    ${eventType},
+                    ${channel},
+                    ${recipient},
+                    ${status},
+                    ${attempt},
+                    ${error || null},
+                    ${JSON.stringify(payload || {})}
+                )
+            `;
+        } catch (logError) {
+            console.error('[NOTIFY:LOG] 🔴', logError.message);
+        }
+    }
+
+    async function deliver(job) {
+        const formatted = formatNotification(job.eventType, job.payload);
+
+        if (job.channel === 'telegram') {
+            await sendTelegram({
+                token: process.env.TELEGRAM_BOT_TOKEN,
+                chatId: job.recipient,
+                text: formatted.text
+            });
+            return;
+        }
+
+        if (job.channel === 'email') {
+            await sendEmail({
+                to: job.recipient,
+                subject: formatted.subject,
+                text: formatted.text,
+                html: formatted.html
+            });
+            return;
+        }
+
+        throw new Error(`Unknown channel: ${job.channel}`);
+    }
+
+    function scheduleRetry(job, nextAttempt) {
+        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, nextAttempt - 1);
+        setTimeout(() => {
+            queue.push({ ...job, attempt: nextAttempt });
+            void processQueue();
+        }, delay);
+    }
+
+    async function processJob(job) {
+        try {
+            await deliver(job);
+            await logAttempt({
+                eventType: job.eventType,
+                channel: job.channel,
+                recipient: job.recipient,
+                status: 'sent',
+                attempt: job.attempt,
+                payload: job.payload
+            });
+        } catch (error) {
+            const errorMessage = error?.message || 'Unknown notification error';
+            const canRetry = job.attempt < MAX_ATTEMPTS;
+
+            await logAttempt({
+                eventType: job.eventType,
+                channel: job.channel,
+                recipient: job.recipient,
+                status: canRetry ? 'retrying' : 'failed',
+                attempt: job.attempt,
+                error: errorMessage,
+                payload: job.payload
+            });
+
+            console.error(`[NOTIFY:${job.channel}] 🔴 ${errorMessage}`);
+
+            if (canRetry) {
+                scheduleRetry(job, job.attempt + 1);
+            }
+        }
+    }
+
+    async function processQueue() {
+        if (processing) return;
+        processing = true;
+        try {
+            while (queue.length > 0) {
+                const job = queue.shift();
+                await processJob(job);
+            }
+        } finally {
+            processing = false;
+        }
+    }
+
+    async function emit(eventType, payload = {}) {
+        const targets = getChannelTargets(eventType, payload);
+        if (!targets.length) {
+            return { enqueued: 0 };
+        }
+
+        for (const target of targets) {
+            queue.push({
+                eventType,
+                channel: target.channel,
+                recipient: target.recipient,
+                payload,
+                attempt: 1
+            });
+        }
+
+        void processQueue();
+        return { enqueued: targets.length };
+    }
+
+    return {
+        emit
+    };
+}

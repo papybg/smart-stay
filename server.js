@@ -48,6 +48,7 @@ import { registerAuthRoutes, registerSmartThingsCallbackRoute } from './routes/a
 import { registerBookingsRoutes } from './routes/bookingsRoutes.js';
 import { registerAdminRoutes } from './routes/adminRoutes.js';
 import { registerSystemRoutes } from './routes/systemRoutes.js';
+import { createNotificationService } from './services/notifications/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -130,6 +131,7 @@ app.use('/api', dashboardKeyGuard);
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================================================
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
+const notificationService = createNotificationService({ sql });
 // === ТЕЛЕГРАМ (Закомментирано за по-нататък) ===
 // const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
 // const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || null;
@@ -239,6 +241,23 @@ async function initializeDatabase() {
         await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS quoted_total NUMERIC(12,2);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_requests_status_created_at ON "Requests"(status, created_at DESC);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_requests_checkin_checkout ON "Requests"(check_in, check_out);`;
+
+        // notification log таблица за retries/success/failure история
+        await sql`
+            CREATE TABLE IF NOT EXISTS notification_log (
+                id SERIAL PRIMARY KEY,
+                event_type VARCHAR(50) NOT NULL,
+                channel VARCHAR(30) NOT NULL,
+                recipient VARCHAR(255) NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                attempt INT NOT NULL DEFAULT 1,
+                error_message TEXT,
+                payload JSONB,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        `;
+        await sql`CREATE INDEX IF NOT EXISTS idx_notification_log_created_at ON notification_log(created_at DESC);`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_notification_log_event_status ON notification_log(event_type, status);`;
 
         // Pricing таблица за ценообразуване на заявки
         await sql`
@@ -518,7 +537,8 @@ registerBookingsRoutes(app, {
     sql,
     assignPinFromDepot,
     controlPower,
-    syncBookingsFromGmail
+    syncBookingsFromGmail,
+    notificationService
 });
 
 registerAdminRoutes(app, { sql });

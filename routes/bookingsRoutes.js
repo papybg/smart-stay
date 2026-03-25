@@ -2,7 +2,8 @@ export function registerBookingsRoutes(app, {
     sql,
     assignPinFromDepot,
     controlPower,
-    syncBookingsFromGmail
+    syncBookingsFromGmail,
+    notificationService
 }) {
     function toUtcDateOnly(dateLike) {
         const date = new Date(dateLike);
@@ -489,6 +490,20 @@ export function registerBookingsRoutes(app, {
                 RETURNING id, request_code, status, payment_status
             `;
 
+            try {
+                await notificationService?.emit('request_created', {
+                    request_id: inserted[0].id,
+                    request_code: inserted[0].request_code,
+                    guest_name,
+                    guest_email,
+                    check_in: checkInDate.toISOString(),
+                    check_out: checkOutDate.toISOString(),
+                    quoted_total: quote.total
+                });
+            } catch (notifyError) {
+                console.error('[NOTIFY:REQUEST_CREATED] 🔴', notifyError.message);
+            }
+
             return res.status(200).json({
                 success: true,
                 request_id: inserted[0].id,
@@ -644,6 +659,23 @@ export function registerBookingsRoutes(app, {
                 WHERE id = ${requestId}
             `;
 
+            try {
+                await notificationService?.emit('request_paid', {
+                    request_id: requestId,
+                    request_code: request.request_code,
+                    guest_name: request.guest_name,
+                    guest_email: request.guest_email,
+                    check_in: request.check_in,
+                    check_out: request.check_out,
+                    quoted_total: request.quoted_total,
+                    payment_received_at: paymentReceivedAt.toISOString(),
+                    booking_id: booking.id,
+                    reservation_code: booking.reservation_code
+                });
+            } catch (notifyError) {
+                console.error('[NOTIFY:REQUEST_PAID] 🔴', notifyError.message);
+            }
+
             return res.status(200).json({
                 success: true,
                 request_id: requestId,
@@ -673,11 +705,25 @@ export function registerBookingsRoutes(app, {
                     updated_at = NOW()
                 WHERE id = ${requestId}
                   AND converted_booking_id IS NULL
-                RETURNING id, request_code, status, payment_status
+                RETURNING id, request_code, guest_name, guest_email, check_in, check_out, quoted_total, status, payment_status
             `;
 
             if (!rows.length) {
                 return res.status(404).json({ error: 'Заявката не е намерена или вече е конвертирана' });
+            }
+
+            try {
+                await notificationService?.emit('request_cancelled', {
+                    request_id: rows[0].id,
+                    request_code: rows[0].request_code,
+                    guest_name: rows[0].guest_name,
+                    guest_email: rows[0].guest_email,
+                    check_in: rows[0].check_in,
+                    check_out: rows[0].check_out,
+                    quoted_total: rows[0].quoted_total
+                });
+            } catch (notifyError) {
+                console.error('[NOTIFY:REQUEST_CANCELLED] 🔴', notifyError.message);
             }
 
             return res.status(200).json({ success: true, request: rows[0] });

@@ -40,6 +40,9 @@
   .tab-content { display: none; }
   .tab-content.active { display: block; }
 
+  .requests-table th,
+  .requests-table td { white-space: nowrap; }
+
   .pin-badge-free { background: rgba(16,185,129,0.1); color: #10b981; }
   .pin-badge-used { background: rgba(239,68,68,0.1); color: #ef4444; }
 
@@ -102,7 +105,7 @@
 </header>
 
 <!-- MAIN -->
-<main class="pb-28 px-4 pt-5 max-w-lg mx-auto">
+<main class="pb-28 px-4 pt-5 mx-auto" style="max-width:min(1380px, 100%);">
 
   <!-- TAB: ЕЛЕКТРОМЕР -->
   <div class="tab-content active" id="tab-meter">
@@ -287,7 +290,7 @@
 
     <div class="card overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full text-sm requests-table" style="min-width:1120px;">
           <thead>
             <tr style="border-bottom:1px solid #1f2937;">
               <th class="text-left px-4 py-3 text-xs text-muted font-semibold uppercase tracking-wider">Код / Гост</th>
@@ -666,7 +669,7 @@
         const priceText = row.quoted_total != null ? `${Number(row.quoted_total).toFixed(2)} BGN` : '—';
         const canAct = row.status === 'pending' && !row.converted_booking_id;
         const actions = canAct
-          ? `<div class="flex gap-2">
+          ? `<div class="flex gap-2" style="white-space:nowrap;">
               <button class="btn-primary" style="padding:8px 12px;font-size:12px" onclick="openPayPanel(${row.id}, '${row.request_code}')">Платена</button>
               <button class="btn-ghost" style="padding:8px 12px;font-size:12px" onclick="cancelRequest(${row.id})">Канцелирана</button>
             </div>`
