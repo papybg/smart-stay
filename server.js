@@ -101,7 +101,7 @@ const emailLimiter = rateLimit({
 app.use('/api', generalLimiter);
 // apply stricter rules
 app.use(['/api/meter', '/api/meter/on', '/api/meter/off'], powerLimiter);
-app.use('/api/email/sync', emailLimiter);
+app.use(['/api/gmail/sync', '/api/email/sync'], emailLimiter);
 
 // === API key guard for dashboard ===
 const dashboardApiKey = process.env.DASHBOARD_API_KEY || '';
@@ -246,6 +246,7 @@ async function initializeDatabase() {
         await sql`
             CREATE TABLE IF NOT EXISTS notification_log (
                 id SERIAL PRIMARY KEY,
+                event_key VARCHAR(255),
                 event_type VARCHAR(50) NOT NULL,
                 channel VARCHAR(30) NOT NULL,
                 recipient VARCHAR(255) NOT NULL,
@@ -256,8 +257,11 @@ async function initializeDatabase() {
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
         `;
+        await sql`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS event_key VARCHAR(255);`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_notification_log_event_key ON notification_log(event_key);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_notification_log_created_at ON notification_log(created_at DESC);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_notification_log_event_status ON notification_log(event_type, status);`;
+        await sql`CREATE UNIQUE INDEX IF NOT EXISTS uniq_notification_sent_event_key ON notification_log(event_key) WHERE status = 'sent' AND event_key IS NOT NULL;`;
 
         // Pricing таблица за ценообразуване на заявки
         await sql`
@@ -599,7 +603,7 @@ app.post('/api/alert', (req, res) => {
 // ============================================================================
 // Използвайте Render Cron Jobs и извиквайте:
 //   POST /api/reservations/sync (на всеки 10 мин)
-//   POST /api/email/sync        (на всеки 15 мин)
+//   POST /api/gmail/sync        (на всеки 15 мин)
 //
 // Ако за някаква причина няма да конфигурирате Render cron,
 // има резервен вътрешен scheduler по‑долу. Той изпълнява

@@ -398,7 +398,7 @@ export function registerBookingsRoutes(app, {
         }
     });
 
-    app.post('/api/email/sync', async (_req, res) => {
+    async function handleGmailSync(_req, res) {
         try {
             console.log('[DETECTIVE] 📧 Email sync стартиран');
             await syncBookingsFromGmail();
@@ -407,7 +407,10 @@ export function registerBookingsRoutes(app, {
             console.error('[DETECTIVE] 🔴 Грешка при email sync:', error.message);
             return res.status(500).json({ error: error.message });
         }
-    });
+    }
+
+    app.post('/api/gmail/sync', handleGmailSync);
+    app.post('/api/email/sync', handleGmailSync);
 
     // public inquiry form for website
     app.post('/api/inquiry', async (req, res) => {
@@ -733,14 +736,4 @@ export function registerBookingsRoutes(app, {
         }
     });
 
-    app.get('/sync', async (_req, res) => {
-        try {
-            console.log('[DETECTIVE] 🔄 Ръчен sync стартиран от dashboard');
-            await syncBookingsFromGmail();
-            return res.status(200).send('✅ Sync завършен');
-        } catch (error) {
-            console.error('[DETECTIVE] 🔴 Грешка при ръчен sync:', error.message);
-            return res.status(500).send('❌ Грешка при sync');
-        }
-    });
 }

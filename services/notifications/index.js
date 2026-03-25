@@ -5,6 +5,21 @@ import { sendEmail } from './channels/email.js';
 const MAX_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 600;
 
+function normalizeRecipient(channel, recipient) {
+    const value = String(recipient || '').trim();
+    if (!value) return '';
+    return channel === 'email' ? value.toLowerCase() : value;
+}
+
+function buildEventKey(eventType, payload, channel, recipient) {
+    const eventRef = payload?.request_code
+        || payload?.reservation_code
+        || payload?.request_id
+        || payload?.booking_id
+        || 'na';
+    return `${eventType}:${eventRef}:${channel}:${recipient}`;
+}
+
 function getChannelTargets(eventType, payload) {
     const targets = [];
 
@@ -31,18 +46,32 @@ function getChannelTargets(eventType, payload) {
         });
     }
 
-    return targets;
+    const unique = new Map();
+    for (const target of targets) {
+        const recipient = normalizeRecipient(target.channel, target.recipient);
+        if (!recipient) continue;
+        const key = `${target.channel}:${recipient}`;
+        if (!unique.has(key)) {
+            unique.set(key, {
+                channel: target.channel,
+                recipient
+            });
+        }
+    }
+
+    return Array.from(unique.values());
 }
 
 export function createNotificationService({ sql }) {
     const queue = [];
     let processing = false;
 
-    async function logAttempt({ eventType, channel, recipient, status, attempt, error, payload }) {
+    async function logAttempt({ eventType, channel, recipient, status, attempt, error, payload, eventKey }) {
         if (!sql) return;
         try {
             await sql`
                 INSERT INTO notification_log (
+                    event_key,
                     event_type,
                     channel,
                     recipient,
@@ -51,6 +80,7 @@ export function createNotificationService({ sql }) {
                     error_message,
                     payload
                 ) VALUES (
+                    ${eventKey || null},
                     ${eventType},
                     ${channel},
                     ${recipient},
@@ -107,7 +137,8 @@ export function createNotificationService({ sql }) {
                 recipient: job.recipient,
                 status: 'sent',
                 attempt: job.attempt,
-                payload: job.payload
+                payload: job.payload,
+                eventKey: job.eventKey
             });
         } catch (error) {
             const errorMessage = error?.message || 'Unknown notification error';
@@ -120,7 +151,8 @@ export function createNotificationService({ sql }) {
                 status: canRetry ? 'retrying' : 'failed',
                 attempt: job.attempt,
                 error: errorMessage,
-                payload: job.payload
+                payload: job.payload,
+                eventKey: job.eventKey
             });
 
             console.error(`[NOTIFY:${job.channel}] 🔴 ${errorMessage}`);
@@ -150,18 +182,43 @@ export function createNotificationService({ sql }) {
             return { enqueued: 0 };
         }
 
+        let enqueued = 0;
         for (const target of targets) {
+            const eventKey = buildEventKey(eventType, payload, target.channel, target.recipient);
+            if (sql) {
+                try {
+                    const existing = await sql`
+                        SELECT id
+                        FROM notification_log
+                        WHERE event_key = ${eventKey}
+                          AND status = 'sent'
+                        LIMIT 1
+                    `;
+                    if (existing.length) {
+                        continue;
+                    }
+                } catch (dedupError) {
+                    console.error('[NOTIFY:DEDUP] 🔴', dedupError.message);
+                }
+            }
+
             queue.push({
                 eventType,
                 channel: target.channel,
                 recipient: target.recipient,
                 payload,
-                attempt: 1
+                attempt: 1,
+                eventKey
             });
+            enqueued += 1;
+        }
+
+        if (enqueued === 0) {
+            return { enqueued: 0 };
         }
 
         void processQueue();
-        return { enqueued: targets.length };
+        return { enqueued };
     }
 
     return {

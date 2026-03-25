@@ -24,7 +24,7 @@ Current backend routing is modularized and `server.js` is now primarily bootstra
 - `routes/bookingsRoutes.js`
   - `/api/bookings`, `/bookings`
   - `/add-booking`, `/bookings/:id`
-  - `/api/reservations/sync`, `/api/email/sync`, `/sync`
+  - `/api/reservations/sync`, `/api/gmail/sync` (legacy alias: `/api/email/sync`)
 
 - `routes/adminRoutes.js`
   - `/api/pins` (GET/POST/DELETE)

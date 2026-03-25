@@ -583,7 +583,7 @@
     btn.innerHTML = '<span class="spinner"></span> Проверявам...';
     btn.disabled = true;
     try {
-      const r = await fetch(`${BASE_URL}/api/email/sync`, { method: 'POST', headers: { 'X-API-Key': API_KEY } });
+      const r = await fetch(`${BASE_URL}/api/gmail/sync`, { method: 'POST', headers: { 'X-API-Key': API_KEY } });
       const data = await r.json();
       res.textContent = data.message || 'Готово';
       res.style.color = '#10b981';

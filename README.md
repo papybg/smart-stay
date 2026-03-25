@@ -388,10 +388,11 @@ curl -X POST http://localhost:10000/add-booking \
 curl -X DELETE http://localhost:10000/bookings/33
 ```
 
-#### `GET /sync`
+#### `POST /api/gmail/sync`
 Ръчен Detective sync от Gmail
 ```bash
-curl http://localhost:10000/sync
+curl -X POST http://localhost:10000/api/gmail/sync \
+  -H "X-API-Key: YOUR_DASHBOARD_API_KEY"
 ```
 
 ### 🔑 PIN/Lock Codes (pin_depot)
