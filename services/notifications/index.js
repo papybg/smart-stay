@@ -38,7 +38,7 @@ function getChannelTargets(eventType, payload) {
         });
     }
 
-    const shouldNotifyGuest = eventType === 'request_paid' || eventType === 'request_cancelled';
+    const shouldNotifyGuest = eventType === 'request_paid' || eventType === 'request_cancelled' || eventType === 'request_approved';
     if (shouldNotifyGuest && payload?.guest_email) {
         targets.push({
             channel: 'email',

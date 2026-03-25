@@ -546,6 +546,53 @@ export function registerBookingsRoutes(app, {
         }
     });
 
+    app.post('/api/requests/:id/approve', async (req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
+            const requestId = Number.parseInt(req.params.id, 10);
+            if (Number.isNaN(requestId)) {
+                return res.status(400).json({ error: 'Невалидно request ID' });
+            }
+
+            const rows = await sql`
+                UPDATE "Requests"
+                SET status = 'approved',
+                    updated_at = NOW()
+                WHERE id = ${requestId}
+                  AND status = 'pending'
+                  AND converted_booking_id IS NULL
+                RETURNING id, request_code, guest_name, guest_email, check_in, check_out, guests_count, quoted_total, status, payment_status
+            `;
+
+            if (!rows.length) {
+                return res.status(404).json({ error: 'Заявката не е намерена, не е pending или вече е конвертирана' });
+            }
+
+            try {
+                await notificationService?.emit('request_approved', {
+                    request_id: rows[0].id,
+                    request_code: rows[0].request_code,
+                    guest_name: rows[0].guest_name,
+                    guest_email: rows[0].guest_email,
+                    check_in: rows[0].check_in,
+                    check_out: rows[0].check_out,
+                    guests_count: rows[0].guests_count,
+                    quoted_total: rows[0].quoted_total
+                });
+            } catch (notifyError) {
+                console.error('[NOTIFY:REQUEST_APPROVED] 🔴', notifyError.message);
+            }
+
+            return res.status(200).json({ success: true, request: rows[0] });
+        } catch (error) {
+            console.error('[REQUESTS:APPROVE] 🔴 Грешка:', error);
+            return res.status(500).json({ error: error?.message || 'Грешка при одобряване на заявка' });
+        }
+    });
+
     app.post('/api/requests/:id/mark-paid', async (req, res) => {
         try {
             if (!sql) {
@@ -583,6 +630,10 @@ export function registerBookingsRoutes(app, {
                 });
             }
 
+            if (String(request.status || '').toLowerCase() !== 'approved') {
+                return res.status(409).json({ error: 'Заявката трябва първо да бъде одобрена' });
+            }
+
             const checkInDate = new Date(request.check_in);
             const checkOutDate = new Date(request.check_out);
 
@@ -605,7 +656,7 @@ export function registerBookingsRoutes(app, {
             await sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS guests_count INT`;
             await sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notes TEXT`;
 
-            const reservationCode = 'DIR' + Date.now().toString(36).toUpperCase();
+            const reservationCode = 'HM' + Date.now().toString(36).toUpperCase();
             const powerOn = new Date(checkInDate.getTime() - 2 * 60 * 60 * 1000);
             const powerOff = new Date(checkOutDate.getTime() + 1 * 60 * 60 * 1000);
 
@@ -670,6 +721,7 @@ export function registerBookingsRoutes(app, {
                     guest_email: request.guest_email,
                     check_in: request.check_in,
                     check_out: request.check_out,
+                    guests_count: request.guests_count,
                     quoted_total: request.quoted_total,
                     payment_received_at: paymentReceivedAt.toISOString(),
                     booking_id: booking.id,

@@ -665,15 +665,25 @@
       tbody.innerHTML = data.map((row) => {
         const ci = new Date(row.check_in);
         const co = new Date(row.check_out);
-        const statusColor = row.status === 'confirmed' ? '#10b981' : (row.status === 'cancelled' ? '#ef4444' : '#f59e0b');
+        const statusColor = row.status === 'confirmed'
+          ? '#10b981'
+          : (row.status === 'cancelled' ? '#ef4444' : (row.status === 'approved' ? '#38bdf8' : '#f59e0b'));
         const priceText = row.quoted_total != null ? `${Number(row.quoted_total).toFixed(2)} BGN` : '—';
-        const canAct = row.status === 'pending' && !row.converted_booking_id;
-        const actions = canAct
-          ? `<div class="flex gap-2" style="white-space:nowrap;">
+        const isPending = row.status === 'pending' && !row.converted_booking_id;
+        const isApproved = row.status === 'approved' && !row.converted_booking_id;
+
+        let actions = '<span class="text-xs text-muted">—</span>';
+        if (isPending) {
+          actions = `<div class="flex gap-2" style="white-space:nowrap;">
+              <button class="btn-primary" style="padding:8px 12px;font-size:12px" onclick="approveRequest(${row.id})">Одобрена</button>
+              <button class="btn-ghost" style="padding:8px 12px;font-size:12px" onclick="cancelRequest(${row.id})">Канцелирана</button>
+            </div>`;
+        } else if (isApproved) {
+          actions = `<div class="flex gap-2" style="white-space:nowrap;">
               <button class="btn-primary" style="padding:8px 12px;font-size:12px" onclick="openPayPanel(${row.id}, '${row.request_code}')">Платена</button>
               <button class="btn-ghost" style="padding:8px 12px;font-size:12px" onclick="cancelRequest(${row.id})">Канцелирана</button>
-            </div>`
-          : '<span class="text-xs text-muted">—</span>';
+            </div>`;
+        }
 
         return `<tr class="row-hover border-b border-border/40">
           <td class="px-4 py-3">
@@ -756,6 +766,28 @@
       }
     } catch (e) {
       showToast('Грешка при отказване', '#ef4444');
+    }
+  }
+
+  async function approveRequest(requestId) {
+    try {
+      const r = await fetch(`${BASE_URL}/api/requests/${requestId}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': API_KEY
+        }
+      });
+      const data = await r.json();
+      if (!r.ok || !data.success) {
+        showToast(data.error || 'Грешка при одобряване', '#ef4444');
+        return;
+      }
+      showToast('✅ Заявката е одобрена', '#22d3ee');
+      loadRequests();
+    } catch (e) {
+      console.error('[REQUESTS:APPROVE] 🔴', e);
+      showToast('Грешка при одобряване', '#ef4444');
     }
   }
 
