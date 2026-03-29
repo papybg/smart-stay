@@ -379,6 +379,10 @@
 <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Телефон</label>
 <input id="f-phone" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="08XX XXX XXX" type="tel"/>
 </div>
+<div>
+<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Telegram Chat ID (по желание)</label>
+<input id="f-telegram" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="напр. 123456789 (след /start към бота)" type="text"/>
+</div>
 </div>
 <div class="grid grid-cols-2 gap-4">
 <div>
@@ -595,6 +599,7 @@ async function submitInquiry() {
   const name = document.getElementById('f-name').value.trim();
   const email = document.getElementById('f-email').value.trim();
   const phone = document.getElementById('f-phone').value.trim();
+  const telegramChatId = document.getElementById('f-telegram').value.trim();
   const checkin = document.getElementById('f-checkin').value;
   const checkout = document.getElementById('f-checkout').value;
   const guests = document.getElementById('f-guests').value;
@@ -636,6 +641,7 @@ async function submitInquiry() {
         guest_name: name,
         guest_email: email,
         guest_phone: phone || null,
+        guest_telegram_chat_id: telegramChatId || null,
         check_in: checkin,
         check_out: checkout,
         guests_count: guests,

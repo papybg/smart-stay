@@ -220,6 +220,7 @@ async function initializeDatabase() {
                 guest_name VARCHAR(100) NOT NULL,
                 guest_email VARCHAR(255) NOT NULL,
                 guest_phone VARCHAR(50),
+                guest_telegram_chat_id VARCHAR(100),
                 check_in TIMESTAMPTZ NOT NULL,
                 check_out TIMESTAMPTZ NOT NULL,
                 guests_count INT,
@@ -239,6 +240,7 @@ async function initializeDatabase() {
         await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS payment_received_at TIMESTAMPTZ;`;
         await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS with_pet BOOLEAN DEFAULT FALSE;`;
         await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS quoted_total NUMERIC(12,2);`;
+        await sql`ALTER TABLE "Requests" ADD COLUMN IF NOT EXISTS guest_telegram_chat_id VARCHAR(100);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_requests_status_created_at ON "Requests"(status, created_at DESC);`;
         await sql`CREATE INDEX IF NOT EXISTS idx_requests_checkin_checkout ON "Requests"(check_in, check_out);`;
 

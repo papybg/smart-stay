@@ -13,7 +13,7 @@ function formatDateOnly(value) {
     return date.toLocaleDateString('bg-BG');
 }
 
-export function formatNotification(eventType, payload = {}) {
+export function formatNotification(eventType, payload = {}, channel = 'email', audience = 'host') {
     const requestCode = payload.request_code || payload.reservation_code || '—';
     const guestName = payload.guest_name || 'Гост';
     const period = formatDateRange(payload.check_in, payload.check_out);
@@ -33,6 +33,14 @@ export function formatNotification(eventType, payload = {}) {
         const guestsCount = payload.guests_count ?? '—';
         const confirmationCode = payload.reservation_code || payload.request_code || '—';
 
+        if (channel === 'telegram' && audience === 'host') {
+            return {
+                subject: `Потвърдена резервация за Aspen Valley – ${confirmationCode}`,
+                text: `Изпратен потвърдителен имейл за създадена резервация ${confirmationCode} на ${guestName}.`,
+                html: ''
+            };
+        }
+
         const confirmationText = `Уважаеми ${guestName},\nУведомяваме Ви, че резервация е потвърдена за времето от 14:00 часа на ${checkInDate} до 12:00 часа на ${checkOutDate} включително. Гости ${guestsCount} бр.\nКод за потвърждение ${confirmationCode}\nВ деня за настаняване ще получите код за бравата.\nИко AI`;
 
         return {
@@ -49,6 +57,14 @@ export function formatNotification(eventType, payload = {}) {
         const amount = payload.quoted_total != null ? `${Number(payload.quoted_total).toFixed(2)} BGN` : '—';
         const approvedCode = payload.request_code || '—';
 
+        if (channel === 'telegram' && audience === 'host') {
+            return {
+                subject: `Одобрена заявка за резервация – ${approvedCode}`,
+                text: `Изпратен потвърдителен имейл за одобрена заявка ${approvedCode} на ${guestName}.`,
+                html: ''
+            };
+        }
+
         const approvalText = `Уважаеми ${guestName},\nУведомяваме Ви, че заявката с код ${approvedCode} е одобрена за времето от 14:00 часа на ${checkInDate} до 12:00 часа на ${checkOutDate} включително. Гости ${guestsCount} бр.\nМоля до 24 часа да заплатите сумата ${amount} по сметка BG41STSA93000006082804 банка ДСК\nИко AI`;
 
         return {
@@ -59,6 +75,14 @@ export function formatNotification(eventType, payload = {}) {
     }
 
     if (eventType === 'request_cancelled') {
+        if (channel === 'telegram' && audience === 'host') {
+            return {
+                subject: `Канцелирана заявка ${requestCode}`,
+                text: `Изпратен уведомителен имейл за канселирана заявка ${requestCode} на ${guestName}.`,
+                html: ''
+            };
+        }
+
         return {
             subject: `Канцелирана заявка ${requestCode}`,
             text: `Заявката е канселирана\nКод: ${requestCode}\nГост: ${guestName}\nПериод: ${period}`,

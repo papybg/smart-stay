@@ -11,13 +11,13 @@ function normalizeRecipient(channel, recipient) {
     return channel === 'email' ? value.toLowerCase() : value;
 }
 
-function buildEventKey(eventType, payload, channel, recipient) {
+function buildEventKey(eventType, payload, channel, recipient, audience = 'host') {
     const eventRef = payload?.request_code
         || payload?.reservation_code
         || payload?.request_id
         || payload?.booking_id
         || 'na';
-    return `${eventType}:${eventRef}:${channel}:${recipient}`;
+    return `${eventType}:${eventRef}:${channel}:${recipient}:${audience}`;
 }
 
 function getChannelTargets(eventType, payload) {
@@ -27,14 +27,16 @@ function getChannelTargets(eventType, payload) {
     if (hasTelegram) {
         targets.push({
             channel: 'telegram',
-            recipient: process.env.TELEGRAM_CHAT_ID
+            recipient: process.env.TELEGRAM_CHAT_ID,
+            audience: 'host'
         });
     }
 
     if (process.env.NOTIF_HOST_EMAIL) {
         targets.push({
             channel: 'email',
-            recipient: process.env.NOTIF_HOST_EMAIL
+            recipient: process.env.NOTIF_HOST_EMAIL,
+            audience: 'host'
         });
     }
 
@@ -42,7 +44,16 @@ function getChannelTargets(eventType, payload) {
     if (shouldNotifyGuest && payload?.guest_email) {
         targets.push({
             channel: 'email',
-            recipient: payload.guest_email
+            recipient: payload.guest_email,
+            audience: 'guest'
+        });
+    }
+
+    if (shouldNotifyGuest && payload?.guest_telegram_chat_id) {
+        targets.push({
+            channel: 'telegram',
+            recipient: payload.guest_telegram_chat_id,
+            audience: 'guest'
         });
     }
 
@@ -54,7 +65,8 @@ function getChannelTargets(eventType, payload) {
         if (!unique.has(key)) {
             unique.set(key, {
                 channel: target.channel,
-                recipient
+                recipient,
+                audience: target.audience || 'host'
             });
         }
     }
@@ -96,7 +108,7 @@ export function createNotificationService({ sql }) {
     }
 
     async function deliver(job) {
-        const formatted = formatNotification(job.eventType, job.payload);
+        const formatted = formatNotification(job.eventType, job.payload, job.channel, job.audience || 'host');
 
         if (job.channel === 'telegram') {
             await sendTelegram({
@@ -184,7 +196,7 @@ export function createNotificationService({ sql }) {
 
         let enqueued = 0;
         for (const target of targets) {
-            const eventKey = buildEventKey(eventType, payload, target.channel, target.recipient);
+            const eventKey = buildEventKey(eventType, payload, target.channel, target.recipient, target.audience || 'host');
             if (sql) {
                 try {
                     const existing = await sql`
@@ -206,6 +218,7 @@ export function createNotificationService({ sql }) {
                 eventType,
                 channel: target.channel,
                 recipient: target.recipient,
+                audience: target.audience || 'host',
                 payload,
                 attempt: 1,
                 eventKey

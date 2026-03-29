@@ -420,7 +420,7 @@ export function registerBookingsRoutes(app, {
                 return res.status(500).json({ error: 'Database connection is not available' });
             }
 
-            const { guest_name, guest_email, guest_phone, check_in, check_out, guests_count, message, with_pet } = req.body || {};
+            const { guest_name, guest_email, guest_phone, guest_telegram_chat_id, check_in, check_out, guests_count, message, with_pet } = req.body || {};
             if (!guest_name || !guest_email || !check_in || !check_out) {
                 return res.status(400).json({ error: 'Липсват задължителни полета' });
             }
@@ -464,6 +464,7 @@ export function registerBookingsRoutes(app, {
                     guest_name,
                     guest_email,
                     guest_phone,
+                    guest_telegram_chat_id,
                     check_in,
                     check_out,
                     guests_count,
@@ -479,6 +480,7 @@ export function registerBookingsRoutes(app, {
                     ${guest_name},
                     ${guest_email},
                     ${guest_phone || null},
+                    ${guest_telegram_chat_id || null},
                     ${checkInDate.toISOString()},
                     ${checkOutDate.toISOString()},
                     ${Number.isInteger(Number(guests_count)) ? Number(guests_count) : null},
@@ -499,6 +501,7 @@ export function registerBookingsRoutes(app, {
                     request_code: inserted[0].request_code,
                     guest_name,
                     guest_email,
+                    guest_telegram_chat_id: guest_telegram_chat_id || null,
                     check_in: checkInDate.toISOString(),
                     check_out: checkOutDate.toISOString(),
                     quoted_total: quote.total
@@ -530,7 +533,7 @@ export function registerBookingsRoutes(app, {
             }
 
             const rows = await sql`
-                SELECT id, request_code, guest_name, guest_email, guest_phone,
+                    SELECT id, request_code, guest_name, guest_email, guest_phone, guest_telegram_chat_id,
                       check_in, check_out, guests_count, with_pet, quoted_total, message,
                        status, payment_status, converted_booking_id,
                        payment_received_at, created_at, updated_at
@@ -564,7 +567,7 @@ export function registerBookingsRoutes(app, {
                 WHERE id = ${requestId}
                   AND status = 'pending'
                   AND converted_booking_id IS NULL
-                RETURNING id, request_code, guest_name, guest_email, check_in, check_out, guests_count, quoted_total, status, payment_status
+                RETURNING id, request_code, guest_name, guest_email, guest_telegram_chat_id, check_in, check_out, guests_count, quoted_total, status, payment_status
             `;
 
             if (!rows.length) {
@@ -577,6 +580,7 @@ export function registerBookingsRoutes(app, {
                     request_code: rows[0].request_code,
                     guest_name: rows[0].guest_name,
                     guest_email: rows[0].guest_email,
+                    guest_telegram_chat_id: rows[0].guest_telegram_chat_id,
                     check_in: rows[0].check_in,
                     check_out: rows[0].check_out,
                     guests_count: rows[0].guests_count,
@@ -719,6 +723,7 @@ export function registerBookingsRoutes(app, {
                     request_code: request.request_code,
                     guest_name: request.guest_name,
                     guest_email: request.guest_email,
+                    guest_telegram_chat_id: request.guest_telegram_chat_id,
                     check_in: request.check_in,
                     check_out: request.check_out,
                     guests_count: request.guests_count,
@@ -760,7 +765,7 @@ export function registerBookingsRoutes(app, {
                     updated_at = NOW()
                 WHERE id = ${requestId}
                   AND converted_booking_id IS NULL
-                RETURNING id, request_code, guest_name, guest_email, check_in, check_out, quoted_total, status, payment_status
+                RETURNING id, request_code, guest_name, guest_email, guest_telegram_chat_id, check_in, check_out, quoted_total, status, payment_status
             `;
 
             if (!rows.length) {
@@ -773,6 +778,7 @@ export function registerBookingsRoutes(app, {
                     request_code: rows[0].request_code,
                     guest_name: rows[0].guest_name,
                     guest_email: rows[0].guest_email,
+                    guest_telegram_chat_id: rows[0].guest_telegram_chat_id,
                     check_in: rows[0].check_in,
                     check_out: rows[0].check_out,
                     quoted_total: rows[0].quoted_total
