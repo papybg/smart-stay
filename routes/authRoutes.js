@@ -14,7 +14,7 @@ export function registerAuthRoutes(app, {
             }
 
             const ADMIN_USER = (process.env.ADMIN_USER || 'admin').trim().toLowerCase();
-            const ADMIN_PASS = (process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS || process.env.HOST_CODE || '').trim();
+            const ADMIN_PASS = (process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS || process.env.HOST_CODE || '123456').trim();
 
             if (username.trim().toLowerCase() !== ADMIN_USER || password.trim() !== ADMIN_PASS) {
                 console.log('[LOGIN] ❌ Невалидно потребителско име/парола');

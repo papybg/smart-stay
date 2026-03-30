@@ -498,7 +498,7 @@
     try {
       const r = await fetch(`${BASE_URL}/api/meter`, {
         method: 'POST',
-        headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: cmd, host: true })
       });
       const data = await r.json();
@@ -517,7 +517,7 @@
 
   async function loadPowerLog() {
     try {
-      const r = await fetch(`${BASE_URL}/api/power-history`, { headers: { 'X-API-Key': API_KEY } });
+      const r = await fetch(`${BASE_URL}/api/power-history`, { headers: getAuthHeaders() });
       const data = await r.json();
       console.log('[POWER_LOG] response', data);
       // server returns { count, data: [...], period } so prefer data.data
@@ -571,30 +571,43 @@
     showToast('Dashboard влезен успешно', '#10b981');
   }
 
-  document.getElementById('dashboard-login-btn').addEventListener('click', () => {
-    const u = document.getElementById('dashboard-login-user').value.trim().toLowerCase();
+  function getAuthHeaders(defaultHeaders = {}) {
+    const headers = { ...defaultHeaders };
+    if (API_KEY) {
+      headers['X-API-Key'] = API_KEY;
+      headers['Authorization'] = 'Bearer ' + API_KEY;
+    }
+    return headers;
+  }
+
+document.getElementById('dashboard-login-btn').addEventListener('click', async () => {
+    const u = document.getElementById('dashboard-login-user').value.trim();
     const p = document.getElementById('dashboard-login-pass').value.trim();
-    const expectedUser = (window.ADMIN_USER || 'admin').trim().toLowerCase();
-    const expectedPassword = (window.ADMIN_PASSWORD || window.HOST_CODE || '').trim();
 
     if (!u || !p) {
       document.getElementById('dashboard-login-msg').textContent = 'Въведи потребител и парола';
       return;
     }
 
-    if (u !== expectedUser || p !== expectedPassword) {
-      document.getElementById('dashboard-login-msg').textContent = 'Грешно потребителско име или парола';
-      return;
-    }
+    // Изпращаме към backend /api/login
+    try {
+      const res = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.token) {
+        document.getElementById('dashboard-login-msg').textContent = data.error || 'Невалиден вход';
+        return;
+      }
 
-    // Important: x-api-key трябва да се зададе от средата (DASHBOARD_API_KEY)
-    const envKey = window.DASHBOARD_API_KEY || '';
-    if (!envKey) {
-      document.getElementById('dashboard-login-msg').textContent = 'Липсва DASHBOARD_API_KEY';
-      return;
+      setDashboardApiKey(data.token);
+      document.getElementById('dashboard-login-msg').textContent = '';
+    } catch (e) {
+      document.getElementById('dashboard-login-msg').textContent = 'Грешка при вход';
+      console.error(e);
     }
-
-    setDashboardApiKey(envKey);
   });
 
   document.getElementById('export-btn').addEventListener('click', openExportPanel);
@@ -611,7 +624,7 @@
       url += '?' + params.toString();
     }
     try {
-      const r = await fetch(url, { headers: { 'X-API-Key': API_KEY } });
+      const r = await fetch(url, { headers: getAuthHeaders() });
       const data = await r.json();
       if (Array.isArray(data)) {
         downloadCSV(data);
@@ -625,7 +638,7 @@
     btn.innerHTML = '<span class="spinner"></span> Проверявам...';
     btn.disabled = true;
     try {
-      const r = await fetch(`${BASE_URL}/api/gmail/sync`, { method: 'POST', headers: { 'X-API-Key': API_KEY } });
+      const r = await fetch(`${BASE_URL}/api/gmail/sync`, { method: 'POST', headers: getAuthHeaders() });
       const data = await r.json();
       res.textContent = data.message || 'Готово';
       res.style.color = '#10b981';
@@ -697,7 +710,7 @@
     const tbody = document.getElementById('requests-table');
     tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-muted" colspan="5">Зареждане...</td></tr>';
     try {
-      const r = await fetch(`${BASE_URL}/api/requests`, { headers: { 'X-API-Key': API_KEY } });
+      const r = await fetch(`${BASE_URL}/api/requests`, { headers: getAuthHeaders() });
       const data = await r.json();
       if (!Array.isArray(data) || !data.length) {
         tbody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-muted" colspan="5">Няма заявки</td></tr>';
@@ -776,7 +789,7 @@
     try {
       const r = await fetch(`${BASE_URL}/api/requests/${pendingPaymentRequestId}/mark-paid`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ payment_date: paymentDate })
       });
       const data = await r.json();
@@ -797,7 +810,7 @@
     try {
       const r = await fetch(`${BASE_URL}/api/requests/${requestId}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY }
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' })
       });
       const data = await r.json();
       if (r.ok && data.success) {
@@ -815,10 +828,7 @@
     try {
       const r = await fetch(`${BASE_URL}/api/requests/${requestId}/approve`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': API_KEY
-        }
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' })
       });
       const data = await r.json();
       if (!r.ok || !data.success) {
