@@ -132,6 +132,13 @@
       markStatus(document.getElementById('status-cancel'), true, 'Нулирано за нов тест');
     }
 
+    async function softResetPageAfterDelete() {
+      resetTestInputsForNextRun();
+      document.getElementById('status-health').textContent = '';
+      document.getElementById('status-inquiry').textContent = '';
+      await initApproveCalendar();
+    }
+
     document.getElementById('btn-login').onclick = async () => {
       const username = document.getElementById('login-user').value.trim();
       const password = document.getElementById('login-pass').value.trim();
@@ -172,6 +179,9 @@
 
     async function initApproveCalendar() {
       const blockedRanges = await loadBlockedDates();
+      if (window.approvePicker) {
+        window.approvePicker.destroy();
+      }
       window.approvePicker = flatpickr('#approve-date', {
         dateFormat: 'Y-m-d',
         minDate: new Date(Date.now() + 86400000 * 1),
@@ -253,7 +263,8 @@
     document.getElementById('btn-delete').onclick = async () => {
       const result = await deleteAllTestData(document.getElementById('status-delete'));
       if (result && result.success) {
-        resetTestInputsForNextRun();
+        await softResetPageAfterDelete();
+        markStatus(document.getElementById('status-delete'), true, 'Изтрито и нулирано');
       }
     };
   </script>
