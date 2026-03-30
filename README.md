@@ -22,6 +22,7 @@
 8. [Features & Status](#-features--status)
 9. [Конфигурация](#-конфигурация)
 10. [Развиване & Deployment](#-развиване--deployment)
+11. [Резервация](#-резервация)
 
 ---
 
@@ -518,6 +519,99 @@ Response:
 ```
 
 ### Key Features
+
+---
+
+## 🧾 Резервация
+
+Тази глава описва целия поток за директните заявки от сайта и конвертирането им в потвърдени резервации.
+
+### 1) Канали за вход
+
+- `Airbnb/Gmail sync` влиза директно в `bookings` (вече потвърдени резервации).
+- `Website inquiry` (`public/aspen-valley-retreat.html`) влиза първо в таблица `Requests` като заявка (`pending`).
+
+### 2) Публичен inquiry flow (website)
+
+При `POST /api/inquiry` (`routes/bookingsRoutes.js`) backend прави:
+
+1. Валидация на задължителни полета (`guest_name`, `guest_email`, `check_in`, `check_out`).
+2. Валидация на дати (`check_in < check_out`).
+3. Проверка за overlap със съществуващи активни резервации в `bookings`.
+4. Изчисляване на цена чрез pricing engine (`getActivePricing` + `calculateQuote`).
+5. Създаване на `request_code` (`REQ...`) и запис в `Requests` със статус:
+   - `status = pending`
+   - `payment_status = pending`
+6. Emit на събитие `request_created` към notification service.
+
+### 3) Жизнен цикъл на заявка (`Requests`)
+
+Стандартният lifecycle е:
+
+1. `pending` - нова заявка от сайта.
+2. `approved` - хостът одобрява заявката (`POST /api/requests/:id/approve`).
+3. `confirmed` + `paid` - при плащане заявката се конвертира в `bookings` (`POST /api/requests/:id/mark-paid`).
+4. `cancelled` - отказана заявка (`POST /api/requests/:id/cancel`).
+
+`mark-paid` е защитен: заявката трябва първо да е `approved`, иначе връща `409`.
+
+### 4) Конвертиране към `bookings`
+
+При `mark-paid` се прави:
+
+1. Вторична проверка за overlap период.
+2. Генериране на код `HM...` за реалната резервация.
+3. Опционално назначаване на `lock_pin` от `pin_depot`.
+4. Insert в `bookings` с `payment_status = paid`, `source = direct`, `total_price = quoted_total`.
+5. Update на `Requests`:
+   - `status = confirmed`
+   - `payment_status = paid`
+   - `converted_booking_id`, `converted_at`, `payment_received_at`.
+
+### 5) Нотификации (host + guest)
+
+Notification service (`services/notifications/index.js`) изпраща по channel-и и аудитории:
+
+- Host:
+  - Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`) - кратки съобщения.
+  - Email (`NOTIF_HOST_EMAIL`) - детайлни съобщения.
+- Guest (за `request_approved`, `request_paid`, `request_cancelled`):
+  - Email (`guest_email`) - детайлно съдържание.
+  - Telegram (`guest_telegram_chat_id`) - изпраща се само ако chat id е наличен.
+
+Има dedup/idempotency чрез `event_key` и лог в `notification_log` със status (`sent/retrying/failed`) и retries.
+
+### 6) Telegram UX в публичната форма
+
+`public/aspen-valley-retreat.html` използва два режима:
+
+- Default (non-SaaS):
+  - Полето `Telegram Chat ID` е скрито и disabled.
+  - След успешно запитване се показва бутон "Включи Telegram известия".
+  - Бутонът отваря deep-link: `https://t.me/<bot>?start=req_<request_code>`.
+- SaaS mode (по заявка):
+  - Активира се с `window.__SMART_STAY_SAAS_CHANNELS = true`.
+  - Тогава полето за `guest_telegram_chat_id` става видимо и може да се подава директно.
+
+За deep-link бутона трябва да е зададено:
+
+```html
+<script>
+  window.__SMART_STAY_TELEGRAM_BOT_USERNAME = 'your_bot_username';
+</script>
+```
+
+Ако username не е зададен, бутонът остава скрит (email flow продължава нормално).
+
+### 7) Endpoints за резервационния flow
+
+- `POST /api/inquiry` - създава `Requests` заявка.
+- `GET /api/requests` - списък заявки за dashboard.
+- `POST /api/requests/:id/approve` - `pending -> approved`.
+- `POST /api/requests/:id/mark-paid` - `approved -> confirmed/paid` + insert в `bookings`.
+- `POST /api/requests/:id/cancel` - маркира `cancelled` (ако не е конвертирана).
+
+Така системата поддържа разделение между "заявка" и "потвърдена резервация", с ясни статуси, проследимост и безопасни нотификации.
 
 | Feature | Description |
 |---------|-------------|

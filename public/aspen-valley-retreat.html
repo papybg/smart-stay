@@ -363,6 +363,11 @@
   <h4 class="font-display text-xl text-gold mb-2">Запитването е изпратено!</h4>
   <p class="text-slate-400 text-sm">Ще се свържем с вас в рамките на няколко часа.</p>
   <p id="inquiry-code" class="text-xs text-slate-500 mt-2"></p>
+  <a id="telegram-start-btn" href="#" target="_blank" rel="noopener" class="hidden mt-4 inline-flex items-center gap-2 bg-[#229ED9] hover:bg-[#1a8ec4] text-white font-semibold px-4 py-2 rounded-lg transition-colors">
+    <span class="material-symbols-outlined text-base">send</span>
+    <span>Включи Telegram известия</span>
+  </a>
+  <p id="telegram-start-help" class="hidden mt-2 text-xs text-slate-400">Отвори линка, натисни Start в бота и ще получаваш автоматични известия за тази заявка.</p>
 </div>
 <div id="inquiry-error" class="hidden bg-red-900/30 border border-red-500/30 rounded-lg p-3 mb-4 text-red-300 text-sm text-center"></div>
 <form id="inquiry-form" class="space-y-4">
@@ -379,9 +384,10 @@
 <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Телефон</label>
 <input id="f-phone" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="08XX XXX XXX" type="tel"/>
 </div>
-<div>
+<!-- SaaS-only optional channel field. Keep hidden/disabled by default. -->
+<div id="saas-telegram-field" class="hidden">
 <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Telegram Chat ID (по желание)</label>
-<input id="f-telegram" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="напр. 123456789 (след /start към бота)" type="text"/>
+<input id="f-telegram" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="напр. 123456789 (след /start към бота)" type="text" disabled/>
 </div>
 </div>
 <div class="grid grid-cols-2 gap-4">
@@ -431,11 +437,54 @@ const PRICING_QUOTE_URL = window.__SMART_STAY_API_URL
 const UNAVAILABLE_RANGES_URL = window.__SMART_STAY_API_URL
   ? `${window.__SMART_STAY_API_URL}/api/bookings/unavailable-ranges`
   : `${window.location.origin}/api/bookings/unavailable-ranges`;
+// SaaS-only channel fields are hidden unless explicitly enabled by host page config.
+const ENABLE_SAAS_CONTACT_CHANNELS = window.__SMART_STAY_SAAS_CHANNELS === true;
+const TELEGRAM_BOT_USERNAME = String(window.__SMART_STAY_TELEGRAM_BOT_USERNAME || '').trim().replace(/^@/, '');
 
 let unavailableRanges = [];
 let checkinPicker = null;
 let checkoutPicker = null;
 let latestQuote = null;
+
+function setSaasOptionalFieldsState() {
+  const fieldWrap = document.getElementById('saas-telegram-field');
+  const telegramInput = document.getElementById('f-telegram');
+  if (!fieldWrap || !telegramInput) return;
+
+  if (ENABLE_SAAS_CONTACT_CHANNELS) {
+    fieldWrap.classList.remove('hidden');
+    telegramInput.disabled = false;
+    return;
+  }
+
+  fieldWrap.classList.add('hidden');
+  telegramInput.disabled = true;
+  telegramInput.value = '';
+}
+
+function buildTelegramStartLink(requestCode) {
+  const code = String(requestCode || '').trim();
+  if (!TELEGRAM_BOT_USERNAME || !code) return '';
+  return `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${encodeURIComponent(`req_${code}`)}`;
+}
+
+function updateTelegramStartCTA(requestCode) {
+  const button = document.getElementById('telegram-start-btn');
+  const hint = document.getElementById('telegram-start-help');
+  if (!button || !hint) return;
+
+  const deepLink = buildTelegramStartLink(requestCode);
+  if (!deepLink) {
+    button.classList.add('hidden');
+    hint.classList.add('hidden');
+    button.removeAttribute('href');
+    return;
+  }
+
+  button.href = deepLink;
+  button.classList.remove('hidden');
+  hint.classList.remove('hidden');
+}
 
 function formatMoney(value, currency = 'BGN') {
   try {
@@ -599,7 +648,10 @@ async function submitInquiry() {
   const name = document.getElementById('f-name').value.trim();
   const email = document.getElementById('f-email').value.trim();
   const phone = document.getElementById('f-phone').value.trim();
-  const telegramChatId = document.getElementById('f-telegram').value.trim();
+  const telegramInput = document.getElementById('f-telegram');
+  const telegramChatId = ENABLE_SAAS_CONTACT_CHANNELS && telegramInput
+    ? telegramInput.value.trim()
+    : '';
   const checkin = document.getElementById('f-checkin').value;
   const checkout = document.getElementById('f-checkout').value;
   const guests = document.getElementById('f-guests').value;
@@ -634,26 +686,33 @@ async function submitInquiry() {
   btn.disabled = true;
 
   try {
+    const payload = {
+      guest_name: name,
+      guest_email: email,
+      guest_phone: phone || null,
+      check_in: checkin,
+      check_out: checkout,
+      guests_count: guests,
+      with_pet: withPet,
+      message: message || null
+    };
+
+    if (ENABLE_SAAS_CONTACT_CHANNELS) {
+      payload.guest_telegram_chat_id = telegramChatId || null;
+    }
+
     const res = await fetch(INQUIRY_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        guest_name: name,
-        guest_email: email,
-        guest_phone: phone || null,
-        guest_telegram_chat_id: telegramChatId || null,
-        check_in: checkin,
-        check_out: checkout,
-        guests_count: guests,
-        with_pet: withPet,
-        message: message || null
-      })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (res.ok && data.success) {
+      const requestCode = data.request_code || data.reservation_code || '';
       document.getElementById('inquiry-form').classList.add('hidden');
       document.getElementById('inquiry-success').classList.remove('hidden');
-      document.getElementById('inquiry-code').textContent = 'Код на запитването: ' + data.reservation_code;
+      document.getElementById('inquiry-code').textContent = requestCode ? ('Код на запитването: ' + requestCode) : '';
+      updateTelegramStartCTA(requestCode);
     } else {
       errEl.textContent = data.error || 'Грешка при изпращане. Опитайте отново.';
       errEl.classList.remove('hidden');
@@ -670,6 +729,12 @@ async function submitInquiry() {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
+  if (typeof setSaasOptionalFieldsState === 'function') {
+    setSaasOptionalFieldsState();
+  }
+  if (typeof updateTelegramStartCTA === 'function') {
+    updateTelegramStartCTA('');
+  }
   if (typeof bindQuoteInputListeners === 'function') {
     bindQuoteInputListeners();
   }
