@@ -117,6 +117,17 @@
       }, statusEl);
     }
 
+    function resetTestInputsForNextRun() {
+      document.getElementById('approve-id').value = '';
+      document.getElementById('paid-id').value = '';
+      document.getElementById('cancel-id').value = '';
+      document.getElementById('delete-id').value = '';
+      document.getElementById('approve-date').value = '';
+      markStatus(document.getElementById('status-approve'), true, 'Нулирано за нов тест');
+      markStatus(document.getElementById('status-mark-paid'), true, 'Нулирано за нов тест');
+      markStatus(document.getElementById('status-cancel'), true, 'Нулирано за нов тест');
+    }
+
     document.getElementById('btn-login').onclick = async () => {
       const username = document.getElementById('login-user').value.trim();
       const password = document.getElementById('login-pass').value.trim();
@@ -141,15 +152,18 @@
     };
 
     async function loadBlockedDates() {
-      const resp = await runTest(`${apiRoot}/api/bookings`, { method: 'GET' }, document.getElementById('status-health'));
-      if (!resp || !Array.isArray(resp)) return [];
-      const blocked = resp.map(b => {
-        const start = new Date(b.check_in);
-        const end = new Date(b.check_out);
-        // flatpickr non-inclusive on end date, so use end
-        return { from: start, to: end };
-      });
-      return blocked;
+      // Use the public endpoint so initial page load does not require auth.
+      try {
+        const r = await fetch(`${apiRoot}/api/bookings/unavailable-ranges`, { method: 'GET' });
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok || !payload?.success || !Array.isArray(payload.ranges)) return [];
+        return payload.ranges.map(range => ({
+          from: new Date(range.start),
+          to: new Date(range.end)
+        }));
+      } catch (_err) {
+        return [];
+      }
     }
 
     async function initApproveCalendar() {
@@ -186,6 +200,7 @@
         document.getElementById('approve-id').value = res.request_id;
         document.getElementById('paid-id').value = res.request_id;
         document.getElementById('cancel-id').value = res.request_id;
+        document.getElementById('delete-id').value = res.request_id;
       }
     };
 
@@ -212,7 +227,10 @@
       }, document.getElementById('status-mark-paid'));
 
       if (res && res.success) {
-        await deleteRequestData(id, document.getElementById('status-delete'));
+        const deleted = await deleteRequestData(id, document.getElementById('status-delete'));
+        if (deleted && deleted.success) {
+          resetTestInputsForNextRun();
+        }
       }
     };
 
@@ -222,13 +240,19 @@
 
       const res = await runTest(`${apiRoot}/api/requests/${id}/cancel`, { method: 'POST' }, document.getElementById('status-cancel'));
       if (res && res.success) {
-        await deleteRequestData(id, document.getElementById('status-delete'));
+        const deleted = await deleteRequestData(id, document.getElementById('status-delete'));
+        if (deleted && deleted.success) {
+          resetTestInputsForNextRun();
+        }
       }
     };
 
     document.getElementById('btn-delete').onclick = async () => {
       const id = document.getElementById('delete-id').value.trim();
-      await deleteRequestData(id, document.getElementById('status-delete'));
+      const result = await deleteRequestData(id, document.getElementById('status-delete'));
+      if (result && result.success) {
+        resetTestInputsForNextRun();
+      }
     };
   </script>
 </body>
