@@ -794,4 +794,60 @@ export function registerBookingsRoutes(app, {
         }
     });
 
+    app.delete('/api/requests/:id', async (req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
+            const requestId = Number.parseInt(req.params.id, 10);
+            if (Number.isNaN(requestId)) {
+                return res.status(400).json({ error: 'Невалидно request ID' });
+            }
+
+            const requestRows = await sql`
+                SELECT id, converted_booking_id
+                FROM "Requests"
+                WHERE id = ${requestId}
+            `;
+
+            if (!requestRows.length) {
+                return res.status(404).json({ error: 'Заявката не е намерена' });
+            }
+
+            const convertedBookingId = requestRows[0].converted_booking_id;
+            let deletedBookingId = null;
+
+            if (convertedBookingId) {
+                const deleted = await sql`
+                    DELETE FROM bookings
+                    WHERE id = ${convertedBookingId}
+                    RETURNING id
+                `;
+                if (deleted.length > 0) {
+                    deletedBookingId = deleted[0].id;
+                }
+            }
+
+            const deletedRequest = await sql`
+                DELETE FROM "Requests"
+                WHERE id = ${requestId}
+                RETURNING id
+            `;
+
+            if (!deletedRequest.length) {
+                return res.status(404).json({ error: 'Заявката не е намерена при изтриване' });
+            }
+
+            return res.status(200).json({
+                success: true,
+                deletedRequestId: requestId,
+                deletedBookingId
+            });
+        } catch (error) {
+            console.error('[REQUESTS:DELETE] 🔴 Грешка:', error);
+            return res.status(500).json({ error: error?.message || 'Грешка при изтриване на заявка' });
+        }
+    });
+
 }

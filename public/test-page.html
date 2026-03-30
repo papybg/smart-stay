@@ -64,6 +64,13 @@
   </div>
 
   <div class="card">
+    <p><b>6. Изтрий тестови данни</b>: DELETE /api/requests/:id</p>
+    <input id="delete-id" type="text" placeholder="request_id" style="width:120px; padding:6px;" />
+    <button id="btn-delete">Изтрий данни</button>
+    <span id="status-delete" class="status"></span>
+  </div>
+
+  <div class="card">
     <p><b>Информация</b> (много важно): Създаването на inquiry връща `request_code`. Въведи `request_id`, което получихте от API (id), за да тествате approve/paid/cancel.</p>
   </div>
 
@@ -98,6 +105,16 @@
         console.error(url, err);
         return null;
       }
+    }
+
+    async function deleteRequestData(requestId, statusEl) {
+      if (!requestId) {
+        markStatus(statusEl, false, 'Въведи request_id');
+        return null;
+      }
+      return await runTest(`${apiRoot}/api/requests/${requestId}`, {
+        method: 'DELETE'
+      }, statusEl);
     }
 
     document.getElementById('btn-login').onclick = async () => {
@@ -187,17 +204,31 @@
     document.getElementById('btn-mark-paid').onclick = async () => {
       const id = document.getElementById('paid-id').value.trim();
       if (!id) return markStatus(document.getElementById('status-mark-paid'), false, 'Въведи request_id');
-      await runTest(`${apiRoot}/api/requests/${id}/mark-paid`, {
+
+      const res = await runTest(`${apiRoot}/api/requests/${id}/mark-paid`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ payment_date: new Date().toISOString() })
       }, document.getElementById('status-mark-paid'));
+
+      if (res && res.success) {
+        await deleteRequestData(id, document.getElementById('status-delete'));
+      }
     };
 
     document.getElementById('btn-cancel').onclick = async () => {
       const id = document.getElementById('cancel-id').value.trim();
       if (!id) return markStatus(document.getElementById('status-cancel'), false, 'Въведи request_id');
-      await runTest(`${apiRoot}/api/requests/${id}/cancel`, { method: 'POST' }, document.getElementById('status-cancel'));
+
+      const res = await runTest(`${apiRoot}/api/requests/${id}/cancel`, { method: 'POST' }, document.getElementById('status-cancel'));
+      if (res && res.success) {
+        await deleteRequestData(id, document.getElementById('status-delete'));
+      }
+    };
+
+    document.getElementById('btn-delete').onclick = async () => {
+      const id = document.getElementById('delete-id').value.trim();
+      await deleteRequestData(id, document.getElementById('status-delete'));
     };
   </script>
 </body>
