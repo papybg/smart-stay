@@ -850,4 +850,55 @@ export function registerBookingsRoutes(app, {
         }
     });
 
+    app.delete('/api/test-data', async (_req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
+            const deletedBookingsFromRequests = await sql`
+                DELETE FROM bookings
+                WHERE id IN (
+                    SELECT converted_booking_id
+                    FROM "Requests"
+                    WHERE converted_booking_id IS NOT NULL
+                      AND (
+                        guest_name = 'Test User'
+                        OR guest_email = 'test@example.com'
+                        OR message = 'Test inquiry from UI'
+                      )
+                )
+                RETURNING id
+            `;
+
+            const deletedRequests = await sql`
+                DELETE FROM "Requests"
+                WHERE guest_name = 'Test User'
+                   OR guest_email = 'test@example.com'
+                   OR message = 'Test inquiry from UI'
+                RETURNING id
+            `;
+
+            const deletedOrphanBookings = await sql`
+                DELETE FROM bookings
+                WHERE source = 'direct'
+                  AND (
+                    guest_name = 'Test User'
+                    OR message = 'Test inquiry from UI'
+                  )
+                RETURNING id
+            `;
+
+            return res.status(200).json({
+                success: true,
+                deletedRequestsCount: deletedRequests.length,
+                deletedBookingsFromRequestsCount: deletedBookingsFromRequests.length,
+                deletedOrphanBookingsCount: deletedOrphanBookings.length
+            });
+        } catch (error) {
+            console.error('[TEST-DATA:DELETE] 🔴 Грешка:', error);
+            return res.status(500).json({ error: error?.message || 'Грешка при изтриване на тестови данни' });
+        }
+    });
+
 }

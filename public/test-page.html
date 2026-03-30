@@ -65,7 +65,6 @@
 
   <div class="card">
     <p><b>6. Изтрий тестови данни</b>: DELETE /api/requests/:id</p>
-    <input id="delete-id" type="text" placeholder="request_id" style="width:120px; padding:6px;" />
     <button id="btn-delete">Изтрий данни</button>
     <span id="status-delete" class="status"></span>
   </div>
@@ -117,11 +116,16 @@
       }, statusEl);
     }
 
+    async function deleteAllTestData(statusEl) {
+      return await runTest(`${apiRoot}/api/test-data`, {
+        method: 'DELETE'
+      }, statusEl);
+    }
+
     function resetTestInputsForNextRun() {
       document.getElementById('approve-id').value = '';
       document.getElementById('paid-id').value = '';
       document.getElementById('cancel-id').value = '';
-      document.getElementById('delete-id').value = '';
       document.getElementById('approve-date').value = '';
       markStatus(document.getElementById('status-approve'), true, 'Нулирано за нов тест');
       markStatus(document.getElementById('status-mark-paid'), true, 'Нулирано за нов тест');
@@ -200,7 +204,6 @@
         document.getElementById('approve-id').value = res.request_id;
         document.getElementById('paid-id').value = res.request_id;
         document.getElementById('cancel-id').value = res.request_id;
-        document.getElementById('delete-id').value = res.request_id;
       }
     };
 
@@ -248,8 +251,7 @@
     };
 
     document.getElementById('btn-delete').onclick = async () => {
-      const id = document.getElementById('delete-id').value.trim();
-      const result = await deleteRequestData(id, document.getElementById('status-delete'));
+      const result = await deleteAllTestData(document.getElementById('status-delete'));
       if (result && result.success) {
         resetTestInputsForNextRun();
       }
