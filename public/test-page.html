@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Stay API Тест</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background:#f5f7fb; }
+    h1 { color:#0b3d91; }
+    .card { background:white; border:1px solid #dedede; border-radius:8px; padding:16px; margin-bottom:12px; width:100%; max-width:650px; }
+    button { padding:10px 14px; margin-right:8px; margin-bottom:8px; font-size:14px; }
+    .status { font-weight:bold; font-size:16px; margin-left:8px; }
+    .ok { color:#107c10; }
+    .err { color:#a80000; }
+  </style>
+</head>
+<body>
+  <h1>Smart Stay API Тест</h1>
+
+  <div class="card">
+    <p><b>1. Проверка на базова връзка</b>: GET /api/requests</p>
+    <button id="btn-health">RUN</button>
+    <span id="status-health" class="status"></span>
+  </div>
+
+  <div class="card">
+    <p><b>2. Създай запитване</b>: POST /api/inquiry</p>
+    <button id="btn-create-inquiry">RUN</button>
+    <span id="status-inquiry" class="status"></span>
+  </div>
+
+  <div class="card">
+    <p><b>3. Одобри запитване</b>: POST /api/requests/:id/approve</p>
+    <input id="approve-id" type="text" placeholder="request_id" style="width:120px; padding:6px;" />
+    <button id="btn-approve">RUN</button>
+    <span id="status-approve" class="status"></span>
+  </div>
+
+  <div class="card">
+    <p><b>4. Маркирай като платено</b>: POST /api/requests/:id/mark-paid</p>
+    <input id="paid-id" type="text" placeholder="request_id" style="width:120px; padding:6px;" />
+    <button id="btn-mark-paid">RUN</button>
+    <span id="status-mark-paid" class="status"></span>
+  </div>
+
+  <div class="card">
+    <p><b>5. Откажи запитване</b>: POST /api/requests/:id/cancel</p>
+    <input id="cancel-id" type="text" placeholder="request_id" style="width:120px; padding:6px;" />
+    <button id="btn-cancel">RUN</button>
+    <span id="status-cancel" class="status"></span>
+  </div>
+
+  <div class="card">
+    <p><b>Информация</b> (много важно): Създаването на inquiry връща `request_code`. Въведи `request_id`, което получихте от API (id), за да тествате approve/paid/cancel.</p>
+  </div>
+
+  <script>
+    const apiRoot = window.location.origin;
+
+    function markStatus(el, ok, text) {
+      el.textContent = ok ? '✅ ' + text : '❌ ' + text;
+      el.className = 'status ' + (ok ? 'ok' : 'err');
+    }
+
+    async function runTest(url, options, statusEl) {
+      try {
+        const r = await fetch(url, options);
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) {
+          markStatus(statusEl, true, 'OK');
+          console.log(url, r.status, data);
+          return data;
+        } else {
+          markStatus(statusEl, false, `${r.status} ${data.error||'error'}`);
+          console.warn(url, r.status, data);
+          return null;
+        }
+      } catch (err) {
+        markStatus(statusEl, false, err.message);
+        console.error(url, err);
+        return null;
+      }
+    }
+
+    document.getElementById('btn-health').onclick = async () => {
+      await runTest(`${apiRoot}/api/requests`, { method: 'GET' }, document.getElementById('status-health'));
+    };
+
+    document.getElementById('btn-create-inquiry').onclick = async () => {
+      const payload = {
+        guest_name: 'Test User',
+        guest_email: 'test@example.com',
+        guest_phone: '0888000000',
+        check_in: new Date(Date.now() + 86400000).toISOString().slice(0,10),
+        check_out: new Date(Date.now() + 86400000*3).toISOString().slice(0,10),
+        guests_count: 2,
+        with_pet: false,
+        message: 'Test inquiry from UI'
+      };
+      const res = await runTest(`${apiRoot}/api/inquiry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, document.getElementById('status-inquiry'));
+      if (res && res.request_id) {
+        document.getElementById('approve-id').value = res.request_id;
+        document.getElementById('paid-id').value = res.request_id;
+        document.getElementById('cancel-id').value = res.request_id;
+      }
+    };
+
+    document.getElementById('btn-approve').onclick = async () => {
+      const id = document.getElementById('approve-id').value.trim();
+      if (!id) return markStatus(document.getElementById('status-approve'), false, 'Въведи request_id');
+      await runTest(`${apiRoot}/api/requests/${id}/approve`, { method: 'POST' }, document.getElementById('status-approve'));
+    };
+
+    document.getElementById('btn-mark-paid').onclick = async () => {
+      const id = document.getElementById('paid-id').value.trim();
+      if (!id) return markStatus(document.getElementById('status-mark-paid'), false, 'Въведи request_id');
+      await runTest(`${apiRoot}/api/requests/${id}/mark-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_date: new Date().toISOString() })
+      }, document.getElementById('status-mark-paid'));
+    };
+
+    document.getElementById('btn-cancel').onclick = async () => {
+      const id = document.getElementById('cancel-id').value.trim();
+      if (!id) return markStatus(document.getElementById('status-cancel'), false, 'Въведи request_id');
+      await runTest(`${apiRoot}/api/requests/${id}/cancel`, { method: 'POST' }, document.getElementById('status-cancel'));
+    };
+  </script>
+</body>
+</html>
