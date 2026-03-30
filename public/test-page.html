@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Smart Stay API Тест</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; background:#f5f7fb; }
     h1 { color:#0b3d91; }
@@ -38,9 +40,12 @@
   </div>
 
   <div class="card">
-    <p><b>3. Одобри запитване</b>: POST /api/requests/:id/approve</p>
-    <input id="approve-id" type="text" placeholder="request_id" style="width:120px; padding:6px;" />
-    <button id="btn-approve">RUN</button>
+    <p><b>3. Избери свободна дата и одобри запитване</b>: POST /api/requests/:id/approve</p>
+    <div style="margin-bottom:8px;">
+      <input id="approve-id" type="text" placeholder="request_id" style="width:120px; padding:6px; margin-right:8px;" />
+      <input id="approve-date" type="text" placeholder="Избери дата" style="width:150px; padding:6px; margin-right:8px;" readonly />
+      <button id="btn-approve">RUN</button>
+    </div>
     <span id="status-approve" class="status"></span>
   </div>
 
@@ -118,13 +123,39 @@
       await runTest(`${apiRoot}/api/requests`, { method: 'GET' }, document.getElementById('status-health'));
     };
 
+    async function loadBlockedDates() {
+      const resp = await runTest(`${apiRoot}/api/bookings`, { method: 'GET' }, document.getElementById('status-health'));
+      if (!resp || !Array.isArray(resp)) return [];
+      const blocked = resp.map(b => {
+        const start = new Date(b.check_in);
+        const end = new Date(b.check_out);
+        // flatpickr non-inclusive on end date, so use end
+        return { from: start, to: end };
+      });
+      return blocked;
+    }
+
+    async function initApproveCalendar() {
+      const blockedRanges = await loadBlockedDates();
+      window.approvePicker = flatpickr('#approve-date', {
+        dateFormat: 'Y-m-d',
+        minDate: new Date(Date.now() + 86400000 * 1),
+        disable: blockedRanges,
+        locale: "bg"
+      });
+    }
+
+    initApproveCalendar();
+
     document.getElementById('btn-create-inquiry').onclick = async () => {
+      const checkin = new Date(Date.now() + 86400000 * 30);
+      const checkout = new Date(Date.now() + 86400000 * 33);
       const payload = {
         guest_name: 'Test User',
         guest_email: 'test@example.com',
         guest_phone: '0888000000',
-        check_in: new Date(Date.now() + 86400000).toISOString().slice(0,10),
-        check_out: new Date(Date.now() + 86400000*3).toISOString().slice(0,10),
+        check_in: checkin.toISOString().slice(0,10),
+        check_out: checkout.toISOString().slice(0,10),
         guests_count: 2,
         with_pet: false,
         message: 'Test inquiry from UI'
@@ -143,8 +174,14 @@
 
     document.getElementById('btn-approve').onclick = async () => {
       const id = document.getElementById('approve-id').value.trim();
+      const selectedDate = document.getElementById('approve-date').value.trim();
       if (!id) return markStatus(document.getElementById('status-approve'), false, 'Въведи request_id');
-      await runTest(`${apiRoot}/api/requests/${id}/approve`, { method: 'POST' }, document.getElementById('status-approve'));
+      if (!selectedDate) return markStatus(document.getElementById('status-approve'), false, 'Избери свободна дата');
+
+      const res = await runTest(`${apiRoot}/api/requests/${id}/approve`, { method: 'POST' }, document.getElementById('status-approve'));
+      if (res && res.success) {
+        markStatus(document.getElementById('status-approve'), true, 'Записът е одобрен');
+      }
     };
 
     document.getElementById('btn-mark-paid').onclick = async () => {

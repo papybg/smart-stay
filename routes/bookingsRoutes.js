@@ -445,7 +445,7 @@ export function registerBookingsRoutes(app, {
                 LIMIT 1
             `;
             if (overlapping.length) {
-                return res.status(409).json({ error: 'Избраните дати не са налични' });
+                return res.status(409).json({ error: 'Някоя от датите е вече заета (check_in/check_out overlap). Проверете текущите резервации.' });
             }
 
             const pricing = await getActivePricing();
