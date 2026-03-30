@@ -18,6 +18,14 @@
   <h1>Smart Stay API Тест</h1>
 
   <div class="card">
+    <p><b>Login</b>: POST /api/login</p>
+    <input id="login-user" type="text" placeholder="username" style="width:120px; padding:6px; margin-right:8px;" />
+    <input id="login-pass" type="password" placeholder="password" style="width:120px; padding:6px; margin-right:8px;" />
+    <button id="btn-login">Login</button>
+    <span id="status-login" class="status"></span>
+  </div>
+
+  <div class="card">
     <p><b>1. Проверка на базова връзка</b>: GET /api/requests</p>
     <button id="btn-health">RUN</button>
     <span id="status-health" class="status"></span>
@@ -56,13 +64,18 @@
 
   <script>
     const apiRoot = window.location.origin;
+    let authToken = '';
 
     function markStatus(el, ok, text) {
       el.textContent = ok ? '✅ ' + text : '❌ ' + text;
       el.className = 'status ' + (ok ? 'ok' : 'err');
     }
 
-    async function runTest(url, options, statusEl) {
+    async function runTest(url, options = {}, statusEl) {
+      if (!options.headers) options.headers = {};
+      if (authToken) {
+        options.headers['Authorization'] = 'Bearer ' + authToken;
+      }
       try {
         const r = await fetch(url, options);
         const data = await r.json().catch(() => ({}));
@@ -81,6 +94,25 @@
         return null;
       }
     }
+
+    document.getElementById('btn-login').onclick = async () => {
+      const username = document.getElementById('login-user').value.trim();
+      const password = document.getElementById('login-pass').value.trim();
+      if (!username || !password) {
+        markStatus(document.getElementById('status-login'), false, 'Попълни потребител и парола');
+        return;
+      }
+      const data = await runTest(`${apiRoot}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      }, document.getElementById('status-login'));
+
+      if (data && data.token) {
+        authToken = data.token;
+        markStatus(document.getElementById('status-login'), true, 'Token зададен');
+      }
+    };
 
     document.getElementById('btn-health').onclick = async () => {
       await runTest(`${apiRoot}/api/requests`, { method: 'GET' }, document.getElementById('status-health'));

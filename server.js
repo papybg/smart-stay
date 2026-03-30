@@ -40,7 +40,7 @@ import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
 import { getAIResponse, assignPinFromDepot } from './services/ai_service.js';
 import { controlPower, controlMeterByAction } from './services/autoremote.js';
-import { generateToken, invalidateToken, SESSION_DURATION } from './services/sessionManager.js';
+import { generateToken, invalidateToken, validateToken, SESSION_DURATION } from './services/sessionManager.js';
 import { syncBookingsFromGmail, syncBookingsPowerFromLatestHistory } from './services/detective.js';
 import { createApiKeyGuard, createSimpleRateLimiter } from './middlewares/security.js';
 import { registerPowerRoutes } from './routes/powerRoutes.js';
@@ -111,6 +111,15 @@ function dashboardKeyGuard(req, res, next) {
     if (req.url.startsWith('/api/guest/') || open.some(p => req.url.startsWith(p))) {
         return next();
     }
+    const authHeader = String(req.headers['authorization'] || '').trim();
+    if (authHeader.toLowerCase().startsWith('bearer ')) {
+        const candidateToken = authHeader.substring(7).trim();
+        const session = validateToken(candidateToken);
+        if (session && session.valid) {
+            return next();
+        }
+    }
+
     const key = req.headers['x-api-key'];
     if (key && key === dashboardApiKey) return next();
 

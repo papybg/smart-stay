@@ -104,6 +104,16 @@
   </div>
 </header>
 
+<div id="dashboard-login" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:999;">
+  <div style="background:#0e1117;border:1px solid #1f2937;border-radius:16px;padding:24px;width:320px;">
+    <h3 style="margin:0 0 12px;color:#22d3ee;">Login за dashboard</h3>
+    <input id="dashboard-login-user" placeholder="Потребител" style="width:100%;padding:10px;margin-bottom:10px;border-radius:10px;border:1px solid #374151;background:#0e1117;color:#f1f5f9;" />
+    <input id="dashboard-login-pass" type="password" placeholder="Парола" style="width:100%;padding:10px;margin-bottom:10px;border-radius:10px;border:1px solid #374151;background:#0e1117;color:#f1f5f9;" />
+    <button id="dashboard-login-btn" style="width:100%;padding:10px;border:none;border-radius:10px;background:#22d3ee;color:#0e1117;font-weight:700;">Login</button>
+    <div id="dashboard-login-msg" style="margin-top:8px;color:#f97316;font-size:13px;"></div>
+  </div>
+</div>
+
 <!-- MAIN -->
 <main class="pb-28 px-4 pt-5 mx-auto" style="max-width:min(1380px, 100%);">
 
@@ -432,7 +442,7 @@
 <div class="toast" id="toast"></div>
 <script>
   const BASE_URL = 'https://smart-stay.onrender.com';
-  const API_KEY = 'YOUR_KEY_HERE';
+  let API_KEY = '';
   let powerState = true;
   let pendingPaymentRequestId = null;
   let paymentDatePicker = null;
@@ -554,6 +564,38 @@
   function openExportPanel() {
     document.getElementById('export-panel').classList.toggle('hidden');
   }
+
+  function setDashboardApiKey(key) {
+    API_KEY = key;
+    document.getElementById('dashboard-login').style.display = 'none';
+    showToast('Dashboard влезен успешно', '#10b981');
+  }
+
+  document.getElementById('dashboard-login-btn').addEventListener('click', () => {
+    const u = document.getElementById('dashboard-login-user').value.trim().toLowerCase();
+    const p = document.getElementById('dashboard-login-pass').value.trim();
+    const expectedUser = (window.ADMIN_USER || 'admin').trim().toLowerCase();
+    const expectedPassword = (window.ADMIN_PASSWORD || window.HOST_CODE || '').trim();
+
+    if (!u || !p) {
+      document.getElementById('dashboard-login-msg').textContent = 'Въведи потребител и парола';
+      return;
+    }
+
+    if (u !== expectedUser || p !== expectedPassword) {
+      document.getElementById('dashboard-login-msg').textContent = 'Грешно потребителско име или парола';
+      return;
+    }
+
+    // Important: x-api-key трябва да се зададе от средата (DASHBOARD_API_KEY)
+    const envKey = window.DASHBOARD_API_KEY || '';
+    if (!envKey) {
+      document.getElementById('dashboard-login-msg').textContent = 'Липсва DASHBOARD_API_KEY';
+      return;
+    }
+
+    setDashboardApiKey(envKey);
+  });
 
   document.getElementById('export-btn').addEventListener('click', openExportPanel);
   flatpickr('#export-from', { dateFormat: 'Y-m-d' });

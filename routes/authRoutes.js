@@ -8,18 +8,17 @@ export function registerAuthRoutes(app, {
 }) {
     app.post('/api/login', async (req, res) => {
         try {
-            const { password } = req.body;
-            if (!password || !password.trim()) {
-                return res.status(400).json({ error: 'Паролата е задължителна' });
+            const { username, password } = req.body;
+            if (!username || !username.trim() || !password || !password.trim()) {
+                return res.status(400).json({ error: 'Потребителско име и парола са задължителни' });
             }
 
-            const HOST_CODE = process.env.HOST_CODE || '';
-            const normalizedPassword = password.trim().toLowerCase();
-            const normalizedHostCode = HOST_CODE.trim().toLowerCase();
+            const ADMIN_USER = (process.env.ADMIN_USER || 'admin').trim().toLowerCase();
+            const ADMIN_PASS = (process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS || process.env.HOST_CODE || '').trim();
 
-            if (normalizedPassword !== normalizedHostCode && !normalizedPassword.includes(normalizedHostCode)) {
-                console.log('[LOGIN] ❌ Невалидна парола');
-                return res.status(401).json({ error: 'Невалидна парола' });
+            if (username.trim().toLowerCase() !== ADMIN_USER || password.trim() !== ADMIN_PASS) {
+                console.log('[LOGIN] ❌ Невалидно потребителско име/парола');
+                return res.status(401).json({ error: 'Невалидно потребителско име или парола' });
             }
 
             const token = generateToken('host');
