@@ -965,11 +965,14 @@ export async function getAIResponse(message, guestInfo, context) {
 ## 📋 Next TODO (актуално)
 
 - [ ] Добави SmartThings state readback (GET status) за двойна верификация
-- [ ] Добави централен rate-limit за чувствителни endpoint-и
-- [ ] Раздели `server.js` на модули (`power`, `auth`, `bookings`)
 - [ ] Добави `guest_chats` persistence (по резервация)
 - [ ] Добави monitoring/alerts за SmartThings и Gmail sync
   - Email/SMS на admin при грешки
+
+- [ ] Добави тестова рамка (unit + integration)
+  - Unit тестове за `routes/bookingsRoutes.js` и power flow
+  - Integration тестове за inquiry -> approve -> mark-paid -> cancel
+  - CI task за автоматично изпълнение
   
 - [ ] **Backup & Recovery** - Защита на данните
   - Regular database backups
@@ -1046,12 +1049,13 @@ export async function getAIResponse(message, guestInfo, context) {
 2. ✅ Tasker feedback-only loop (DONE)
 3. ✅ Bookings-first status for AI (DONE)
 4. ⏳ SmartThings status readback (IN PROGRESS)
+5. ⏳ Guest chat persistence (IN PROGRESS)
 ```
 
 ### Phase 2: USER EXPERIENCE (Next)
 ```
 1. Guest PIN система - SMS/Email доставка
-2. Persistent chat history
+2. Клиентски booking status lookup (по код)
 3. Mobile responsive dashboard
 4. Power history visualization (graph)
 ```
@@ -1059,10 +1063,11 @@ export async function getAIResponse(message, guestInfo, context) {
 ### Phase 3: PRODUCTION (After testing)
 ```
 1. Environment validation
-2. Security hardening
-3. Performance optimization
-4. Monitoring & alerting
-5. Database backups
+2. Testing (unit + integration + smoke)
+3. Security hardening
+4. Performance optimization
+5. Monitoring & alerting
+6. Database backups
 ```
 
 ### Phase 4: ADVANCED (Future)

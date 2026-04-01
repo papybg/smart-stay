@@ -244,3 +244,29 @@ services/notifications/channels/*.js
 - При `request_paid` и `request_cancelled` се пращат host + guest email (ако guest email съществува)
 - Всеки опит се записва в `notification_log` със статус `sent/retrying/failed`
 - Retry policy: 3 опита с exponential backoff
+
+---
+
+## Актуален статус и какво остава (April 2026)
+
+### Вече завършено
+- Notification foundation е внедрено (`services/notifications/*` + `notification_log`)
+- Booking lifecycle endpoint-ите са налични (`inquiry`, `approve`, `mark-paid`, `cancel`)
+- Retry и idempotency логика за нотификациите е активна
+
+### Оставащи стъпки (по приоритет)
+1. SmartThings readback
+  - добавяне на директен state read от SmartThings capability endpoint
+  - reconcile между direct read и Tasker feedback
+2. Session/chat persistence
+  - таблици `guest_chats` (или `ai_sessions` + `ai_messages`)
+  - API за fetch на история по резервация/сесия
+3. Tool registry extraction (MVP)
+  - изкарване на read-only tools (`getBookingStatus`, `getPowerStatus`)
+  - строг allowlist за write операции
+4. Cron persistence
+  - `cron_jobs` + `cron_runs`
+  - pending reminder и pre-checkin PIN reminder
+5. Testing + CI
+  - unit + integration тестове за booking/notification flow
+  - автоматично пускане в CI pipeline

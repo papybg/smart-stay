@@ -48,61 +48,31 @@
 
 ## Какво още трябва да се довърши
 ### Описание (текстово)
-- Бекенд трябва да поддържа пълен резервационен статус:
-  - `pending` -> `paid` -> `confirmed`/`cancelled`
-- Индикатори в базата за уведомление:
-  - `notification_sent_host` / `notification_sent_guest`
-- Известяване чрез:
-  - Telegram (домакин, клиент)
-  - Email (SMTP/Nodemailer)
-  - Viber (API)
-- Платежно проследяване:
-  - webhook/endpoint за платежен оператор
-  - 3D-secure и статус update
-- Front-end URL за `booking status lookup` (customer can check with code)
-- Cross-domain защита и CORS политика
+- Потокът `pending -> approved -> paid/confirmed -> cancelled` е наличен през `Requests`.
+- Host/guest notifications са активни за ключовите събития (Email/Telegram).
+- Основното довършване е UX + QA + production стабилизация.
 
 ### План (стъпка по стъпка)
-1. Добавяне на полета в `bookings`:
-   - `reservation_status` enum(\'pending\', \'confirmed\', \'cancelled\')
-   - `notification_status` JSON (host/chat/email)
-   - `payment_reference` и `payment_received_at`
-2. Разширяване на `/api/inquiry`:
-   - валидация на input (email, phone, dates)
-   - връща `requestId`, `request_code`, `status`
-   - записва в `Requests`, не в `bookings`
-3. Добавяне на endpoint `POST /api/bookings/:id/pay`:
-   - записва `payment_status='paid'`, `reservation_status='confirmed'`
-   - изпраща host+guest известия
-   - записва `system_notes`
-4. Добавяне на endpoint `GET /api/bookings/:id`:
-   - върни детайли, статуса, пин, checkin/out, payment
-5. Telegram функция (в `server.js`):
-   - активирана с `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-   - helper `sendTelegramMessage(chat_id, text)`
-   - callback + try/catch logging
-6. Email функция:
-   - npm пакети `nodemailer`, `dotenv` config
-   - helper `sendEmail(to, subject, html)`
-   - допълване към `app.post('/api/bookings/:id/confirm'...)`
-7. Интерфейс за стоп на host/guest:
-   - `ai_inquiry` форма -> `busy indicator` -> `success message`
-   - стъпка confirmation link с код (GET /confirm?code=...)
-8. Автоматично синхронизиране и статус:
-   - `cron` (server scheduler) провери `pending`>24ч -> нотифицира
-   - `syncBookingsFromGmail` че извлича нови резервации
-9. Тестове:
-   - unit tests за routes (`/api/inquiry`, `/api/bookings/:id/pay`)
-   - интеграционни тестове (DB, API response)
-10. Документация:
-    - допълнение към `README.md` + `SYSTEM_ARCHITECTURE.md`
+1. Клиентски booking lookup
+   - `GET /api/requests/:code` или equivalent endpoint за self-check
+   - минимална UI страница за проверка по код
+2. Reminder automation
+   - cron за pending заявки > 24ч
+   - cron за PIN reminder 4 часа преди check-in
+3. QA и тестове
+   - unit тестове за `/api/inquiry` и request lifecycle
+   - интеграционни тестове за conversion към `bookings`
+4. Production checklist
+   - env validation и health checks
+   - logging/alerts при sync и notification грешки
 
-## Статус (плейсхолдър)
+## Статус (актуализиран)
 - [x] Landing съдържание (описание, галерия, правила)
 - [x] AI widget с бутон
 - [x] Inquiry API + DB insert `pending`
-- [ ] Payment confirmation endpoint
-- [ ] Host / guest notification channel (Telegram/Email/Viber)
-- [ ] Status transition и изчакване
+- [x] Payment confirmation endpoint (`/api/requests/:id/mark-paid` след approve)
+- [x] Host / guest notification channel (Telegram/Email)
+- [x] Status transition (`pending -> approved -> confirmed/cancelled`)
 - [ ] UI за клиент проверка на резервация
+- [ ] Reminder cron задачи (pending>24ч, pre-checkin PIN)
 - [ ] QA и production checklist

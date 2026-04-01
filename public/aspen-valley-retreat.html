@@ -60,9 +60,20 @@
     }
 
     .flatpickr-day.flatpickr-disabled,
-    .flatpickr-day.notAllowed {
+    .flatpickr-day.notAllowed,
+    .flatpickr-day.strike-day {
       text-decoration: line-through;
       opacity: 0.35;
+    }
+
+    .flatpickr-day.booked-day {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.35);
+    }
+
+    .flatpickr-day.expired-day {
+      background: rgba(148, 163, 184, 0.18);
+      border-color: rgba(148, 163, 184, 0.3);
     }
   </style>
   </head>
@@ -547,6 +558,24 @@ function plusOneDay(date) {
   return copy;
 }
 
+function normalizeDayOnly(dateLike) {
+  const date = new Date(dateLike);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isPastDay(dateLike, todayStart) {
+  return normalizeDayOnly(dateLike) < todayStart;
+}
+
+function isBookedDay(dateLike, ranges) {
+  const day = normalizeDayOnly(dateLike);
+  return ranges.some((range) => {
+    const from = normalizeDayOnly(range.from);
+    const to = normalizeDayOnly(range.to);
+    return day >= from && day <= to;
+  });
+}
+
 async function loadUnavailableRanges() {
   try {
     const res = await fetch(UNAVAILABLE_RANGES_URL, { headers: { 'Accept': 'application/json' } });
@@ -587,17 +616,30 @@ async function setupDatePickers() {
   if (typeof flatpickr !== 'function') return;
 
   const today = new Date();
-  const startOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
   const commonConfig = {
     dateFormat: 'Y-m-d',
+    defaultDate: startOfToday,
     disable: [
       ...unavailableRanges,
       (date) => date < startOfToday
     ],
     disableMobile: true,
-    minDate: startOfCurrentMonth
+    onDayCreate: (_dObj, _dStr, _fp, dayElem) => {
+      const dayDate = dayElem.dateObj;
+      const expired = isPastDay(dayDate, startOfToday);
+      const booked = isBookedDay(dayDate, unavailableRanges);
+      if (expired || booked) {
+        dayElem.classList.add('strike-day');
+      }
+      if (expired) {
+        dayElem.classList.add('expired-day');
+      }
+      if (booked) {
+        dayElem.classList.add('booked-day');
+      }
+    }
   };
 
   checkinPicker = flatpickr('#f-checkin', {

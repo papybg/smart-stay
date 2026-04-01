@@ -14,6 +14,23 @@
     .status { font-weight:bold; font-size:16px; margin-left:8px; }
     .ok { color:#107c10; }
     .err { color:#a80000; }
+
+    .flatpickr-day.flatpickr-disabled,
+    .flatpickr-day.notAllowed,
+    .flatpickr-day.strike-day {
+      text-decoration: line-through;
+      opacity: 0.4;
+    }
+
+    .flatpickr-day.booked-day {
+      background: rgba(220, 38, 38, 0.12);
+      border-color: rgba(220, 38, 38, 0.35);
+    }
+
+    .flatpickr-day.expired-day {
+      background: rgba(148, 163, 184, 0.2);
+      border-color: rgba(148, 163, 184, 0.35);
+    }
   </style>
 </head>
 <body>
@@ -169,23 +186,60 @@
         const payload = await r.json().catch(() => ({}));
         if (!r.ok || !payload?.success || !Array.isArray(payload.ranges)) return [];
         return payload.ranges.map(range => ({
-          from: new Date(range.start),
-          to: new Date(range.end)
+          from: normalizeDayOnly(range.start),
+          to: normalizeDayOnly(range.end)
         }));
       } catch (_err) {
         return [];
       }
     }
 
+    function normalizeDayOnly(dateLike) {
+      const d = new Date(dateLike);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    function isPastDay(dayDate, todayStart) {
+      return normalizeDayOnly(dayDate) < todayStart;
+    }
+
+    function isBookedDay(dayDate, ranges) {
+      const target = normalizeDayOnly(dayDate);
+      return ranges.some(range => {
+        const from = normalizeDayOnly(range.from);
+        const to = normalizeDayOnly(range.to);
+        return target >= from && target <= to;
+      });
+    }
+
     async function initApproveCalendar() {
       const blockedRanges = await loadBlockedDates();
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       if (window.approvePicker) {
         window.approvePicker.destroy();
       }
       window.approvePicker = flatpickr('#approve-date', {
         dateFormat: 'Y-m-d',
-        minDate: new Date(Date.now() + 86400000 * 1),
-        disable: blockedRanges,
+        defaultDate: todayStart,
+        disable: [
+          ...blockedRanges,
+          (date) => isPastDay(date, todayStart)
+        ],
+        onDayCreate: (_dObj, _dStr, _fp, dayElem) => {
+          const dayDate = dayElem.dateObj;
+          const expired = isPastDay(dayDate, todayStart);
+          const booked = isBookedDay(dayDate, blockedRanges);
+          if (expired || booked) {
+            dayElem.classList.add('strike-day');
+          }
+          if (expired) {
+            dayElem.classList.add('expired-day');
+          }
+          if (booked) {
+            dayElem.classList.add('booked-day');
+          }
+        },
         locale: "bg"
       });
     }
