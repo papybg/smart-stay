@@ -529,7 +529,7 @@ Response:
 ### 1) Канали за вход
 
 - `Airbnb/Gmail sync` влиза директно в `bookings` (вече потвърдени резервации).
-- `Website inquiry` (`public/aspen-valley-retreat.html`) влиза първо в таблица `Requests` като заявка (`pending`).
+- `Website inquiry` (`public/reservation.html`) влиза първо в таблица `Requests` като заявка (`pending`).
 
 ### 2) Публичен inquiry flow (website)
 
@@ -583,7 +583,7 @@ Notification service (`services/notifications/index.js`) изпраща по cha
 
 ### 6) Telegram UX в публичната форма
 
-`public/aspen-valley-retreat.html` използва два режима:
+`public/reservation.html` използва два режима:
 
 - Default (non-SaaS):
   - Полето `Telegram Chat ID` е скрито и disabled.

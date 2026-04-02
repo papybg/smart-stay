@@ -86,8 +86,8 @@
 <h1 class="font-display text-lg font-bold leading-tight tracking-tight">Aspen Valley Retreat</h1>
 </div>
 <div class="flex items-center gap-2">
-<button class="text-xs font-bold px-2 py-1 rounded bg-primary/10 dark:bg-white/5 text-gold">BG</button>
-<button class="text-xs font-medium px-2 py-1 text-slate-400">EN</button>
+<button id="lang-bg" class="text-xs font-bold px-2 py-1 rounded bg-primary/10 dark:bg-white/5 text-gold">BG</button>
+<button id="lang-en" class="text-xs font-medium px-2 py-1 text-slate-400">EN</button>
 </div>
 </header>
 <!-- Hero Section -->
@@ -97,9 +97,9 @@
 <img alt="Главна снимка на комплекса" class="w-full h-full object-cover" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773388594/%D0%B1%D0%BB%D0%BE%D0%BA%D0%94_gn70rm.webp"/>
 <div class="absolute bottom-0 left-0 right-0 p-6 z-20 text-center">
 <h2 class="font-display text-white text-3xl font-bold mb-2">Aspen Valley Retreat</h2>
-<p class="text-gold/90 text-lg mb-6 italic">Уют, СПА и планински въздух край Разлог</p>
+<p id="hero-subtitle" class="text-gold/90 text-lg mb-6 italic">Уют, СПА и планински въздух край Разлог</p>
 <a href="#inquiry-form" class="block w-full bg-gold hover:bg-gold/90 text-primary font-bold py-4 rounded-lg shadow-xl transition-all">
-          Направи запитване
+<span id="hero-cta">Направи запитване</span>
         </a>
 </div>
   <img alt="Нова снимка" class="gallery-thumb w-full col-span-2 rounded-lg border border-white/10 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200" src="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp,w_400/v1773662574/sauna_o4t3g6.jpg" data-full="https://res.cloudinary.com/db8o7so6j/image/upload/f_webp/v1773662574/sauna_o4t3g6.jpg"/>
@@ -127,7 +127,7 @@
 
 <!-- Amenities Grid -->
 <section class="px-6 py-8 bg-primary/20">
-<h3 class="font-display text-2xl font-bold mb-6 text-center">Удобства</h3>
+<h3 id="amenities-title" class="font-display text-2xl font-bold mb-6 text-center">Удобства</h3>
 <div class="grid grid-cols-3 sm:grid-cols-4 gap-6">
 <div class="flex flex-col items-center gap-1 opacity-80">
 <span class="material-symbols-outlined text-gold">pool</span>
@@ -181,27 +181,27 @@
 </section>
 <!-- House Rules -->
 <section class="px-6 py-10">
-<h3 class="font-display text-2xl font-bold mb-6">Правила на къщата</h3>
+<h3 id="rules-title" class="font-display text-2xl font-bold mb-6">Правила на къщата</h3>
 <ul class="space-y-4">
 <li class="flex items-center gap-4 bg-white/5 p-3 rounded-lg border border-white/5">
 <span class="material-symbols-outlined text-gold">login</span>
 <div>
-<p class="font-bold text-sm">Настаняване</p>
-<p class="text-xs text-slate-400">След 14:00 ч.</p>
+<p id="rule-checkin-title" class="font-bold text-sm">Настаняване</p>
+<p id="rule-checkin-text" class="text-xs text-slate-400">След 14:00 ч.</p>
 </div>
 </li>
 <li class="flex items-center gap-4 bg-white/5 p-3 rounded-lg border border-white/5">
 <span class="material-symbols-outlined text-gold">logout</span>
 <div>
-<p class="font-bold text-sm">Напускане</p>
-<p class="text-xs text-slate-400">Преди 12:00 ч.</p>
+<p id="rule-checkout-title" class="font-bold text-sm">Напускане</p>
+<p id="rule-checkout-text" class="text-xs text-slate-400">Преди 12:00 ч.</p>
 </div>
 </li>
 <li class="flex items-center gap-4 bg-white/5 p-3 rounded-lg border border-white/5">
 <span class="material-symbols-outlined text-gold">group_add</span>
 <div>
-<p class="font-bold text-sm">Капацитет</p>
-<p class="text-xs text-slate-400">Максимум 5 гости</p>
+<p id="rule-capacity-title" class="font-bold text-sm">Капацитет</p>
+<p id="rule-capacity-text" class="text-xs text-slate-400">Максимум 5 гости</p>
 </div>
 </li>
 </ul>
@@ -279,7 +279,7 @@
 <p class="text-sm text-slate-300 mb-5">Имате въпроси за района, настаняване или удобства? Пишете директно на нашия AI асистент.</p>
 <button id="open-iko-chat" type="button" class="inline-flex items-center justify-center gap-2 bg-gold hover:bg-gold/90 text-primary font-bold px-5 py-3 rounded-lg transition-all">
 <span class="material-symbols-outlined">smart_toy</span>
-<span>Попитай Ико</span>
+<span id="ask-iko-mid">Попитай Ико</span>
 </button>
 </div>
 </section>
@@ -365,14 +365,14 @@
   });
 </script>
 <!-- Inquiry Form -->
-<section class="px-6 py-10 bg-neutral-dark/50">
+<section class="px-6 py-10" style="background-color: rgba(0, 0, 0, 0.5);">
 <div class="max-w-md mx-auto">
-<h3 class="font-display text-2xl font-bold mb-2 text-center text-gold">Направи запитване</h3>
-<p class="text-center text-slate-400 text-sm mb-8">Свържете се с нас за свободни дати и цени</p>
+<h3 id="inquiry-title" class="font-display text-2xl font-bold mb-2 text-center text-gold">Направи запитване</h3>
+<p id="inquiry-subtitle" class="text-center text-slate-400 text-sm mb-8">Свържете се с нас за свободни дати и цени</p>
 <div id="inquiry-success" class="hidden text-center py-8">
   <span class="material-symbols-outlined text-gold text-5xl mb-4 block">check_circle</span>
-  <h4 class="font-display text-xl text-gold mb-2">Запитването е изпратено!</h4>
-  <p class="text-slate-400 text-sm">Ще се свържем с вас в рамките на няколко часа.</p>
+  <h4 id="inquiry-success-title" class="font-display text-xl text-gold mb-2">Запитването е изпратено!</h4>
+  <p id="inquiry-success-text" class="text-slate-400 text-sm">Ще се свържем с вас в рамките на няколко часа.</p>
   <p id="inquiry-code" class="text-xs text-slate-500 mt-2"></p>
   <a id="telegram-start-btn" href="#" target="_blank" rel="noopener" class="hidden mt-4 inline-flex items-center gap-2 bg-[#229ED9] hover:bg-[#1a8ec4] text-white font-semibold px-4 py-2 rounded-lg transition-colors">
     <span class="material-symbols-outlined text-base">send</span>
@@ -383,16 +383,16 @@
 <div id="inquiry-error" class="hidden bg-red-900/30 border border-red-500/30 rounded-lg p-3 mb-4 text-red-300 text-sm text-center"></div>
 <form id="inquiry-form" class="space-y-4">
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Име *</label>
+<label id="label-name" class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Име *</label>
 <input id="f-name" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="Вашите имена" type="text"/>
 </div>
 <div class="grid grid-cols-1 gap-4">
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Имейл *</label>
+<label id="label-email" class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Имейл *</label>
 <input id="f-email" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="email@example.com" type="email"/>
 </div>
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Телефон</label>
+<label id="label-phone" class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Телефон</label>
 <input id="f-phone" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="08XX XXX XXX" type="tel"/>
 </div>
 <!-- SaaS-only optional channel field. Keep hidden/disabled by default. -->
@@ -403,39 +403,39 @@
 </div>
 <div class="grid grid-cols-2 gap-4">
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Настаняване *</label>
+<label id="label-checkin" class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Настаняване *</label>
 <input id="f-checkin" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" type="date"/>
 </div>
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Напускане *</label>
+<label id="label-checkout" class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Напускане *</label>
 <input id="f-checkout" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" type="date"/>
 </div>
 </div>
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Брой гости</label>
+<label id="label-guests" class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Брой гости</label>
 <select id="f-guests" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3">
-<option value="1">1 гост</option>
-<option value="2">2 гости</option>
-<option value="3">3 гости</option>
-<option value="4">4 гости</option>
-<option value="5">5 гости</option>
+<option id="guest-opt-1" value="1">1 гост</option>
+<option id="guest-opt-2" value="2">2 гости</option>
+<option id="guest-opt-3" value="3">3 гости</option>
+<option id="guest-opt-4" value="4">4 гости</option>
+<option id="guest-opt-5" value="5">5 гости</option>
 </select>
 </div>
 <div class="flex items-center justify-between rounded-lg border border-slate-300 bg-white px-4 py-3">
-  <label for="f-with-pet" class="text-sm text-black font-semibold">Домашен любимец</label>
+  <label id="label-pet" for="f-with-pet" class="text-sm text-black font-semibold">Домашен любимец</label>
   <input id="f-with-pet" type="checkbox" class="h-4 w-4 accent-gold" />
 </div>
 <div>
-<label class="block text-base font-bold uppercase tracking-wider text-slate-300 mb-1">Обща цена</label>
+<label id="label-total" class="block text-base font-bold uppercase tracking-wider text-slate-300 mb-1">Обща цена</label>
 <input id="f-total-price" class="w-1/2 bg-white border-2 border-slate-300 rounded-lg text-black font-bold px-4 py-3" type="text" value="" readonly/>
 <p id="f-price-breakdown" class="mt-1 text-[11px] text-slate-300"></p>
 </div>
 <div>
-<label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Съобщение</label>
+<label id="label-message" class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Съобщение</label>
 <textarea id="f-message" class="w-full bg-primary/20 border border-white/10 rounded-lg text-white focus:ring-gold focus:border-gold px-4 py-3" placeholder="Допълнителни въпроси..." rows="4"></textarea>
 </div>
 <button id="inquiry-btn" class="w-full bg-gold hover:bg-gold/90 text-primary font-bold py-4 rounded-lg shadow-xl transition-all uppercase tracking-widest text-sm mt-4" type="button" onclick="submitInquiry()">
-  Изпрати запитване
+  <span id="inquiry-btn-text">Изпрати запитване</span>
 </button>
 </form>
 <script>
@@ -456,6 +456,180 @@ let unavailableRanges = [];
 let checkinPicker = null;
 let checkoutPicker = null;
 let latestQuote = null;
+let currentLang = 'bg';
+
+const i18n = {
+  bg: {
+    heroSubtitle: 'Уют, СПА и планински въздух край Разлог',
+    heroCta: 'Направи запитване',
+    amenitiesTitle: 'Удобства',
+    rulesTitle: 'Правила на къщата',
+    ruleCheckinTitle: 'Настаняване',
+    ruleCheckinText: 'След 14:00 ч.',
+    ruleCheckoutTitle: 'Напускане',
+    ruleCheckoutText: 'Преди 12:00 ч.',
+    ruleCapacityTitle: 'Капацитет',
+    ruleCapacityText: 'Максимум 5 гости',
+    askIko: 'Попитай Ико',
+    inquiryTitle: 'Направи запитване',
+    inquirySubtitle: 'Свържете се с нас за свободни дати и цени',
+    inquirySuccessTitle: 'Запитването е изпратено!',
+    inquirySuccessText: 'Ще се свържем с вас в рамките на няколко часа.',
+    labelName: 'Име *',
+    labelEmail: 'Имейл *',
+    labelPhone: 'Телефон',
+    labelCheckin: 'Настаняване *',
+    labelCheckout: 'Напускане *',
+    labelGuests: 'Брой гости',
+    labelPet: 'Домашен любимец',
+    labelTotal: 'Обща цена',
+    labelMessage: 'Съобщение',
+    inquiryBtn: 'Изпрати запитване',
+    locationTitle: 'Локация',
+    mapLink: 'Отвори в Google Maps',
+    namePlaceholder: 'Вашите имена',
+    phonePlaceholder: '08XX XXX XXX',
+    messagePlaceholder: 'Допълнителни въпроси...',
+    nightsLabel: 'нощувки',
+    baseLabel: 'Основа',
+    discountLabel: 'Отстъпка',
+    petLabel: 'Домашен любимец',
+    errRequired: 'Моля попълнете всички задължителни полета (*)',
+    errInvalidRange: 'Датата на напускане трябва да е след датата на настаняване',
+    errSelectActive: 'Моля, изберете активни дати от календара.',
+    errNoQuote: 'Цената не е изчислена. Провери датите и опитай отново.',
+    btnSending: 'Изпращане...',
+    errSubmit: 'Грешка при изпращане. Опитайте отново.',
+    errConnect: 'Грешка при свързване със сървъра. Опитайте отново.',
+    inquiryCodePrefix: 'Код на запитването: ',
+    guest1: '1 гост',
+    guest2: '2 гости',
+    guest3: '3 гости',
+    guest4: '4 гости',
+    guest5: '5 гости'
+  },
+  en: {
+    heroSubtitle: 'Cozy stay, SPA, and mountain air near Razlog',
+    heroCta: 'Send Inquiry',
+    amenitiesTitle: 'Amenities',
+    rulesTitle: 'House Rules',
+    ruleCheckinTitle: 'Check-in',
+    ruleCheckinText: 'After 14:00',
+    ruleCheckoutTitle: 'Check-out',
+    ruleCheckoutText: 'Before 12:00',
+    ruleCapacityTitle: 'Capacity',
+    ruleCapacityText: 'Up to 5 guests',
+    askIko: 'Ask Iko',
+    inquiryTitle: 'Send Inquiry',
+    inquirySubtitle: 'Contact us for availability and pricing',
+    inquirySuccessTitle: 'Inquiry Sent!',
+    inquirySuccessText: 'We will contact you within a few hours.',
+    labelName: 'Name *',
+    labelEmail: 'Email *',
+    labelPhone: 'Phone',
+    labelCheckin: 'Check-in *',
+    labelCheckout: 'Check-out *',
+    labelGuests: 'Guests',
+    labelPet: 'Pet',
+    labelTotal: 'Total Price',
+    labelMessage: 'Message',
+    inquiryBtn: 'Send Inquiry',
+    locationTitle: 'Location',
+    mapLink: 'Open in Google Maps',
+    namePlaceholder: 'Your full name',
+    phonePlaceholder: '+359 ...',
+    messagePlaceholder: 'Any extra details...',
+    nightsLabel: 'nights',
+    baseLabel: 'Base',
+    discountLabel: 'Discount',
+    petLabel: 'Pet',
+    errRequired: 'Please fill in all required fields (*)',
+    errInvalidRange: 'Check-out date must be after check-in date',
+    errSelectActive: 'Please choose active dates from the calendar.',
+    errNoQuote: 'Price is not calculated yet. Check dates and try again.',
+    btnSending: 'Sending...',
+    errSubmit: 'Failed to submit. Please try again.',
+    errConnect: 'Server connection error. Please try again.',
+    inquiryCodePrefix: 'Inquiry code: ',
+    guest1: '1 guest',
+    guest2: '2 guests',
+    guest3: '3 guests',
+    guest4: '4 guests',
+    guest5: '5 guests'
+  }
+};
+
+function t(key) {
+  return i18n[currentLang]?.[key] || i18n.bg[key] || key;
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function applyLanguage(lang) {
+  currentLang = lang === 'en' ? 'en' : 'bg';
+  document.documentElement.lang = currentLang;
+  localStorage.setItem('reservation_lang', currentLang);
+
+  setText('hero-subtitle', t('heroSubtitle'));
+  setText('hero-cta', t('heroCta'));
+  setText('amenities-title', t('amenitiesTitle'));
+  setText('rules-title', t('rulesTitle'));
+  setText('rule-checkin-title', t('ruleCheckinTitle'));
+  setText('rule-checkin-text', t('ruleCheckinText'));
+  setText('rule-checkout-title', t('ruleCheckoutTitle'));
+  setText('rule-checkout-text', t('ruleCheckoutText'));
+  setText('rule-capacity-title', t('ruleCapacityTitle'));
+  setText('rule-capacity-text', t('ruleCapacityText'));
+  setText('ask-iko-mid', t('askIko'));
+  setText('inquiry-title', t('inquiryTitle'));
+  setText('inquiry-subtitle', t('inquirySubtitle'));
+  setText('inquiry-success-title', t('inquirySuccessTitle'));
+  setText('inquiry-success-text', t('inquirySuccessText'));
+  setText('label-name', t('labelName'));
+  setText('label-email', t('labelEmail'));
+  setText('label-phone', t('labelPhone'));
+  setText('label-checkin', t('labelCheckin'));
+  setText('label-checkout', t('labelCheckout'));
+  setText('label-guests', t('labelGuests'));
+  setText('label-pet', t('labelPet'));
+  setText('label-total', t('labelTotal'));
+  setText('label-message', t('labelMessage'));
+  setText('inquiry-btn-text', t('inquiryBtn'));
+  setText('location-title', t('locationTitle'));
+  setText('map-link-text', t('mapLink'));
+  setText('ask-iko-float', t('askIko'));
+  setText('guest-opt-1', t('guest1'));
+  setText('guest-opt-2', t('guest2'));
+  setText('guest-opt-3', t('guest3'));
+  setText('guest-opt-4', t('guest4'));
+  setText('guest-opt-5', t('guest5'));
+
+  const nameInput = document.getElementById('f-name');
+  const phoneInput = document.getElementById('f-phone');
+  const messageInput = document.getElementById('f-message');
+  if (nameInput) nameInput.placeholder = t('namePlaceholder');
+  if (phoneInput) phoneInput.placeholder = t('phonePlaceholder');
+  if (messageInput) messageInput.placeholder = t('messagePlaceholder');
+
+  const bgBtn = document.getElementById('lang-bg');
+  const enBtn = document.getElementById('lang-en');
+  if (bgBtn && enBtn) {
+    const bgActive = currentLang === 'bg';
+    bgBtn.className = bgActive
+      ? 'text-xs font-bold px-2 py-1 rounded bg-primary/10 dark:bg-white/5 text-gold'
+      : 'text-xs font-medium px-2 py-1 text-slate-400';
+    enBtn.className = !bgActive
+      ? 'text-xs font-bold px-2 py-1 rounded bg-primary/10 dark:bg-white/5 text-gold'
+      : 'text-xs font-medium px-2 py-1 text-slate-400';
+  }
+
+  if (latestQuote) {
+    renderQuote(latestQuote);
+  }
+}
 
 function setSaasOptionalFieldsState() {
   const fieldWrap = document.getElementById('saas-telegram-field');
@@ -514,7 +688,7 @@ function renderQuote(quote) {
     return;
   }
   totalField.value = formatMoney(quote.total, quote.currency);
-  breakdown.textContent = `${quote.nights} нощувки | Основа: ${formatMoney(quote.base_total, quote.currency)} | Отстъпка: ${formatMoney(quote.discount_amount, quote.currency)} | Домашен любимец: ${formatMoney(quote.pet_fee, quote.currency)}`;
+  breakdown.textContent = `${quote.nights} ${t('nightsLabel')} | ${t('baseLabel')}: ${formatMoney(quote.base_total, quote.currency)} | ${t('discountLabel')}: ${formatMoney(quote.discount_amount, quote.currency)} | ${t('petLabel')}: ${formatMoney(quote.pet_fee, quote.currency)}`;
 }
 
 async function updateQuote() {
@@ -704,27 +878,27 @@ async function submitInquiry() {
 
   errEl.classList.add('hidden');
   if (!name || !email || !checkin || !checkout) {
-    errEl.textContent = 'Моля попълнете всички задължителни полета (*)';
+    errEl.textContent = t('errRequired');
     errEl.classList.remove('hidden');
     return;
   }
   if (new Date(checkin) >= new Date(checkout)) {
-    errEl.textContent = 'Датата на напускане трябва да е след датата на настаняване';
+    errEl.textContent = t('errInvalidRange');
     errEl.classList.remove('hidden');
     return;
   }
   if (!isSelectionAvailable(checkin, checkout)) {
-    errEl.textContent = 'Моля, изберете активни дати от календара.';
+    errEl.textContent = t('errSelectActive');
     errEl.classList.remove('hidden');
     return;
   }
   if (!latestQuote) {
-    errEl.textContent = 'Цената не е изчислена. Провери датите и опитай отново.';
+    errEl.textContent = t('errNoQuote');
     errEl.classList.remove('hidden');
     return;
   }
 
-  btn.textContent = 'Изпращане...';
+  btn.textContent = t('btnSending');
   btn.disabled = true;
 
   try {
@@ -753,24 +927,36 @@ async function submitInquiry() {
       const requestCode = data.request_code || data.reservation_code || '';
       document.getElementById('inquiry-form').classList.add('hidden');
       document.getElementById('inquiry-success').classList.remove('hidden');
-      document.getElementById('inquiry-code').textContent = requestCode ? ('Код на запитването: ' + requestCode) : '';
+      document.getElementById('inquiry-code').textContent = requestCode ? (t('inquiryCodePrefix') + requestCode) : '';
       updateTelegramStartCTA(requestCode);
     } else {
-      errEl.textContent = data.error || 'Грешка при изпращане. Опитайте отново.';
+      errEl.textContent = data.error || t('errSubmit');
       errEl.classList.remove('hidden');
-      btn.textContent = 'Изпрати запитване';
+      btn.textContent = t('inquiryBtn');
       btn.disabled = false;
     }
   } catch(e) {
-    errEl.textContent = 'Грешка при свързване със сървъра. Опитайте отново.';
+    errEl.textContent = t('errConnect');
     errEl.classList.remove('hidden');
-    btn.textContent = 'Изпрати запитване';
+    btn.textContent = t('inquiryBtn');
     btn.disabled = false;
   }
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
+  const initialLang = localStorage.getItem('reservation_lang') || (document.documentElement.lang === 'en' ? 'en' : 'bg');
+  applyLanguage(initialLang);
+
+  const langBgBtn = document.getElementById('lang-bg');
+  const langEnBtn = document.getElementById('lang-en');
+  if (langBgBtn) {
+    langBgBtn.addEventListener('click', () => applyLanguage('bg'));
+  }
+  if (langEnBtn) {
+    langEnBtn.addEventListener('click', () => applyLanguage('en'));
+  }
+
   if (typeof setSaasOptionalFieldsState === 'function') {
     setSaasOptionalFieldsState();
   }
@@ -788,7 +974,7 @@ async function submitInquiry() {
 </section>
 <!-- Location Section -->
 <section class="px-6 py-12">
-<h3 class="font-display text-2xl font-bold mb-4">Локация</h3>
+<h3 id="location-title" class="font-display text-2xl font-bold mb-4">Локация</h3>
 <p class="text-sm text-slate-400 mb-6">ул. Св. Никола 32, 2760 Разлог — крило Д, ет. 1. Тих комплекс, 600м преди разклона за Разлог (от Симитли), лесен достъп до ски писти и голф игрище Pirin Golf.</p>
 <div class="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl relative border border-white/10">
 <iframe
@@ -804,7 +990,7 @@ async function submitInquiry() {
 <div class="mt-4 text-center">
   <a href="https://maps.app.goo.gl/nMoN1AAuithsY8jn6" target="_blank" rel="noopener" class="inline-flex items-center gap-2 text-gold text-sm hover:underline">
     <span class="material-symbols-outlined text-sm">open_in_new</span>
-    Отвори в Google Maps
+    <span id="map-link-text">Отвори в Google Maps</span>
   </a>
 </div>
 </section>
@@ -836,7 +1022,7 @@ async function submitInquiry() {
 <!-- Floating AI Chat Button -->
 <button id="open-iko-chat-float" type="button" class="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-primary/95 text-gold border border-gold/30 px-5 py-3 rounded-full shadow-2xl hover:scale-105 transition-all backdrop-blur-md">
     <span class="material-symbols-outlined">smart_toy</span>
-    <span class="font-bold text-sm">Попитай Ико</span>
+  <span id="ask-iko-float" class="font-bold text-sm">Попитай Ико</span>
 </button>
 </body>
 </html>

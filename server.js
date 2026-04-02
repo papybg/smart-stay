@@ -437,9 +437,13 @@ app.use((req, res, next) => {
 app.get(['/', '/index.html'], (req, res, next) => {
     const host = getIncomingHost(req);
     if (reservationHosts.has(host)) {
-        return res.sendFile(path.join(__dirname, 'public', 'aspen-valley-retreat.html'));
+        return res.sendFile(path.join(__dirname, 'public', 'reservation.html'));
     }
     return next();
+});
+
+app.get('/aspen-valley-retreat.html', (_req, res) => {
+    return res.redirect(301, '/index.html');
 });
 
 // static middleware for other assets

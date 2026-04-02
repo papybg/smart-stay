@@ -1,7 +1,7 @@
 # Aspen Valley Retreat Page - Overview
 
 ## Цел на страницата
-`aspen-valley-retreat.html` е landing страница за хотелски/ваканционен комплекс „Aspen Valley Retreat". Целта е:
+`reservation.html` е landing страница за хотелски/ваканционен комплекс „Aspen Valley Retreat". Целта е:
 - да представи обекта (с галерия, удобства, правила и локация)
 - да приема запитвания за резервиране на апартамента
 - да дава instant AI помощ (бутон "Попитай Ико")

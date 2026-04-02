@@ -20,7 +20,7 @@
 - `server.js` остава entrypoint и импортира `ai_service.js`, който вече използва модулите.
 - **Оставащо по AI слоя:** persistence на chat history и test coverage.
 
-#### Рекламна страница (`public/aspen-valley-retreat.html`)
+#### Рекламна страница (`public/reservation.html`)
 - **Layout:** Добавен `max-w-lg mx-auto` wrapper за desktop, за да изглежда страницата центрирана и професионална (като мобилен изглед с `shadow-2xl`).
 - **Floating UI:** Добавен fixed бутон "Попитай Ико" долу вдясно с директен линк към AI асистента; премахнат стария блок от средата на страницата.
 - **Галерия (Lightbox & UI):**
