@@ -1,3 +1,5 @@
+import nodemailer from 'nodemailer';
+
 export function registerBookingsRoutes(app, {
     sql,
     assignPinFromDepot,
@@ -411,6 +413,254 @@ export function registerBookingsRoutes(app, {
 
     app.post('/api/gmail/sync', handleGmailSync);
     app.post('/api/email/sync', handleGmailSync);
+
+    app.post('/api/test/airbnb-send-email', async (req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
+            const smtpHost = String(process.env.SMTP_HOST || '').trim();
+            const smtpPort = Number(process.env.SMTP_PORT || 587);
+            const smtpUser = String(process.env.SMTP_USER || '').trim();
+            const smtpPass = String(process.env.SMTP_PASS || '').trim();
+            const fromEmail = String(process.env.SMTP_FROM || smtpUser).trim();
+
+            if (!smtpHost || !smtpUser || !smtpPass) {
+                return res.status(500).json({ error: 'SMTP не е конфигуриран (SMTP_HOST/SMTP_USER/SMTP_PASS)' });
+            }
+
+            const testRecipient = String(req.body?.to || smtpUser).trim();
+            const guestName = String(req.body?.guest_name || 'Test').trim();
+            const now = new Date();
+            const checkIn = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000);
+            checkIn.setHours(14, 0, 0, 0);
+            const checkOut = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+            checkOut.setHours(12, 0, 0, 0);
+            const reservationCode = String(req.body?.reservation_code || `HMTST${Date.now().toString(36).toUpperCase()}`).trim();
+            const runTag = Date.now().toString(36).toUpperCase();
+
+            const pinCode = `TST${Math.floor(100000 + Math.random() * 900000)}`;
+            await sql`
+                INSERT INTO pin_depot (pin_code, pin_name, is_used)
+                VALUES (${pinCode}, ${`TEST:EMAIL:${runTag}`}, FALSE)
+                ON CONFLICT (pin_code) DO NOTHING
+            `;
+
+            const dayMonth = (d) => `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const subject = `Новата резервация е потвърдена! ${guestName} пристига на ${dayMonth(checkIn)}.`;
+
+            const body = [
+                `Новата резервация е потвърдена! ${guestName} пристига на ${dayMonth(checkIn)}.`,
+                '',
+                `Изпратете съобщение, за да потвърдите данните за настаняване или да приветствате ${guestName}.`,
+                '',
+                `${guestName} Test`,
+                'Самоличността е потвърдена · 13 отзива',
+                'Bottrop, Германия',
+                '',
+                'Aspen Valley Retreat: Уют, СПА, басейн край Разлог',
+                'Целият дом/апартамент',
+                '',
+                'Настаняване',
+                dayMonth(checkIn),
+                '14:00',
+                '',
+                'Освобождаване',
+                dayMonth(checkOut),
+                '12:00',
+                '',
+                'Гости',
+                '2 възрастни (над 12 г.), 2 деца, 1 домашен любимец',
+                '',
+                'Код за потвърждение',
+                reservationCode,
+                '',
+                'Гостът е заплатил',
+                'Настаняване',
+                '€ 218,00',
+                '',
+                'Такса за услугата за гости',
+                '€ 36,63',
+                '',
+                'Общо (EUR)',
+                '€ 254,63'
+            ].join('\n');
+
+            const transporter = nodemailer.createTransport({
+                host: smtpHost,
+                port: smtpPort,
+                secure: smtpPort === 465,
+                auth: {
+                    user: smtpUser,
+                    pass: smtpPass
+                }
+            });
+
+            const sendResult = await transporter.sendMail({
+                from: fromEmail,
+                to: testRecipient,
+                subject,
+                text: body
+            });
+
+            let syncTriggered = false;
+            if (typeof syncBookingsFromGmail === 'function') {
+                syncTriggered = true;
+                // изчакване за Gmail ingestion и 2 опита за sync
+                await new Promise(resolve => setTimeout(resolve, 4000));
+                await syncBookingsFromGmail();
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                await syncBookingsFromGmail();
+            }
+
+            const rows = await sql`
+                SELECT id, reservation_code, guest_name, check_in, check_out, power_on_time, power_off_time, source, payment_status, lock_pin
+                FROM bookings
+                WHERE reservation_code = ${reservationCode}
+                LIMIT 1
+            `;
+
+            const booking = rows[0] || null;
+            const powerOnDeltaHours = booking ? Math.round((new Date(booking.check_in).getTime() - new Date(booking.power_on_time).getTime()) / (60 * 60 * 1000)) : null;
+            const powerOffDeltaHours = booking ? Math.round((new Date(booking.power_off_time).getTime() - new Date(booking.check_out).getTime()) / (60 * 60 * 1000)) : null;
+
+            return res.status(200).json({
+                success: true,
+                reservation_code: reservationCode,
+                email: {
+                    from: fromEmail,
+                    to: testRecipient,
+                    messageId: sendResult?.messageId || null
+                },
+                syncTriggered,
+                bookingFound: Boolean(booking),
+                booking,
+                validations: {
+                    hasLockPin: Boolean(booking?.lock_pin),
+                    sourceIsAirbnb: booking?.source === 'airbnb',
+                    paymentIsPaid: String(booking?.payment_status || '').toLowerCase() === 'paid',
+                    powerOnDeltaHours,
+                    powerOffDeltaHours,
+                    powerScheduleValid: powerOnDeltaHours === 2 && powerOffDeltaHours === 1
+                }
+            });
+        } catch (error) {
+            console.error('[TEST:AIRBNB_EMAIL] 🔴 Грешка:', error);
+            return res.status(500).json({ error: error?.message || 'Грешка при реален Airbnb email тест' });
+        }
+    });
+
+    app.post('/api/test/airbnb-simulate', async (req, res) => {
+        try {
+            if (!sql) {
+                return res.status(500).json({ error: 'Database connection is not available' });
+            }
+
+            const status = String(req.body?.status || 'confirmed').trim().toLowerCase();
+            const reservationCode = String(req.body?.reservation_code || `TST-ABNB-${Date.now().toString(36).toUpperCase()}`).trim();
+            const guestName = String(req.body?.guest_name || `Test User Airbnb ${Date.now().toString(36).toUpperCase()}`).trim();
+            const checkInRaw = req.body?.check_in;
+            const checkOutRaw = req.body?.check_out;
+
+            if (!reservationCode) {
+                return res.status(400).json({ error: 'Липсва reservation_code' });
+            }
+
+            if (status === 'cancelled') {
+                const cancelled = await sql`
+                    UPDATE bookings
+                    SET payment_status = 'cancelled',
+                        lock_pin = NULL,
+                        power_on_time = NULL,
+                        power_off_time = NULL,
+                        updated_at = NOW()
+                    WHERE reservation_code = ${reservationCode}
+                    RETURNING id, reservation_code, payment_status
+                `;
+
+                return res.status(200).json({
+                    success: true,
+                    mode: 'airbnb_simulated',
+                    status: 'cancelled',
+                    affected: cancelled.length,
+                    booking: cancelled[0] || null
+                });
+            }
+
+            const checkInDate = new Date(checkInRaw);
+            const checkOutDate = new Date(checkOutRaw);
+            if (Number.isNaN(checkInDate.getTime()) || Number.isNaN(checkOutDate.getTime()) || checkInDate >= checkOutDate) {
+                return res.status(400).json({ error: 'Невалидни check_in/check_out за симулация' });
+            }
+
+            const powerOn = new Date(checkInDate.getTime() - 2 * 60 * 60 * 1000);
+            const powerOff = new Date(checkOutDate.getTime() + 1 * 60 * 60 * 1000);
+
+            const existingRows = await sql`
+                SELECT id, lock_pin
+                FROM bookings
+                WHERE reservation_code = ${reservationCode}
+                LIMIT 1
+            `;
+
+            const existing = existingRows[0] || null;
+            let lockPin = existing?.lock_pin || null;
+            if (!lockPin) {
+                lockPin = await assignPinFromDepot({
+                    id: existing?.id,
+                    reservation_code: reservationCode,
+                    guest_name: guestName
+                });
+            }
+
+            const upserted = await sql`
+                INSERT INTO bookings (
+                    reservation_code,
+                    guest_name,
+                    check_in,
+                    check_out,
+                    power_on_time,
+                    power_off_time,
+                    source,
+                    payment_status,
+                    lock_pin
+                )
+                VALUES (
+                    ${reservationCode},
+                    ${guestName},
+                    ${checkInDate.toISOString()},
+                    ${checkOutDate.toISOString()},
+                    ${powerOn.toISOString()},
+                    ${powerOff.toISOString()},
+                    'airbnb',
+                    'paid',
+                    ${lockPin}
+                )
+                ON CONFLICT (reservation_code)
+                DO UPDATE SET
+                    guest_name = EXCLUDED.guest_name,
+                    check_in = EXCLUDED.check_in,
+                    check_out = EXCLUDED.check_out,
+                    power_on_time = EXCLUDED.power_on_time,
+                    power_off_time = EXCLUDED.power_off_time,
+                    payment_status = 'paid',
+                    source = 'airbnb',
+                    lock_pin = COALESCE(bookings.lock_pin, EXCLUDED.lock_pin)
+                RETURNING id, reservation_code, guest_name, check_in, check_out, power_on_time, power_off_time, source, payment_status, lock_pin
+            `;
+
+            return res.status(200).json({
+                success: true,
+                mode: 'airbnb_simulated',
+                status: 'confirmed',
+                booking: upserted[0]
+            });
+        } catch (error) {
+            console.error('[TEST:AIRBNB_SIM] 🔴 Грешка:', error);
+            return res.status(500).json({ error: error?.message || 'Грешка при Airbnb симулация' });
+        }
+    });
 
     // public inquiry form for website
     app.post('/api/inquiry', async (req, res) => {
@@ -863,9 +1113,9 @@ export function registerBookingsRoutes(app, {
                     FROM "Requests"
                     WHERE converted_booking_id IS NOT NULL
                       AND (
-                        guest_name = 'Test User'
+                        guest_name ILIKE 'Test User%'
                         OR guest_email = 'test@example.com'
-                        OR message = 'Test inquiry from UI'
+                        OR message ILIKE 'Test inquiry from UI%'
                       )
                 )
                 RETURNING id
@@ -873,19 +1123,27 @@ export function registerBookingsRoutes(app, {
 
             const deletedRequests = await sql`
                 DELETE FROM "Requests"
-                WHERE guest_name = 'Test User'
+                WHERE guest_name ILIKE 'Test User%'
                    OR guest_email = 'test@example.com'
-                   OR message = 'Test inquiry from UI'
+                   OR message ILIKE 'Test inquiry from UI%'
                 RETURNING id
             `;
 
             const deletedOrphanBookings = await sql`
                 DELETE FROM bookings
-                WHERE source = 'direct'
-                  AND (
-                    guest_name = 'Test User'
-                    OR message = 'Test inquiry from UI'
-                  )
+                WHERE (
+                    guest_name ILIKE 'Test User%'
+                    OR reservation_code ILIKE 'TST-%'
+                    OR source = 'test'
+                    OR message ILIKE 'Test inquiry from UI%'
+                )
+                RETURNING id
+            `;
+
+            const deletedTestPins = await sql`
+                DELETE FROM pin_depot
+                WHERE pin_name ILIKE 'TEST:%'
+                   OR pin_code ILIKE 'TST%'
                 RETURNING id
             `;
 
@@ -893,7 +1151,8 @@ export function registerBookingsRoutes(app, {
                 success: true,
                 deletedRequestsCount: deletedRequests.length,
                 deletedBookingsFromRequestsCount: deletedBookingsFromRequests.length,
-                deletedOrphanBookingsCount: deletedOrphanBookings.length
+                deletedOrphanBookingsCount: deletedOrphanBookings.length,
+                deletedTestPinsCount: deletedTestPins.length
             });
         } catch (error) {
             console.error('[TEST-DATA:DELETE] 🔴 Грешка:', error);

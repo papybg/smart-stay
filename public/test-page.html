@@ -87,12 +87,34 @@
   </div>
 
   <div class="card">
+    <p><b>7. Dashboard тестове</b>: /add-booking (overlap и non-overlap)</p>
+    <button id="btn-dashboard-overlap">RUN overlap</button>
+    <button id="btn-dashboard-non-overlap">RUN non-overlap</button>
+    <span id="status-dashboard" class="status"></span>
+  </div>
+
+  <div class="card">
+    <p><b>8. Airbnb Email Simulation</b>: simulated confirm/cancel flow</p>
+    <button id="btn-airbnb-confirm">RUN airbnb confirm</button>
+    <button id="btn-airbnb-cancel">RUN airbnb cancel</button>
+    <span id="status-airbnb" class="status"></span>
+  </div>
+
+  <div class="card">
+    <p><b>9. Реален Airbnb test email</b>: изпраща реален имейл до теб и пуска sync</p>
+    <input id="airbnb-real-to" type="email" placeholder="email за тест (по избор)" style="width:260px; padding:6px; margin-right:8px;" />
+    <button id="btn-airbnb-real-email">RUN real email</button>
+    <span id="status-airbnb-real" class="status"></span>
+  </div>
+
+  <div class="card">
     <p><b>Информация</b> (много важно): Създаването на inquiry връща `request_code`. Въведи `request_id`, което получихте от API (id), за да тествате approve/paid/cancel.</p>
   </div>
 
   <script>
     const apiRoot = window.location.origin;
     let authToken = '';
+    const runId = Date.now().toString(36).toUpperCase();
 
     function markStatus(el, ok, text) {
       el.textContent = ok ? '✅ ' + text : '❌ ' + text;
@@ -121,6 +143,26 @@
         console.error(url, err);
         return null;
       }
+    }
+
+    function makeTestPinCode() {
+      return 'TST' + Math.floor(100000 + Math.random() * 900000);
+    }
+
+    function diffHours(a, b) {
+      return Math.round((new Date(a).getTime() - new Date(b).getTime()) / (60 * 60 * 1000));
+    }
+
+    async function seedTestPin(label, statusEl) {
+      const pinCode = makeTestPinCode();
+      const pinName = `TEST:${runId}:${label}`;
+      const result = await runTest(`${apiRoot}/api/pins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin_code: pinCode, pin_name: pinName })
+      }, statusEl);
+      if (!result) return null;
+      return { pinCode, pinName };
     }
 
     async function deleteRequestData(requestId, statusEl) {
@@ -247,17 +289,20 @@
     initApproveCalendar();
 
     document.getElementById('btn-create-inquiry').onclick = async () => {
+      const seeded = await seedTestPin('INQUIRY', document.getElementById('status-inquiry'));
+      if (!seeded) return;
+
       const checkin = new Date(Date.now() + 86400000 * 30);
       const checkout = new Date(Date.now() + 86400000 * 33);
       const payload = {
-        guest_name: 'Test User',
+        guest_name: `Test User ${runId}`,
         guest_email: 'test@example.com',
         guest_phone: '0888000000',
         check_in: checkin.toISOString().slice(0,10),
         check_out: checkout.toISOString().slice(0,10),
         guests_count: 2,
         with_pet: false,
-        message: 'Test inquiry from UI'
+        message: `Test inquiry from UI ${runId}`
       };
       const res = await runTest(`${apiRoot}/api/inquiry`, {
         method: 'POST',
@@ -320,6 +365,165 @@
         await softResetPageAfterDelete();
         markStatus(document.getElementById('status-delete'), true, 'Изтрито и нулирано');
       }
+    };
+
+    document.getElementById('btn-dashboard-overlap').onclick = async () => {
+      const statusEl = document.getElementById('status-dashboard');
+
+      const seedA = await seedTestPin('DASHBOARD_OVERLAP_A', statusEl);
+      if (!seedA) return;
+
+      const checkin = new Date(Date.now() + 86400000 * 40).toISOString().slice(0, 10);
+      const checkout = new Date(Date.now() + 86400000 * 43).toISOString().slice(0, 10);
+
+      const first = await runTest(`${apiRoot}/add-booking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guest_name: `Test User Dashboard ${runId}`,
+          reservation_code: `TST-DB-A-${runId}`,
+          check_in: checkin,
+          check_out: checkout
+        })
+      }, statusEl);
+      if (!first || !first.success) return;
+
+      const seedB = await seedTestPin('DASHBOARD_OVERLAP_B', statusEl);
+      if (!seedB) return;
+
+      const r = await fetch(`${apiRoot}/add-booking`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': 'Bearer ' + authToken } : {})
+        },
+        body: JSON.stringify({
+          guest_name: `Test User Dashboard ${runId}`,
+          reservation_code: `TST-DB-B-${runId}`,
+          check_in: checkin,
+          check_out: checkout
+        })
+      });
+
+      const payload = await r.json().catch(() => ({}));
+      if (r.status === 409) {
+        markStatus(statusEl, true, 'Overlap сценарият е ОК (409)');
+      } else {
+        markStatus(statusEl, false, `Очаквах 409, получих ${r.status} ${payload?.error || ''}`);
+      }
+    };
+
+    document.getElementById('btn-dashboard-non-overlap').onclick = async () => {
+      const statusEl = document.getElementById('status-dashboard');
+      const seeded = await seedTestPin('DASHBOARD_NON_OVERLAP', statusEl);
+      if (!seeded) return;
+
+      const checkin = new Date(Date.now() + 86400000 * 50).toISOString().slice(0, 10);
+      const checkout = new Date(Date.now() + 86400000 * 52).toISOString().slice(0, 10);
+
+      const result = await runTest(`${apiRoot}/add-booking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guest_name: `Test User Dashboard ${runId}`,
+          reservation_code: `TST-DB-C-${runId}`,
+          check_in: checkin,
+          check_out: checkout
+        })
+      }, statusEl);
+
+      if (result && result.success) {
+        markStatus(statusEl, true, 'Non-overlap сценарият е ОК');
+      }
+    };
+
+    document.getElementById('btn-airbnb-confirm').onclick = async () => {
+      const statusEl = document.getElementById('status-airbnb');
+      const seeded = await seedTestPin('AIRBNB_CONFIRM', statusEl);
+      if (!seeded) return;
+
+      const checkin = new Date(Date.now() + 86400000 * 65);
+      checkin.setHours(15, 0, 0, 0);
+      const checkout = new Date(Date.now() + 86400000 * 68);
+      checkout.setHours(11, 0, 0, 0);
+
+      const reservationCode = `TST-ABNB-${runId}`;
+      const response = await runTest(`${apiRoot}/api/test/airbnb-simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'confirmed',
+          reservation_code: reservationCode,
+          guest_name: `Test User Airbnb ${runId}`,
+          check_in: checkin.toISOString(),
+          check_out: checkout.toISOString()
+        })
+      }, statusEl);
+
+      if (!response?.success || !response?.booking) return;
+
+      const b = response.booking;
+      const hasPin = Boolean(b.lock_pin);
+      const powerOnDelta = diffHours(b.check_in, b.power_on_time);
+      const powerOffDelta = diffHours(b.power_off_time, b.check_out);
+
+      if (!hasPin) {
+        return markStatus(statusEl, false, 'Airbnb confirm FAIL: няма lock_pin');
+      }
+      if (powerOnDelta !== 2) {
+        return markStatus(statusEl, false, `Airbnb confirm FAIL: power_on delta=${powerOnDelta}h`);
+      }
+      if (powerOffDelta !== 1) {
+        return markStatus(statusEl, false, `Airbnb confirm FAIL: power_off delta=${powerOffDelta}h`);
+      }
+
+      markStatus(statusEl, true, 'Airbnb confirm OK (PIN + power schedule валидни)');
+    };
+
+    document.getElementById('btn-airbnb-cancel').onclick = async () => {
+      const statusEl = document.getElementById('status-airbnb');
+      const reservationCode = `TST-ABNB-${runId}`;
+
+      const response = await runTest(`${apiRoot}/api/test/airbnb-simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'cancelled',
+          reservation_code: reservationCode
+        })
+      }, statusEl);
+
+      if (!response?.success) return;
+      markStatus(statusEl, true, 'Airbnb cancel OK');
+    };
+
+    document.getElementById('btn-airbnb-real-email').onclick = async () => {
+      const statusEl = document.getElementById('status-airbnb-real');
+      const inputTo = document.getElementById('airbnb-real-to').value.trim();
+
+      const response = await runTest(`${apiRoot}/api/test/airbnb-send-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: inputTo || undefined, guest_name: 'Test' })
+      }, statusEl);
+
+      if (!response?.success) return;
+
+      if (!response.bookingFound) {
+        return markStatus(statusEl, false, `Email пратен, но booking не е намерен (code ${response.reservation_code})`);
+      }
+
+      const v = response.validations || {};
+      const allGood = v.hasLockPin && v.sourceIsAirbnb && v.paymentIsPaid && v.powerScheduleValid;
+      if (!allGood) {
+        return markStatus(
+          statusEl,
+          false,
+          `Booking намерен, но валидация FAIL: pin=${v.hasLockPin} source=${v.sourceIsAirbnb} paid=${v.paymentIsPaid} power=${v.powerScheduleValid}`
+        );
+      }
+
+      markStatus(statusEl, true, `Real email OK (code ${response.reservation_code})`);
     };
   </script>
 </body>

@@ -212,13 +212,31 @@ export async function assignPinFromDepot(booking) {
     }
 
     try {
+        const guestName = String(booking?.guest_name || '').trim();
+        const reservationCode = String(booking?.reservation_code || '').trim();
+        const isTestBooking = guestName.toLowerCase().startsWith('test user') || reservationCode.toUpperCase().startsWith('TST-');
+
         console.log('[DATABASE] Запитвам pin_depot за първи неизползван щифт...');
-        const freePins = await sql`
-            SELECT id, pin_code FROM pin_depot
-            WHERE is_used = FALSE
-            ORDER BY id ASC
-            LIMIT 1
-        `;
+
+        let freePins = [];
+        if (isTestBooking) {
+            freePins = await sql`
+                SELECT id, pin_code FROM pin_depot
+                WHERE is_used = FALSE
+                  AND pin_name ILIKE 'TEST:%'
+                ORDER BY id ASC
+                LIMIT 1
+            `;
+        }
+
+        if (!freePins.length) {
+            freePins = await sql`
+                SELECT id, pin_code FROM pin_depot
+                WHERE is_used = FALSE
+                ORDER BY id ASC
+                LIMIT 1
+            `;
+        }
 
         if (freePins.length === 0) {
             console.error('[PIN_DEPOT] ❌ Нямаме налични неизползвани щифтове в хранилището!');

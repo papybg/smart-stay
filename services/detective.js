@@ -93,12 +93,27 @@ export async function syncBookingsFromGmail() {
         // ФИЛТЪР
         // по-широк филтър: търсим думи, които означават потвърждение/анулиране/резервация
         // + само непрочетени и в рамките на последните 30 дни
-        const baseQuery = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) is:unread newer_than:30d';
+        const allowedSenders = [
+            'automated@airbnb.com',
+            'pepetrow@gmail.com',
+            process.env.SMTP_USER,
+            process.env.SMTP_FROM,
+            process.env.TEST_AIRBNB_FROM
+        ]
+            .map(v => String(v || '').trim().toLowerCase())
+            .filter(Boolean)
+            .filter((value, index, array) => array.indexOf(value) === index);
+
+        const senderQuery = allowedSenders.length
+            ? '(' + allowedSenders.map(sender => `from:${sender}`).join(' OR ') + ')'
+            : '(from:automated@airbnb.com)';
+
+        const baseQuery = `${senderQuery} is:unread newer_than:30d`;
         // широкият (без subject) за статистика
         const baseRes = await gmail.users.messages.list({ userId: 'me', q: baseQuery });
         const totalCount = baseRes.data?.messages?.length || 0;
 
-        const query = '(from:automated@airbnb.com OR from:pepetrow@gmail.com) (subject:потвърдена OR subject:потвърдено OR subject:confirmed OR subject:cancelled OR subject:canceled OR subject:анулирана OR subject:резервация) is:unread newer_than:30d';
+        const query = `${senderQuery} (subject:потвърдена OR subject:потвърдено OR subject:confirmed OR subject:cancelled OR subject:canceled OR subject:анулирана OR subject:резервация) is:unread newer_than:30d`;
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
