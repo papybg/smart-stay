@@ -7,8 +7,7 @@
     "start": "node server.js",
     "build:dashboard-css": "tailwindcss -c tailwind.dashboard.config.cjs -i styles/dashboard.tailwind.input.css -o public/dashboard.tailwind.css --minify",
     "build:index-css": "tailwindcss -c tailwind.index.config.cjs -i styles/dashboard.tailwind.input.css -o public/index.tailwind.css --minify",
-    "build:remote-css": "tailwindcss -c tailwind.remote.config.cjs -i styles/dashboard.tailwind.input.css -o public/remote.tailwind.css --minify",
-    "build:css": "npm run build:dashboard-css && npm run build:index-css && npm run build:remote-css"
+    "build:css": "npm run build:dashboard-css && npm run build:index-css"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

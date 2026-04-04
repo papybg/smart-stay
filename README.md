@@ -162,7 +162,6 @@ smart-stay/
 │   │                              #   - показва история от /api/power-history
 │   │                              #   - CRUD и изтриване на PIN кодове
 │   │                              #   - динамичен списък с гости и формуляр за нова резервация (flatpickr)
-│   ├── remote.html             # Manual power control interface
 │   ├── aaadmin.html            # Legacy admin panel
 │
 ├── README.md                    # Main documentation (current state)
