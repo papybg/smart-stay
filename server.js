@@ -415,6 +415,10 @@ app.get('/dashboard.html', async (req, res) => {
     }
 });
 
+app.get('/dashboard', (_req, res) => {
+    return res.redirect(301, '/dashboard.html');
+});
+
 // canonical hosts for reservation site (with and without www)
 const reservationHosts = new Set(['reservation.bgm-design.com', 'www.reservation.bgm-design.com']);
 
@@ -434,7 +438,7 @@ app.use((req, res, next) => {
     return next();
 });
 
-app.get(['/', '/index.html'], (req, res, next) => {
+app.get('/', (req, res, next) => {
     const host = getIncomingHost(req);
     if (reservationHosts.has(host)) {
         return res.sendFile(path.join(__dirname, 'public', 'reservation.html'));
@@ -442,8 +446,29 @@ app.get(['/', '/index.html'], (req, res, next) => {
     return next();
 });
 
+// named page routes (avoid index-based navigation)
+app.get(['/agent', '/agent.html'], (_req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get(['/reservation', '/reservation.html'], (_req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'reservation.html'));
+});
+
+app.get(['/test', '/test.html'], (_req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'test-page.html'));
+});
+
+app.get('/index.html', (req, res) => {
+    const host = getIncomingHost(req);
+    if (reservationHosts.has(host)) {
+        return res.redirect(301, '/reservation');
+    }
+    return res.redirect(301, '/agent');
+});
+
 app.get('/aspen-valley-retreat.html', (_req, res) => {
-    return res.redirect(301, '/index.html');
+    return res.redirect(301, '/reservation');
 });
 
 // static middleware for other assets
