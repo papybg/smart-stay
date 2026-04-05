@@ -95,14 +95,33 @@
 - Keep Render as backend runtime, but expose customer-facing branded domains.
 - Configure these env vars in Render:
   - `PUBLIC_API_URL=https://smart-stay.onrender.com` (or your API gateway/domain)
-  - `SAAS_HOST_PAGE_MAP=www.reservation.client1.com=reservation.html,reservation.client1.com=reservation.html,agent.client1.com=agent.html`
-  - `SAAS_CANONICAL_HOST_REDIRECTS=reservation.client1.com=www.reservation.client1.com`
-  - `CORS_ALLOWED_ORIGINS=https://www.reservation.client1.com,https://agent.client1.com`
+  - `SAAS_HOST_PAGE_MAP=stay.client1.com=agent.html,reservation.client1.com=reservation.html,demo.client1.com=dashboard-demo.html,admin.client1.com=dashboard.html`
+  - `SAAS_CANONICAL_HOST_REDIRECTS=` (optional, only if you explicitly want host-to-host redirects)
+  - `CORS_ALLOWED_ORIGINS=https://stay.client1.com,https://reservation.client1.com,https://demo.client1.com,https://admin.client1.com`
   - `CORS_ALLOWED_ORIGIN_SUFFIXES=.client1.com,.bgm-design.com`
 - Result:
   - Client traffic uses branded domains.
   - Render domain remains active as backend infrastructure endpoint.
   - Frontend pages auto-detect and use configured API URL via runtime injection.
+
+### Web Addresses (Current)
+
+Client-facing domains (`bgm-design.com`):
+- Agent (AI chat): `https://stay.bgm-design.com/`
+- Reservation page: `https://reservation.bgm-design.com/`
+- Dashboard demo (public): `https://demo.bgm-design.com/`
+- Dashboard (admin): `https://admin.bgm-design.com/`
+
+Render fallback URLs:
+- Agent (AI chat): `https://smart-stay.onrender.com/agent.html`
+- Reservation page: `https://smart-stay.onrender.com/reservation.html`
+- Test page: `https://smart-stay.onrender.com/test.html`
+- Dashboard: `https://smart-stay.onrender.com/dashboard.html`
+- Dashboard demo: `https://smart-stay.onrender.com/dashboard-demo.html`
+
+Notes:
+- Test page is intentionally not public-branded by default. Use Render URL for internal QA or add a dedicated test subdomain in `SAAS_HOST_PAGE_MAP`.
+- Legacy URL `https://.../aspen-valley-retreat.html` redirects to `/reservation.html`.
 
 ---
 

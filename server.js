@@ -99,6 +99,8 @@ function parseHostRedirects(value) {
 
 const defaultAllowedOrigins = [
     'https://stay.bgm-design.com',
+    'https://demo.bgm-design.com',
+    'https://admin.bgm-design.com',
     'https://reservation.bgm-design.com',
     'https://www.reservation.bgm-design.com',
     'https://smart-stay.onrender.com',
@@ -131,17 +133,17 @@ app.use(cors({
 }));
 
 const hostPageMap = new Map([
+    ['stay.bgm-design.com', 'agent.html'],
     ['reservation.bgm-design.com', 'reservation.html'],
     ['www.reservation.bgm-design.com', 'reservation.html'],
-    ['stay.bgm-design.com', 'agent.html']
+    ['demo.bgm-design.com', 'dashboard-demo.html'],
+    ['admin.bgm-design.com', 'dashboard.html']
 ]);
 for (const [host, page] of parseHostPageMap(process.env.SAAS_HOST_PAGE_MAP)) {
     hostPageMap.set(host, page);
 }
 
-const canonicalHostRedirects = new Map([
-    ['reservation.bgm-design.com', 'www.reservation.bgm-design.com']
-]);
+const canonicalHostRedirects = new Map();
 for (const [host, target] of parseHostRedirects(process.env.SAAS_CANONICAL_HOST_REDIRECTS)) {
     canonicalHostRedirects.set(host, target);
 }
@@ -542,6 +544,9 @@ app.get('/', (req, res, next) => {
     const targetPage = hostPageMap.get(host);
     if (targetPage === 'agent.html') {
         return serveHtmlWithRuntimeConfig(req, res, 'index.html');
+    }
+    if (targetPage === 'dashboard.html') {
+        return serveHtmlWithRuntimeConfig(req, res, 'dashboard.html', { injectDashboardKey: true });
     }
     if (targetPage) {
         return serveHtmlWithRuntimeConfig(req, res, targetPage);
