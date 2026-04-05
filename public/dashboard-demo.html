@@ -104,7 +104,7 @@
   </div>
 </header>
 
-<div id="dashboard-login" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:999;">
+<div id="dashboard-login" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);display:none;align-items:center;justify-content:center;z-index:999;">
   <div style="background:#0e1117;border:1px solid #1f2937;border-radius:16px;padding:24px;width:320px;">
     <h3 style="margin:0 0 12px;color:#22d3ee;">Login за dashboard</h3>
     <input id="dashboard-login-user" placeholder="Потребител" style="width:100%;padding:10px;margin-bottom:10px;border-radius:10px;border:1px solid #374151;background:#0e1117;color:#f1f5f9;" />
@@ -533,7 +533,7 @@
     };
   }
 
-  let API_KEY = '';
+  let API_KEY = 'demo-token';
   let powerState = true;
   let pendingPaymentRequestId = null;
   let paymentDatePicker = null;
@@ -658,7 +658,8 @@
 
   function setDashboardApiKey(key) {
     API_KEY = key;
-    document.getElementById('dashboard-login').style.display = 'none';
+    const loginOverlay = document.getElementById('dashboard-login');
+    if (loginOverlay) loginOverlay.style.display = 'none';
     showToast('Dashboard влезен успешно', '#10b981');
   }
 
@@ -671,7 +672,8 @@
     return headers;
   }
 
-document.getElementById('dashboard-login-btn').addEventListener('click', async () => {
+const dashboardLoginBtn = document.getElementById('dashboard-login-btn');
+if (dashboardLoginBtn) dashboardLoginBtn.addEventListener('click', async () => {
     const u = document.getElementById('dashboard-login-user').value.trim();
     const p = document.getElementById('dashboard-login-pass').value.trim();
 
@@ -700,6 +702,10 @@ document.getElementById('dashboard-login-btn').addEventListener('click', async (
       console.error(e);
     }
   });
+
+  if (DEMO_MODE) {
+    setDashboardApiKey('demo-token');
+  }
 
   document.getElementById('export-btn').addEventListener('click', openExportPanel);
   flatpickr('#export-from', { dateFormat: 'Y-m-d' });
