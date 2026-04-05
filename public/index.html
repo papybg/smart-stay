@@ -22,13 +22,19 @@
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
         }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .ios-safe-area { padding-bottom: env(safe-area-inset-bottom); }
+        .app-shell {
+            height: 100dvh;
+            min-height: 100dvh;
+        }
+        .message-bubble {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
     </style>
 </head>
 <body class="font-display bg-background-light text-[#111813] transition-colors duration-300">
-<div class="relative flex h-screen w-full flex-col overflow-hidden organic-texture">
+<div class="app-shell relative flex w-full flex-col overflow-hidden organic-texture">
     <header class="glass-header sticky top-0 z-50 flex items-center p-4 pb-3 justify-between">
         <div class="flex items-center gap-3">
             <div class="flex size-10 items-center justify-center rounded-full bg-white/50">
@@ -45,40 +51,16 @@
         </div>
     </header>
 
-    <main id="chat-messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        <div class="flex justify-center">
-            <span class="text-[11px] font-bold uppercase tracking-widest text-[#a1a8a3] bg-white/30 px-3 py-1 rounded-full">Today</span>
+    <main id="chat-messages" class="flex-1 overflow-y-auto px-4 py-6">
+        <div id="chat-stack" class="flex min-h-full flex-col justify-end gap-4">
         </div>
     </main>
 
     <footer class="ios-safe-area w-full bg-gradient-to-t from-background-light via-background-light/95 to-transparent pt-4">
-        <div class="flex gap-2 px-4 pb-4 overflow-x-auto no-scrollbar" id="quick-chips">
-            <button data-message="Каква е WiFi паролата?" data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="WiFi">
-                <span class="material-symbols-outlined text-[18px] text-[#61896f]">wifi</span>
-                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">WiFi</p>
-            </button>
-            <button data-message="Искам да управлявам тока (включи/изключи)." data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="Изисква регистриран гост или домакин">
-                <span class="material-symbols-outlined text-[18px] text-[#61896f]">power_settings_new</span>
-                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Power</p>
-            </button>
-            <button data-message="Как се прави check-in?" data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="Check-in">
-                <span class="material-symbols-outlined text-[18px] text-[#61896f]">key</span>
-                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Check-in</p>
-            </button>
-            <button data-message="Какви са правилата в апартамента?" data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="Правила">
-                <span class="material-symbols-outlined text-[18px] text-[#61896f]">menu_book</span>
-                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Правила</p>
-            </button>
-            <button data-message="Препоръчай ресторанти и маршрути в района" data-requires-auth="registered" class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white px-5 shadow-sm border border-white/50 hover:border-primary transition-colors disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-white/50" title="Local Tips">
-                <span class="material-symbols-outlined text-[18px] text-[#61896f]">explore</span>
-                <p class="text-[#111813] text-xs font-semibold whitespace-nowrap">Local Tips</p>
-            </button>
-        </div>
-
         <div class="px-4 pb-6">
             <form id="chat-form" class="glass-input flex items-center rounded-full p-2 pr-2 pl-5 shadow-xl border border-white/50">
                 <input id="user-input" class="flex-1 bg-transparent border-none focus:ring-0 text-[15px] placeholder-[#61896f]/60 text-[#111813]" placeholder="Попитайте Ико..." type="text"/>
-                <button type="submit" class="flex size-10 items-center justify-center rounded-full bg-primary text-forest-green shadow-lg">
+                <button type="submit" class="flex size-10 items-center justify-center rounded-full bg-forest-green text-white shadow-lg">
                     <span class="material-symbols-outlined font-bold">arrow_upward</span>
                 </button>
             </form>
@@ -91,9 +73,9 @@
         || localStorage.getItem('smart-stay-api-url')
         || window.location.origin;
     const chatMessages = document.getElementById('chat-messages');
+    const chatStack = document.getElementById('chat-stack');
     const chatForm = document.getElementById('chat-form');
     const userInput = document.getElementById('user-input');
-    const quickChips = document.getElementById('quick-chips');
 
     const chatHistory = [];
 
@@ -104,33 +86,9 @@
         return token;
     }
 
-    function hasRegisteredGuestContext() {
-        const hmCodePattern = /HM[A-Z0-9_-]+/i;
-        for (let index = chatHistory.length - 1; index >= 0; index--) {
-            const msg = chatHistory[index];
-            if (!msg || msg.role !== 'user' || typeof msg.content !== 'string') continue;
-            if (hmCodePattern.test(msg.content)) return true;
-        }
-        return false;
-    }
-
-    function canUseRegisteredPower() {
-        return Boolean(getSessionToken()) || hasRegisteredGuestContext();
-    }
-
-    function updateQuickChipAccess() {
-        const registeredOnlyButtons = quickChips.querySelectorAll('button[data-requires-auth="registered"]');
-        const canUsePower = canUseRegisteredPower();
-        registeredOnlyButtons.forEach((btn) => {
-            if (!btn.dataset.defaultTitle) {
-                btn.dataset.defaultTitle = btn.getAttribute('title') || 'Quick action';
-            }
-            btn.disabled = !canUsePower;
-            if (!canUsePower) {
-                btn.title = 'Тази функция е достъпна само за регистриран гост или домакин';
-            } else {
-                btn.title = btn.dataset.defaultTitle;
-            }
+    function scrollToLatest() {
+        requestAnimationFrame(() => {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         });
     }
 
@@ -165,16 +123,16 @@
 
         const bubble = document.createElement('div');
         bubble.className = isUser
-            ? 'text-[15px] font-normal leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-forest-green text-white shadow-md whitespace-pre-wrap'
-            : 'text-[15px] font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white text-[#111813] shadow-sm border border-white/40 whitespace-pre-wrap';
+            ? 'message-bubble text-[15px] font-normal leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-forest-green text-white shadow-md whitespace-pre-wrap'
+            : 'message-bubble text-[15px] font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-white text-[#111813] shadow-sm border border-white/40 whitespace-pre-wrap';
         bubble.innerHTML = escapeAndFormat(content);
 
         contentCol.appendChild(label);
         contentCol.appendChild(bubble);
         wrapper.appendChild(contentCol);
 
-        chatMessages.appendChild(wrapper);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        chatStack.appendChild(wrapper);
+        scrollToLatest();
     }
 
     function addTyping() {
@@ -187,8 +145,8 @@
             </div>
             <div class="text-[14px] italic rounded-2xl rounded-bl-none px-4 py-3 bg-white text-[#61896f] shadow-sm border border-white/40 animate-pulse">Ико пише...</div>
         `;
-        chatMessages.appendChild(typing);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        chatStack.appendChild(typing);
+        scrollToLatest();
     }
 
     function removeTyping() {
@@ -209,7 +167,8 @@
         const row = document.createElement('div');
         row.className = 'flex justify-center';
         row.innerHTML = `<span class="text-[10px] font-bold uppercase tracking-widest text-[#4f6f5b] bg-white/70 px-3 py-1 rounded-full">${escapeAndFormat(badgeText)}</span>`;
-        chatMessages.appendChild(row);
+        chatStack.appendChild(row);
+        scrollToLatest();
     }
 
     async function sendMessage(message) {
@@ -217,7 +176,6 @@
 
         createMessage('user', message);
         chatHistory.push({ role: 'user', content: message });
-        updateQuickChipAccess();
         addTyping();
 
         try {
@@ -263,12 +221,10 @@
             if (parsed.badge) addSourceBadge(parsed.badge);
             createMessage('assistant', parsed.body || rawReply);
             chatHistory.push({ role: 'assistant', content: parsed.body || rawReply });
-            updateQuickChipAccess();
         } catch (error) {
             removeTyping();
             createMessage('assistant', `⚠️ ${error.message || 'Проблем с връзката. Опитайте отново.'}`);
             chatHistory.push({ role: 'assistant', content: '⚠️ Проблем с връзката. Опитайте отново.' });
-            updateQuickChipAccess();
         }
     }
 
@@ -280,16 +236,16 @@
         await sendMessage(message);
     });
 
-    quickChips.addEventListener('click', async (event) => {
-        const btn = event.target.closest('button[data-message]');
-        if (!btn) return;
-        if (btn.disabled) return;
-        await sendMessage(btn.dataset.message || '');
-    });
-
     createMessage('assistant', 'Добре дошли в Aspen Valley! Аз съм Ико – вашият AI асистент. Мога да помогна с информация за престоя, района и полезни препоръки.');
     chatHistory.push({ role: 'assistant', content: 'Добре дошли в Aspen Valley! Аз съм Ико – вашият AI асистент. Мога да помогна с информация за престоя, района и полезни препоръки.' });
-    updateQuickChipAccess();
+
+    // keep latest message visible when mobile keyboard opens/closes
+    userInput.addEventListener('focus', () => {
+        setTimeout(scrollToLatest, 120);
+    });
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', scrollToLatest);
+    }
 </script>
 </body>
 </html>
