@@ -69,9 +69,30 @@
 </div>
 
 <script>
-    const API_URL = window.__SMART_STAY_API_URL
-        || localStorage.getItem('smart-stay-api-url')
-        || window.location.origin;
+    function resolveApiUrl() {
+        const explicit = String(window.__SMART_STAY_API_URL || '').trim();
+        if (explicit) return explicit;
+
+        const persisted = String(localStorage.getItem('smart-stay-api-url') || '').trim();
+        if (persisted) return persisted;
+
+        const host = String(window.location.hostname || '').toLowerCase();
+        const brandedHosts = new Set([
+            'stay.bgm-design.com',
+            'reservation.bgm-design.com',
+            'www.reservation.bgm-design.com',
+            'demo.bgm-design.com',
+            'admin.bgm-design.com'
+        ]);
+
+        if (brandedHosts.has(host)) {
+            return 'https://smart-stay.onrender.com';
+        }
+
+        return window.location.origin;
+    }
+
+    const API_URL = resolveApiUrl();
     const chatMessages = document.getElementById('chat-messages');
     const chatStack = document.getElementById('chat-stack');
     const chatForm = document.getElementById('chat-form');
