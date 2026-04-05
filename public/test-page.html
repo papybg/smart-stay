@@ -112,7 +112,9 @@
   </div>
 
   <script>
-    const apiRoot = window.location.origin;
+    const apiRoot = window.__SMART_STAY_API_URL
+      || localStorage.getItem('smart-stay-api-url')
+      || window.location.origin;
     let authToken = '';
     const runId = Date.now().toString(36).toUpperCase();
 

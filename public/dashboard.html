@@ -441,7 +441,9 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 <script>
-  const BASE_URL = 'https://smart-stay.onrender.com';
+  const BASE_URL = window.__SMART_STAY_API_URL
+    || localStorage.getItem('smart-stay-api-url')
+    || window.location.origin;
   let API_KEY = '';
   let powerState = true;
   let pendingPaymentRequestId = null;

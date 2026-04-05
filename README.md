@@ -91,6 +91,19 @@
 - **Render.com** - Main Backend API
 - **Vercel** - Optional Frontend (static files)
 
+### SaaS Domain Mode (for resale)
+- Keep Render as backend runtime, but expose customer-facing branded domains.
+- Configure these env vars in Render:
+  - `PUBLIC_API_URL=https://smart-stay.onrender.com` (or your API gateway/domain)
+  - `SAAS_HOST_PAGE_MAP=www.reservation.client1.com=reservation.html,reservation.client1.com=reservation.html,agent.client1.com=agent.html`
+  - `SAAS_CANONICAL_HOST_REDIRECTS=reservation.client1.com=www.reservation.client1.com`
+  - `CORS_ALLOWED_ORIGINS=https://www.reservation.client1.com,https://agent.client1.com`
+  - `CORS_ALLOWED_ORIGIN_SUFFIXES=.client1.com,.bgm-design.com`
+- Result:
+  - Client traffic uses branded domains.
+  - Render domain remains active as backend infrastructure endpoint.
+  - Frontend pages auto-detect and use configured API URL via runtime injection.
+
 ---
 
 ## 🏗 Архитектура

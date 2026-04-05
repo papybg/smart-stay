@@ -291,7 +291,7 @@
     <button id="close-iko-chat" type="button" class="text-xl font-bold text-white hover:text-gold/80 transition-colors">&times;</button>
   </div>
   <div class="w-full flex-1">
-    <iframe id="iko-chat-iframe" src="https://smart-stay.onrender.com/" class="w-full h-full rounded-bl-2xl rounded-br-2xl border-0" title="AI Chat Widget"></iframe>
+    <iframe id="iko-chat-iframe" src="/agent.html" class="w-full h-full rounded-bl-2xl rounded-br-2xl border-0" title="AI Chat Widget"></iframe>
   </div>
 </div>
 
@@ -299,7 +299,10 @@
   document.addEventListener('DOMContentLoaded', function() {
     const chatWidget = document.getElementById('iko-chat-widget');
     const closeIkoBtn = document.getElementById('close-iko-chat');
-    const IKO_CHAT_URL = 'https://smart-stay.onrender.com/';
+    const API_ROOT = window.__SMART_STAY_API_URL
+      || localStorage.getItem('smart-stay-api-url')
+      || window.location.origin;
+    const IKO_CHAT_URL = `${API_ROOT}/agent.html`;
 
     function isWidgetOpen() {
       return chatWidget && !chatWidget.classList.contains('hidden');

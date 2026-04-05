@@ -89,7 +89,7 @@
 <script>
     const API_URL = window.__SMART_STAY_API_URL
         || localStorage.getItem('smart-stay-api-url')
-        || (window.location.hostname.includes('onrender.com') ? window.location.origin : 'https://smart-stay.onrender.com');
+        || window.location.origin;
     const chatMessages = document.getElementById('chat-messages');
     const chatForm = document.getElementById('chat-form');
     const userInput = document.getElementById('user-input');

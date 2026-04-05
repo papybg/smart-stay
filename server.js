@@ -56,15 +56,132 @@ const app = express();
 // behind Render’s proxy; ensures rate limiter sees real IP
 app.set('trust proxy', 1);
 
-// CORS – трябва да е ПРЕДИ всичко друго
-const allowedOrigins = [
+function parseCsvEnv(value) {
+    return String(value || '')
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+}
+
+function normalizeHost(value) {
+    return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+}
+
+function getIncomingHost(req) {
+    const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim().toLowerCase();
+    const direct = String(req.headers.host || '').split(':')[0].trim().toLowerCase();
+    return (forwarded || direct).replace(/\.$/, '');
+}
+
+function parseHostPageMap(value) {
+    const map = new Map();
+    for (const pair of parseCsvEnv(value)) {
+        const [hostRaw, pageRaw] = pair.split('=');
+        const host = normalizeHost(hostRaw);
+        const page = String(pageRaw || '').trim();
+        if (!host || !page) continue;
+        map.set(host, page);
+    }
+    return map;
+}
+
+function parseHostRedirects(value) {
+    const map = new Map();
+    for (const pair of parseCsvEnv(value)) {
+        const [fromRaw, toRaw] = pair.split('=');
+        const from = normalizeHost(fromRaw);
+        const to = normalizeHost(toRaw);
+        if (!from || !to) continue;
+        map.set(from, to);
+    }
+    return map;
+}
+
+const defaultAllowedOrigins = [
     'https://stay.bgm-design.com',
     'https://reservation.bgm-design.com',
     'https://www.reservation.bgm-design.com',
     'https://smart-stay.onrender.com',
     'http://localhost:3000'
 ];
-app.use(cors({ origin: allowedOrigins }));
+const allowedOrigins = new Set([
+    ...defaultAllowedOrigins,
+    ...parseCsvEnv(process.env.CORS_ALLOWED_ORIGINS)
+]);
+const allowedOriginHostSuffixes = parseCsvEnv(process.env.CORS_ALLOWED_ORIGIN_SUFFIXES || '.bgm-design.com');
+
+function isAllowedOrigin(origin) {
+    if (!origin) return true;
+    if (allowedOrigins.has(origin)) return true;
+    try {
+        const url = new URL(origin);
+        const host = normalizeHost(url.hostname);
+        return allowedOriginHostSuffixes.some(suffix => host.endsWith(normalizeHost(suffix)));
+    } catch {
+        return false;
+    }
+}
+
+// CORS – трябва да е ПРЕДИ всичко друго
+app.use(cors({
+    origin: (origin, callback) => {
+        if (isAllowedOrigin(origin)) return callback(null, true);
+        return callback(new Error('CORS origin denied'));
+    }
+}));
+
+const hostPageMap = new Map([
+    ['reservation.bgm-design.com', 'reservation.html'],
+    ['www.reservation.bgm-design.com', 'reservation.html'],
+    ['stay.bgm-design.com', 'agent.html']
+]);
+for (const [host, page] of parseHostPageMap(process.env.SAAS_HOST_PAGE_MAP)) {
+    hostPageMap.set(host, page);
+}
+
+const canonicalHostRedirects = new Map([
+    ['reservation.bgm-design.com', 'www.reservation.bgm-design.com']
+]);
+for (const [host, target] of parseHostRedirects(process.env.SAAS_CANONICAL_HOST_REDIRECTS)) {
+    canonicalHostRedirects.set(host, target);
+}
+
+function resolvePublicApiUrl(req) {
+    const envUrl = String(process.env.PUBLIC_API_URL || '').trim();
+    if (envUrl) return envUrl.replace(/\/$/, '');
+    const host = getIncomingHost(req);
+    if (!host) return '';
+    const proto = req.protocol || 'https';
+    return `${proto}://${host}`;
+}
+
+function getRuntimeConfigScript(req) {
+    const script = {
+        __SMART_STAY_API_URL: resolvePublicApiUrl(req),
+        __SMART_STAY_PUBLIC_HOST: getIncomingHost(req)
+    };
+    return `<script>Object.assign(window, ${JSON.stringify(script)});</script>`;
+}
+
+async function serveHtmlWithRuntimeConfig(req, res, fileName, options = {}) {
+    try {
+        const filePath = path.join(__dirname, 'public', fileName);
+        let html = await fs.promises.readFile(filePath, 'utf-8');
+        if (options.injectDashboardKey) {
+            html = html.replace(/YOUR_KEY_HERE/g, process.env.DASHBOARD_API_KEY || '');
+        }
+        const runtimeScript = getRuntimeConfigScript(req);
+        if (html.includes('</head>')) {
+            html = html.replace('</head>', `${runtimeScript}</head>`);
+        } else {
+            html = runtimeScript + html;
+        }
+        res.send(html);
+    } catch (err) {
+        console.error(`[SERVER] 🔴 Error serving ${fileName}:`, err.message);
+        res.status(500).send('Server error');
+    }
+}
 
 const PORT = process.env.PORT || 10000;
 const TASKER_NOISE_WINDOW_MS = Number(process.env.TASKER_NOISE_WINDOW_MS || 45000);
@@ -401,38 +518,20 @@ app.use((req, res, next) => {
     next();
 });
 
-// serve dashboard with key injection
+// serve dashboard with runtime config and key injection
 app.get('/dashboard.html', async (req, res) => {
-    try {
-        const dashPath = path.join(__dirname, 'public', 'dashboard.html');
-        let html = await fs.promises.readFile(dashPath, 'utf-8');
-        const key = process.env.DASHBOARD_API_KEY || '';
-        html = html.replace(/YOUR_KEY_HERE/g, key);
-        res.send(html);
-    } catch (err) {
-        console.error('[SERVER] 🔴 Error serving dashboard:', err.message);
-        res.status(500).send('Server error');
-    }
+    return serveHtmlWithRuntimeConfig(req, res, 'dashboard.html', { injectDashboardKey: true });
 });
 
 app.get('/dashboard', (_req, res) => {
     return res.redirect(301, '/dashboard.html');
 });
 
-// canonical hosts for reservation site (with and without www)
-const reservationHosts = new Set(['reservation.bgm-design.com', 'www.reservation.bgm-design.com']);
-
-function getIncomingHost(req) {
-    const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim().toLowerCase();
-    const direct = String(req.headers.host || '').split(':')[0].trim().toLowerCase();
-    return (forwarded || direct).replace(/\.$/, '');
-}
-
 app.use((req, res, next) => {
-    // if request comes to reservation.bgm-design.com without www, redirect to www
     const host = getIncomingHost(req);
-    if (host === 'reservation.bgm-design.com') {
-        const target = 'https://www.reservation.bgm-design.com' + req.url;
+    const canonicalTargetHost = canonicalHostRedirects.get(host);
+    if (canonicalTargetHost) {
+        const target = `https://${canonicalTargetHost}${req.originalUrl || req.url}`;
         return res.redirect(301, target);
     }
     return next();
@@ -440,35 +539,30 @@ app.use((req, res, next) => {
 
 app.get('/', (req, res, next) => {
     const host = getIncomingHost(req);
-    if (reservationHosts.has(host)) {
-        return res.sendFile(path.join(__dirname, 'public', 'reservation.html'));
+    const targetPage = hostPageMap.get(host);
+    if (targetPage === 'agent.html') {
+        return serveHtmlWithRuntimeConfig(req, res, 'index.html');
+    }
+    if (targetPage) {
+        return serveHtmlWithRuntimeConfig(req, res, targetPage);
     }
     return next();
 });
 
-// named page routes (avoid index-based navigation)
-app.get(['/agent', '/agent.html'], (_req, res) => {
-    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+app.get('/agent.html', (req, res) => {
+    return serveHtmlWithRuntimeConfig(req, res, 'index.html');
 });
 
-app.get(['/reservation', '/reservation.html'], (_req, res) => {
-    return res.sendFile(path.join(__dirname, 'public', 'reservation.html'));
+app.get('/reservation.html', (req, res) => {
+    return serveHtmlWithRuntimeConfig(req, res, 'reservation.html');
 });
 
-app.get(['/test', '/test.html'], (_req, res) => {
-    return res.sendFile(path.join(__dirname, 'public', 'test-page.html'));
-});
-
-app.get('/index.html', (req, res) => {
-    const host = getIncomingHost(req);
-    if (reservationHosts.has(host)) {
-        return res.redirect(301, '/reservation');
-    }
-    return res.redirect(301, '/agent');
+app.get('/test.html', (req, res) => {
+    return serveHtmlWithRuntimeConfig(req, res, 'test-page.html');
 });
 
 app.get('/aspen-valley-retreat.html', (_req, res) => {
-    return res.redirect(301, '/reservation');
+    return res.redirect(301, '/reservation.html');
 });
 
 // static middleware for other assets
