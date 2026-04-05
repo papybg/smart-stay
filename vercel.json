@@ -1,0 +1,54 @@
+{
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "demo.bgm-design.com"
+        }
+      ],
+      "destination": "/dashboard-demo.html"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "admin.bgm-design.com"
+        }
+      ],
+      "destination": "/dashboard.html"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "reservation.bgm-design.com"
+        }
+      ],
+      "destination": "/reservation.html"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.reservation.bgm-design.com"
+        }
+      ],
+      "destination": "/reservation.html"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "stay.bgm-design.com"
+        }
+      ],
+      "destination": "/index.html"
+    }
+  ]
+}
