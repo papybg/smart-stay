@@ -555,7 +555,7 @@ app.get('/', (req, res, next) => {
 });
 
 app.get('/agent.html', (req, res) => {
-    return serveHtmlWithRuntimeConfig(req, res, 'index.html');
+    return serveHtmlWithRuntimeConfig(req, res, 'agent.html');
 });
 
 app.get('/reservation.html', (req, res) => {
