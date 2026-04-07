@@ -612,8 +612,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ENDPOINTS
 // ============================================================================
 
-app.get('/', (req, res) => {
+app.get('/health', (_req, res) => {
     res.json({ name: 'Smart Stay', status: 'operational', timestamp: new Date().toISOString() });
+});
+
+app.get('/', (req, res) => {
+    return serveHtmlWithRuntimeConfig(req, res, 'agent.html');
 });
 
 async function handleSmartThingsLifecycle(req, res) {
