@@ -52,7 +52,7 @@
     </header>
 
     <main id="chat-messages" class="flex-1 overflow-y-auto px-4 py-6">
-        <div id="chat-stack" class="flex min-h-full flex-col justify-end gap-4">
+        <div id="chat-stack" class="flex min-h-full flex-col-reverse gap-4">
         </div>
     </main>
 
@@ -109,7 +109,7 @@
 
     function scrollToLatest() {
         requestAnimationFrame(() => {
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            chatMessages.scrollTop = 0;
         });
     }
 
@@ -152,7 +152,7 @@
         contentCol.appendChild(bubble);
         wrapper.appendChild(contentCol);
 
-        chatStack.appendChild(wrapper);
+        chatStack.prepend(wrapper);
         scrollToLatest();
     }
 
@@ -166,7 +166,7 @@
             </div>
             <div class="text-[14px] italic rounded-2xl rounded-bl-none px-4 py-3 bg-white text-[#61896f] shadow-sm border border-white/40 animate-pulse">Ико пише...</div>
         `;
-        chatStack.appendChild(typing);
+        chatStack.prepend(typing);
         scrollToLatest();
     }
 
