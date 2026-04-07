@@ -255,12 +255,13 @@ services/notifications/channels/*.js
 - Retry и idempotency логика за нотификациите е активна
 
 ### Оставащи стъпки (по приоритет)
-1. SmartThings readback
+1. SmartThings readback — DONE
   - добавяне на директен state read от SmartThings capability endpoint
   - reconcile между direct read и Tasker feedback
-2. Session/chat persistence
+2. Session/chat persistence — optional за по-нататък
   - таблици `guest_chats` (или `ai_sessions` + `ai_messages`)
   - API за fetch на история по резервация/сесия
+  - временното чат състояние се пази до завършване на сесията
 3. Tool registry extraction (MVP)
   - изкарване на read-only tools (`getBookingStatus`, `getPowerStatus`)
   - строг allowlist за write операции

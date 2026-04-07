@@ -124,6 +124,16 @@ export async function verifyGuestByHMCode(authCode, userMessage, history = []) {
                         SELECT * FROM bookings
                         WHERE LOWER(guest_name) LIKE ${'%' + n1 + '%'}
                           AND LOWER(guest_name) LIKE ${'%' + n2 + '%'}
+                          AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                          AND (check_out + make_interval(hours => ${ACCESS_END_AFTER_CHECKOUT_HOURS})) > NOW()
+                        ORDER BY
+                            CASE
+                                WHEN (check_in - make_interval(hours => ${ACCESS_START_BEFORE_CHECKIN_HOURS})) <= NOW()
+                                 AND (check_out + make_interval(hours => ${ACCESS_END_AFTER_CHECKOUT_HOURS})) > NOW()
+                                THEN 0
+                                ELSE 1
+                            END,
+                            check_in ASC
                         LIMIT 1
                     `;
                     if (rows.length) {
