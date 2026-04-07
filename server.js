@@ -543,7 +543,7 @@ app.get('/', (req, res, next) => {
     const host = getIncomingHost(req);
     const targetPage = hostPageMap.get(host);
     if (targetPage === 'agent.html') {
-        return serveHtmlWithRuntimeConfig(req, res, 'index.html');
+        return serveHtmlWithRuntimeConfig(req, res, 'agent.html');
     }
     if (targetPage === 'dashboard.html') {
         return serveHtmlWithRuntimeConfig(req, res, 'dashboard.html', { injectDashboardKey: true });
