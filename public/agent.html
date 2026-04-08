@@ -30,6 +30,10 @@
         .app-shell {
             height: 100dvh;
             min-height: 100dvh;
+            width: 100%;
+        }
+        .chat-row {
+            max-width: 90%;
         }
         .message-bubble {
             overflow-wrap: anywhere;
@@ -42,6 +46,28 @@
         #chat-form button[type="submit"] {
             min-width: 44px;
             min-height: 44px;
+        }
+        @media (min-width: 1024px) {
+            body {
+                background: linear-gradient(160deg, #e9e3d5 0%, #f3f0e9 45%, #e3ddd1 100%);
+            }
+            .app-shell {
+                max-width: 980px;
+                margin: 0 auto;
+                border-left: 1px solid rgba(0, 0, 0, 0.06);
+                border-right: 1px solid rgba(0, 0, 0, 0.06);
+                box-shadow: 0 18px 48px rgba(0, 0, 0, 0.08);
+            }
+            .chat-row {
+                max-width: 72%;
+            }
+            #chat-stack {
+                gap: 0.5rem;
+            }
+            #chat-messages {
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
         }
         @media (max-width: 768px) {
             .message-bubble {
@@ -147,8 +173,8 @@
         const isUser = role === 'user';
         const wrapper = document.createElement('div');
         wrapper.className = isUser
-            ? 'flex items-end gap-2 justify-end ml-auto max-w-[90%]'
-            : 'flex items-end gap-2 max-w-[90%]';
+            ? 'chat-row chat-row-user flex items-end gap-2 justify-end ml-auto max-w-[90%]'
+            : 'chat-row chat-row-assistant flex items-end gap-2 max-w-[90%]';
 
         if (!isUser) {
             const avatar = document.createElement('div');
@@ -183,7 +209,7 @@
     function addTyping() {
         const typing = document.createElement('div');
         typing.id = 'typing-indicator';
-        typing.className = 'flex items-end gap-3 max-w-[85%]';
+        typing.className = 'chat-row chat-row-assistant flex items-end gap-2 max-w-[90%]';
         typing.innerHTML = `
             <div class="bg-white flex items-center justify-center rounded-full w-9 h-9 shrink-0 shadow-sm border border-white/50">
                 <span class="material-symbols-outlined text-[#1b3a27] text-[20px]">terrain</span>
