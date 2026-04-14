@@ -31,7 +31,27 @@
       "destination": "/reservation.html"
     },
     {
+      "source": "/index.html",
+      "has": [
+        {
+          "type": "host",
+          "value": "reservation.bgm-design.com"
+        }
+      ],
+      "destination": "/reservation.html"
+    },
+    {
       "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.reservation.bgm-design.com"
+        }
+      ],
+      "destination": "/reservation.html"
+    },
+    {
+      "source": "/index.html",
       "has": [
         {
           "type": "host",

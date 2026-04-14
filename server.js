@@ -562,6 +562,15 @@ app.get('/reservation.html', (req, res) => {
     return serveHtmlWithRuntimeConfig(req, res, 'reservation.html');
 });
 
+app.get('/index.html', (req, res) => {
+    const host = getIncomingHost(req);
+    const targetPage = hostPageMap.get(host);
+    if (targetPage) {
+        return res.redirect(301, `/${targetPage}`);
+    }
+    return res.redirect(301, '/');
+});
+
 app.get('/test.html', (req, res) => {
     return serveHtmlWithRuntimeConfig(req, res, 'test-page.html');
 });
