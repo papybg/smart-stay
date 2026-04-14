@@ -8,9 +8,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
     <style>
+        :root {
+            --app-height: 100dvh;
+        }
         html, body {
             -webkit-text-size-adjust: 100%;
             text-size-adjust: 100%;
+            margin: 0;
         }
         .glass-header {
             background: rgba(243, 240, 233, 0.7);
@@ -28,8 +32,8 @@
         }
         .ios-safe-area { padding-bottom: env(safe-area-inset-bottom); }
         .app-shell {
-            height: 100dvh;
-            min-height: 100dvh;
+            height: var(--app-height);
+            min-height: var(--app-height);
             width: 100%;
         }
         .chat-row {
@@ -46,6 +50,11 @@
         #chat-form button[type="submit"] {
             min-width: 44px;
             min-height: 44px;
+        }
+        #chat-messages {
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 0.5rem;
         }
         @media (min-width: 1024px) {
             body {
@@ -70,12 +79,21 @@
             }
         }
         @media (max-width: 768px) {
+            body {
+                font-size: 16px;
+            }
+            header h2 {
+                font-size: 15px;
+            }
             .message-bubble {
-                font-size: 16px !important;
+                font-size: 17px !important;
                 line-height: 1.5;
             }
+            #chat-stack {
+                gap: 0.625rem;
+            }
             #user-input {
-                font-size: 16px;
+                font-size: 17px;
             }
             #chat-form {
                 min-height: 54px;
@@ -159,8 +177,18 @@
 
     function scrollToLatest() {
         requestAnimationFrame(() => {
+            const last = chatStack.lastElementChild;
+            if (last) {
+                last.scrollIntoView({ block: 'end', behavior: 'auto' });
+            }
             chatMessages.scrollTop = chatMessages.scrollHeight;
         });
+    }
+
+    function syncAppHeight() {
+        const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        document.documentElement.style.setProperty('--app-height', `${Math.max(320, Math.round(viewportHeight))}px`);
+        scrollToLatest();
     }
 
     function escapeAndFormat(text) {
@@ -310,12 +338,15 @@
     createMessage('assistant', 'Добре дошли в Aspen Valley! Аз съм Ико – вашият AI асистент. Мога да помогна с информация за престоя, района и полезни препоръки.');
     chatHistory.push({ role: 'assistant', content: 'Добре дошли в Aspen Valley! Аз съм Ико – вашият AI асистент. Мога да помогна с информация за престоя, района и полезни препоръки.' });
 
+    syncAppHeight();
+    window.addEventListener('resize', syncAppHeight);
+
     // keep latest message visible when mobile keyboard opens/closes
     userInput.addEventListener('focus', () => {
-        setTimeout(scrollToLatest, 120);
+        setTimeout(syncAppHeight, 120);
     });
     if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', scrollToLatest);
+        window.visualViewport.addEventListener('resize', syncAppHeight);
     }
 </script>
 </body>
