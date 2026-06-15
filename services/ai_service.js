@@ -148,12 +148,6 @@ const automationClient = {
 
     async controlPower(state, bookingId = null, source = 'ai_command') {
         try {
-            const status = await this.getPowerStatus({ silent: true });
-            if (status.isOn === state) {
-                console.log('[AUTOMATION] ⚠️ Токът вече е', state ? 'ON' : 'OFF', '- пропускам команда');
-                return true;
-            }
-
             const command = state ? 'meter_on' : 'meter_off';
             console.log('[AUTOMATION] 📡 Управление на тока чрез Samsung API:', command);
 
