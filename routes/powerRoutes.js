@@ -199,9 +199,20 @@ export function registerPowerRoutes(app, {
 			const nowIso = new Date().toISOString();
 			global.powerState = {
 				is_on: action === 'on',
-				source: 'api_meter',
+				source: 'ha_command',
 				last_update: nowIso
 			};
+
+			if (sql) {
+				try {
+					await sql`
+						INSERT INTO power_history (is_on, source, timestamp)
+						VALUES (${action === 'on'}, ${'ha_command'}, ${nowIso})
+					`;
+				} catch (dbErr) {
+					console.warn('[POWER] ⚠️ DB insert error:', dbErr.message);
+				}
+			}
 
 			recordPowerTrace('info', traceId, '🧠 5/6', 'Global power state updated', {
 				is_on: global.powerState.is_on,
