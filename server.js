@@ -39,7 +39,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
 import { getAIResponse, assignPinFromDepot } from './services/ai_service.js';
-import { controlPower, controlMeterByAction } from './services/autoremote.js';
+import { controlPower, controlMeterByAction } from './services/homeassistant.js';
 import { generateToken, invalidateToken, validateToken, SESSION_DURATION } from './services/sessionManager.js';
 import { syncBookingsFromGmail, syncBookingsPowerFromLatestHistory } from './services/detective.js';
 import { createApiKeyGuard, createSimpleRateLimiter } from './middlewares/security.js';

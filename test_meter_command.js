@@ -1,4 +1,4 @@
-import { controlMeterByAction } from './services/autoremote.js';
+import { controlMeterByAction } from './services/homeassistant.js';
 
 (async () => {
     const res = await controlMeterByAction('on');

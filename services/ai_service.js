@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { controlPower as sendPowerCommand, controlMeterByAction } from './autoremote.js';
+import { controlPower as sendPowerCommand, controlMeterByAction } from './homeassistant.js';
 import { validateToken } from './sessionManager.js';
 
 // ── Sub-module imports ─────────────────────────────────────────────────────
