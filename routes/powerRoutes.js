@@ -106,6 +106,16 @@ function resolveTaskerState(body = {}) {
 	return null;
 }
 
+function buildWebhookSource(body = {}) {
+	const explicitSource = String(body.source || '').trim();
+	if (explicitSource) return explicitSource;
+
+	const device = String(body.device || body.entity_id || body.entityId || '').trim();
+	const location = String(body.location || '').trim();
+	const details = [location, device].filter(Boolean).join(':');
+	return details ? `ha_webhook:${details}` : 'ha_webhook';
+}
+
 function getPowerSnapshotFromGlobal() {
 	const fallback = {
 		is_on: false,
@@ -324,9 +334,77 @@ export function registerPowerRoutes(app, {
 		}
 	}
 
+	async function handleHaWebhook(req, res) {
+		try {
+			const traceId = String(req.headers['x-trace-id'] || '').trim() || createPowerTraceId();
+			const isOn = resolveTaskerState(req.body || {});
+			if (typeof isOn !== 'boolean') {
+				recordPowerTrace('warn', traceId, 'HA/ERR', 'Invalid Home Assistant webhook payload', {
+					body: req.body || null
+				}, 'ha_webhook');
+				return res.status(400).json({ error: 'Invalid Home Assistant state payload' });
+			}
+
+			const source = buildWebhookSource(req.body || {});
+			const bookingIdRaw = req.body?.booking_id ?? req.body?.bookingId ?? null;
+			const bookingId = bookingIdRaw == null ? null : String(bookingIdRaw).trim();
+			const nowIso = new Date().toISOString();
+
+			global.powerState = {
+				is_on: isOn,
+				source,
+				last_update: nowIso
+			};
+
+			let inserted = false;
+			if (sql) {
+				try {
+					await sql`
+						INSERT INTO power_history (is_on, source, timestamp, booking_id)
+						VALUES (${isOn}, ${source}, ${nowIso}, ${bookingId})
+					`;
+					inserted = true;
+				} catch (dbError) {
+					console.error('[HA_WEBHOOK] 🔴 DB insert error:', dbError.message);
+				}
+			}
+
+			let syncResult = null;
+			if (typeof syncBookingsPowerFromLatestHistory === 'function') {
+				try {
+					syncResult = await syncBookingsPowerFromLatestHistory();
+				} catch (syncError) {
+					console.warn('[HA_WEBHOOK] ⚠️ Booking sync error:', syncError.message);
+				}
+			}
+
+			recordPowerTrace('info', traceId, 'HA/OK', 'Home Assistant webhook accepted', {
+				isOn,
+				source,
+				stored: inserted,
+				hasSql: Boolean(sql)
+			}, 'ha_webhook');
+
+			return res.status(200).json({
+				success: true,
+				stored: inserted,
+				power: {
+					isOn,
+					source,
+					timestamp: nowIso
+				},
+				bookingSync: syncResult
+			});
+		} catch (error) {
+			console.error('[HA_WEBHOOK] 🔴 Webhook error:', error.message);
+			return res.status(500).json({ error: 'Home Assistant webhook error' });
+		}
+	}
+
 	app.post('/api/meter', handleMeterCommand);
 	app.post('/api/meter/on', handleMeterCommand);
 	app.post('/api/meter/off', handleMeterCommand);
+	app.post('/api/ha-webhook', handleHaWebhook);
 
 	app.post('/api/power-status', handlePowerStatusFeedback);
 	app.post('/api/power/status', handlePowerStatusFeedback);

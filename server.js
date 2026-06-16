@@ -226,7 +226,7 @@ app.use(['/api/gmail/sync', '/api/email/sync'], emailLimiter);
 const dashboardApiKey = process.env.DASHBOARD_API_KEY || '';
 function dashboardKeyGuard(req, res, next) {
     // skip certain public endpoints (middleware mounted at /api, so urls start after it)
-    const open = ['/login', '/logout', '/power-status', '/chat', '/inquiry', '/pricing/quote', '/bookings/unavailable-ranges'];
+    const open = ['/login', '/logout', '/power-status', '/chat', '/inquiry', '/pricing/quote', '/bookings/unavailable-ranges', '/ha-webhook'];
     if (req.url.startsWith('/api/guest/') || open.some(p => req.url.startsWith(p))) {
         return next();
     }
@@ -490,9 +490,44 @@ const taskerFeedbackGuard = createApiKeyGuard({
     methods: ['POST']
 });
 
+const haWebhookGuard = (req, res, next) => {
+    if (req.method.toUpperCase() !== 'POST') return next();
+
+    const incoming = String(
+        req.headers['x-ha-api-key']
+        || req.headers['x-api-key']
+        || req.body?.apiKey
+        || req.query?.apiKey
+        || ''
+    ).trim();
+
+    const expectedKeys = [
+        process.env.HA_WEBHOOK_API_KEY,
+        process.env.METER_API_KEY,
+        process.env.DASHBOARD_API_KEY
+    ]
+        .map(value => String(value || '').trim())
+        .filter(Boolean);
+
+    if (!expectedKeys.length) {
+        return res.status(503).json({ error: 'HA_WEBHOOK_API_KEY is not configured' });
+    }
+
+    if (!incoming) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (expectedKeys.includes(incoming)) {
+        return next();
+    }
+
+    return res.status(401).json({ error: 'Unauthorized' });
+};
+
 app.use('/api/chat', chatRateLimiter);
 app.use(['/api/meter', '/api/meter/on', '/api/meter/off'], meterCommandGuard, meterRateLimiter);
 app.use(['/api/power/status', '/api/power-status'], taskerFeedbackGuard, powerStatusRateLimiter);
+app.use('/api/ha-webhook', haWebhookGuard, powerStatusRateLimiter);
 
 /**
  * 📊 REQUEST ЛОГВАНЕ - Timestamp + Method + URL + IP + Payload Size
