@@ -134,6 +134,12 @@ export function isHostDbCatchAllRequest(userMessage) {
     return /(база(та)?|database|bookings)/i.test(userMessage) && /(резервац|регистрац|активни|днес|утре|анулиран|справка|статус|summary|report)/i.test(userMessage);
 }
 
+export function isMailCheckRequest(message = '') {
+    const text = String(message || '').toLowerCase();
+    return /провери.*(пощата|имейл|мейл|gmail)|нова резерваци.*провери|провери.*резерваци/i.test(text)
+        || /check.*(email|mail|inbox)|check.*(new )?reservation/i.test(text);
+}
+
 // ── Map / directions / places ──────────────────────────────────────────────
 
 export function isLivePlacesLookupRequest(userMessage) {

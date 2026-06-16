@@ -26,6 +26,7 @@ import {
 import { canUseGroqRouter, generateWithGroqRouter } from './ai/groq.js';
 
 import { searchBrave } from './ai/brave.js';
+import { syncBookingsFromGmail } from './detective.js';
 
 export { buildSystemInstruction } from './ai/instructions.js';
 import { buildSystemInstruction } from './ai/instructions.js';
@@ -43,7 +44,8 @@ import {
     isLivePlacesLookupRequest, isMapStyleQuestion,
     isDirectionsRequest, buildDirectionsDestination,
     isRoleIdentityRequest, shouldUseGroqRouterForMessage,
-    detectPreferredLanguage, isSearchEligibleQuery
+    detectPreferredLanguage, isSearchEligibleQuery,
+    isMailCheckRequest
 } from './ai/intents.js';
 
 // ── Places circuit-breaker state ───────────────────────────────────────────
@@ -973,6 +975,22 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
     if (role === 'host' && isHostDbCatchAllRequest(userMessage)) {
         return await getDatabaseSnapshotReply(role, preferredLanguage);
+    }
+
+    // 2.5. Ръчна проверка на пощата при поискване от домакина
+    if (role === 'host' && isMailCheckRequest(userMessage)) {
+        console.log('[MAIL_CHECK] 📬 Домакин поиска ръчна проверка на Gmail');
+        try {
+            await syncBookingsFromGmail();
+            return preferredLanguage === 'en'
+                ? 'I checked the inbox. If a new reservation email was found, it has been added to the system. Check the bookings list for details.'
+                : 'Проверих пощата. Ако имаше нов имейл за резервация, той вече е добавен в системата. Виж списъка с резервации за подробности.';
+        } catch (e) {
+            console.error('[MAIL_CHECK] 🔴 Грешка при ръчна проверка:', e.message);
+            return preferredLanguage === 'en'
+                ? 'I tried to check the inbox but ran into a technical issue.'
+                : 'Опитах да проверя пощата, но имах техническа грешка.';
+        }
     }
 
     const allowExternalLookups = role !== 'stranger';
