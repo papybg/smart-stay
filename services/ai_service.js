@@ -157,15 +157,27 @@ const automationClient = {
                 return false;
             }
 
-            console.log('[AUTOMATION] ✅ Команда изпратена, изчаквам потвърждение');
+            const nowIso = new Date().toISOString();
+            global.powerState = {
+                is_on: state,
+                source,
+                last_update: nowIso
+            };
 
-            const confirmed = await this.waitForPowerState(state, 5000);
-            if (!confirmed) {
-                console.warn('[AUTOMATION] ⚠️ Няма потвърждение от Tasker, резервен метод (meter)');
-                await this.sendMeterCommand(state);
-                return false;
+            if (sql) {
+                try {
+                    await sql`
+                        INSERT INTO power_history (is_on, source, timestamp, booking_id)
+                        VALUES (${state}, ${source}, ${nowIso}, ${bookingId ? String(bookingId) : null})
+                    `;
+                } catch (dbErr) {
+                    console.warn('[AUTOMATION] ⚠️ DB insert error:', dbErr.message);
+                }
+            } else {
+                console.warn('[AUTOMATION] ⚠️ DATABASE_URL липсва, power_history няма да бъде обновен');
             }
 
+            console.log('[AUTOMATION] ✅ HA командата е приета успешно');
             return true;
         } catch (e) {
             console.error('[AUTOMATION] ❌ Управлението на тока не успя:', e.message);
@@ -229,29 +241,6 @@ const automationClient = {
         }
     }
 };
-
-// ── Power confirmation polling ─────────────────────────────────────────────
-
-async function waitForPowerConfirmation(expectedState, timeoutMs = 20000) {
-    console.log(`[POWER:WAIT] ⏳ Очаквам потвърждение от Tasker за ${expectedState ? 'ON' : 'OFF'}...`);
-    const startTime = Date.now();
-    const pollInterval = 500;
-
-    while (Date.now() - startTime < timeoutMs) {
-        const latestStatus = await automationClient.getPowerStatus({ silent: true });
-        const currentState = latestStatus?.isOn;
-        if (currentState === expectedState) {
-            const waited = Date.now() - startTime;
-            console.log(`[POWER:WAIT] ✅ ПОТВЪРДЕНО! Actual state: ${currentState}, Чакахме: ${waited}ms`);
-            return { success: true, actualState: currentState, waited };
-        }
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-    }
-
-    const waited = Date.now() - startTime;
-    console.log(`[POWER:WAIT] ⏰ TIMEOUT! Очаквахме ${expectedState ? 'ON' : 'OFF'} в ${waited}ms`);
-    return { success: false, actualState: null, waited };
-}
 
 // ── Power source status ────────────────────────────────────────────────────
 
@@ -835,20 +824,18 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
 
         if (isInclude) {
             console.log('[POWER] ⚡ КОМАНДА: ВКЛЮЧИ ТОКА');
-            await automationClient.controlPower(true, bookingData?.id, commandSource);
-            const confirmation = await waitForPowerConfirmation(true, 20000);
-            console.log(`[POWER] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
-            return confirmation.success
-                ? 'Разбрах. Пуснах тока и получих потвърждение от системата. ✅'
-                : 'Изпратих команда за включване на тока, но още нямам потвърждение от Tasker. Провери след 20-30 секунди.';
+            const success = await automationClient.controlPower(true, bookingData?.id, commandSource);
+            console.log(`[POWER] Резултат от HA команда: success=${success}`);
+            return success
+                ? 'Разбрах. Пуснах тока успешно. ✅'
+                : 'Изпратих команда за включване на тока, но Home Assistant не потвърди успех. Провери системата.';
         } else if (isExclude) {
             console.log('[POWER] ⚡ КОМАНДА: ИЗКЛЮЧИ ТОКА');
-            await automationClient.controlPower(false, bookingData?.id, commandSource);
-            const confirmation = await waitForPowerConfirmation(false, 20000);
-            console.log(`[POWER] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
-            return confirmation.success
-                ? 'Разбрах. Спрях тока и получих потвърждение от системата. ✅'
-                : 'Изпратих команда за спиране на тока, но още нямам потвърждение от Tasker. Провери след 20-30 секунди.';
+            const success = await automationClient.controlPower(false, bookingData?.id, commandSource);
+            console.log(`[POWER] Резултат от HA команда: success=${success}`);
+            return success
+                ? 'Разбрах. Спрях тока успешно. ✅'
+                : 'Изпратих команда за спиране на тока, но Home Assistant не потвърди успех. Провери системата.';
         }
     }
 
@@ -870,10 +857,9 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
 
     console.log('[POWER] 🚨 ОВЪРАЙД НА ГОСТ АКТИВИРАН: Принудително включване на ток');
     const overrideSuccess = await automationClient.controlPower(true, bookingData?.id, 'ai_emergency_override');
-    const confirmation = await waitForPowerConfirmation(true, 20000);
-    console.log(`[POWER:OVERRIDE] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
+    console.log(`[POWER:OVERRIDE] Резултат от HA команда: success=${overrideSuccess}`);
 
-    if (overrideSuccess || confirmation.success) {
+    if (overrideSuccess) {
         console.log('[POWER] ✅ Команда за возстановяване на ток изпратена успешно');
         await automationClient.sendAlert(
             `🚨 СПЕШНО ВЪЗСТАНОВЯВАНЕ НА ТОК: Гост ${bookingData?.guest_name} (${bookingData?.reservation_code}) докладва липса на ток. Ток е включен автоматично.`,
@@ -1149,10 +1135,9 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     if (role === 'guest' && !powerStatus.isOn && /няма ток|спря ток|токът не работи/i.test(userMessage)) {
         console.log('🚨 АВАРИЯ: Гост докладва липса на ток. Опит за възстановяване...');
         const success = await automationClient.controlPower(true, data?.booking_id, 'ai_guest_emergency');
-        const confirmation = await waitForPowerConfirmation(true, 20000);
-        console.log(`[POWER:GUEST_EMERGENCY] Резултат: success=${confirmation.success}, waited=${confirmation.waited}ms`);
+        console.log(`[POWER:GUEST_EMERGENCY] Резултат от HA команда: success=${success}`);
 
-        if (success || confirmation.success) {
+        if (success) {
             await automationClient.sendAlert('Автоматично възстановяване на ток за гост', data);
             finalReply = `Разбрах! Изпратих сигнал към апартамента. 📡
 
