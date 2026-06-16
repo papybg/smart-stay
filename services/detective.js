@@ -108,12 +108,13 @@ export async function syncBookingsFromGmail() {
             ? '(' + allowedSenders.map(sender => `from:${sender}`).join(' OR ') + ')'
             : '(from:automated@airbnb.com)';
 
-        const baseQuery = `${senderQuery} is:unread newer_than:30d`;
+        const baseQuery = `${senderQuery} is:unread ${afterFilter}`;
         // широкият (без subject) за статистика
         const baseRes = await gmail.users.messages.list({ userId: 'me', q: baseQuery });
         const totalCount = baseRes.data?.messages?.length || 0;
 
-        const query = `${senderQuery} (subject:потвърдена OR subject:потвърдено OR subject:confirmed OR subject:cancelled OR subject:canceled OR subject:анулирана OR subject:резервация) is:unread newer_than:30d`;
+        const query = baseQuery; // без subject филтър - AI сам определя статуса
+        console.log('[DETECTIVE] 📬 Gmail query:', { query, afterFilter, totalCount });
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
