@@ -857,7 +857,7 @@ document.getElementById('dashboard-login-btn').addEventListener('click', async (
     try {
       const r = await fetch(`${BASE_URL}/add-booking`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ guest_name: guest, reservation_code: code, check_in: checkin, check_out: checkout })
       });
       const data = await r.json();

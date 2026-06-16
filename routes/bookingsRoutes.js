@@ -199,7 +199,8 @@ export function registerBookingsRoutes(app, {
                 const overlapping = await sql`
                     SELECT id
                     FROM bookings
-                    WHERE reservation_code != ${reservation_code}
+                                        WHERE reservation_code != ${reservation_code}
+                                            AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
                       AND NOT (
                             check_out <= ${checkInDate.toISOString()} OR
                             check_in >= ${checkOutDate.toISOString()}
@@ -217,7 +218,7 @@ export function registerBookingsRoutes(app, {
             const powerOff = new Date(checkOutDate.getTime() + 1 * 60 * 60 * 1000);
 
             const existing = await sql`
-                SELECT lock_pin FROM bookings
+                SELECT id, lock_pin FROM bookings
                 WHERE reservation_code = ${reservation_code}
                 LIMIT 1
             `;
