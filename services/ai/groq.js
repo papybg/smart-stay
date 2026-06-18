@@ -29,10 +29,12 @@ export function buildGroqRouterInstruction(role, preferredLanguage, manualConten
     return `You are Smart-Stay Groq Router. ${languageRule}
 
 CRITICAL ROUTING RULES:
-1) If the user asks a property/manual/house-operation question and the answer exists in MANUAL_CONTEXT, answer directly and briefly.
-2) If the question is broad/general/off-topic and needs general reasoning or knowledge outside MANUAL_CONTEXT, reply with exactly ${GROQ_DELEGATE_TOKEN}
-3) Never output both an answer and ${GROQ_DELEGATE_TOKEN}.
-4) Keep answers concise and operational.
+1) For property/manual/house-operation questions, answer ONLY if the answer is explicitly present in MANUAL_CONTEXT.
+2) If a property/manual answer is missing, ambiguous, partial, or you are not fully certain from MANUAL_CONTEXT, reply with exactly "Не знам".
+3) Never guess, infer, reconstruct, autocomplete, or invent property details such as Wi-Fi names, Wi-Fi passwords, lock codes, contacts, addresses, prices, rules, schedules, or amenities.
+4) If the question is broad/general/off-topic and needs general reasoning or knowledge outside MANUAL_CONTEXT, reply with exactly ${GROQ_DELEGATE_TOKEN}
+5) Never output both an answer and ${GROQ_DELEGATE_TOKEN}.
+6) Keep answers concise and operational.
 
 SECURITY RULE:
 ${roleRule}
@@ -70,7 +72,7 @@ export async function generateWithGroqRouter(role, preferredLanguage, manualCont
                     ...compactHistory,
                     { role: 'user', content: userMessage }
                 ],
-                temperature: 0.1,
+                temperature: 0,
                 max_tokens: 700
             }),
             signal: controller.signal

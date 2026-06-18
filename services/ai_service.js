@@ -1092,8 +1092,8 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
 
     if (braveSearchResults) {
         const searchContextLabel = preferredLanguage === 'en'
-            ? '\n\n=== LIVE WEB SEARCH RESULTS (via Brave Search API) ===\nIncorporate this real-time information into your answer:'
-            : '\n\n=== LIVE WEB SEARCH РЕЗУЛТАТИ (via Brave Search API) ===\nВключи тази live информация в твоя отговор:';
+            ? '\n\n=== LIVE WEB SEARCH RESULTS (via Brave Search API) ===\nFor this request, treat these live results as the highest-priority source. Answer only from these results for web-search content. Do not say that information is missing if relevant results are present. Do not invent venues, names, addresses, menus, or locations beyond what is explicitly stated below. If the live results are inconclusive, say so plainly.'
+            : '\n\n=== LIVE WEB SEARCH РЕЗУЛТАТИ (via Brave Search API) ===\nЗа този въпрос третирай тези live резултати като източник с най-висок приоритет. За уеб-търсенето отговаряй само по тези резултати. Не казвай, че няма информация, ако по-долу има релевантни резултати. Не измисляй заведения, имена, адреси, менюта или локации извън изрично написаното по-долу. Ако live резултатите са неубедителни, кажи го директно.';
         systemInstruction += `${searchContextLabel}\n${braveSearchResults}`;
     }
 
