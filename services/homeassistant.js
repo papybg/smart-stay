@@ -61,7 +61,7 @@ function parsePowerState(raw) {
     return null;
 }
 
-async function readLatestPowerStateFromHistory() {
+export async function readLatestPowerStateFromHistory() {
     if (!sql) return null;
     try {
         const rows = await sql`

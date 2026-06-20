@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
 import { assignPinFromDepot } from './ai_service.js';
+import { parseSofiaDateTime } from './time.js';
 
 export async function syncBookingsPowerFromLatestHistory() {
     try {
@@ -145,8 +146,13 @@ export async function syncBookingsFromGmail() {
                 // --- НОВА / ОБНОВЕНА ---
                 else {
                     // ТУК Е ПРОМЯНАТА: ИЗЧИСЛЯВАМЕ ТОКА
-                    const checkInDate = new Date(details.check_in);
-                    const checkOutDate = new Date(details.check_out);
+                    const checkInDate = parseSofiaDateTime(details.check_in);
+                    const checkOutDate = parseSofiaDateTime(details.check_out);
+
+                    if (!checkInDate || !checkOutDate) {
+                        console.warn('[DETECTIVE] ⚠️ Невалидни check_in/check_out от имейла:', details.reservation_code);
+                        continue;
+                    }
 
                     // Ток Вкл: 2 часа преди настаняване
                     const powerOn = new Date(checkInDate.getTime() - (2 * 60 * 60 * 1000));

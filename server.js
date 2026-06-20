@@ -39,7 +39,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
 import { getAIResponse, assignPinFromDepot } from './services/ai_service.js';
-import { controlPower, controlMeterByAction } from './services/homeassistant.js';
+import { controlPower, controlMeterByAction, readLatestPowerStateFromHistory } from './services/homeassistant.js';
 import { generateToken, invalidateToken, validateToken, SESSION_DURATION } from './services/sessionManager.js';
 import { syncBookingsFromGmail, syncBookingsPowerFromLatestHistory } from './services/detective.js';
 import { createApiKeyGuard, createSimpleRateLimiter } from './middlewares/security.js';
@@ -840,6 +840,23 @@ process.on('SIGINT', async () => {
 // СТАРТИРАНЕ НА СЪРВЪРА
 // ============================================================================
 
+async function hydratePowerStateFromHistory() {
+    if (!sql) return;
+    const latest = await readLatestPowerStateFromHistory();
+    if (!latest || typeof latest.isOn !== 'boolean') {
+        console.log('[POWER_STATE] ℹ️ Няма валидна последна стойност в power_history - оставям default state');
+        return;
+    }
+
+    global.powerState = {
+        is_on: latest.isOn,
+        last_update: latest.timestamp || new Date(),
+        source: latest.source || 'db'
+    };
+
+    console.log(`[POWER_STATE] ✅ Зареден последен статус от power_history: ${latest.isOn ? 'on' : 'off'} (${latest.source || 'db'})`);
+}
+
 const server = app.listen(PORT, async () => {
     console.log('\n🚀 SMART-STAY LEAN CONTROLLER STARTED');
     console.log(`   🌐 http://localhost:${PORT}`);
@@ -849,6 +866,7 @@ const server = app.listen(PORT, async () => {
     
     // Инициализирай базата и съедини power_history таблица
     await initializeDatabase();
+    await hydratePowerStateFromHistory();
     
     // ❌ ИЗКЛЮЧЕНО: initializeScheduler(); - използвайте Render Cron Jobs
     // Локален detective scheduler (работи в dev или когато явно е поискан):

@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { parseSofiaDateTime } from '../services/time.js';
 
 export function registerBookingsRoutes(app, {
     sql,
@@ -187,8 +188,8 @@ export function registerBookingsRoutes(app, {
                 return res.status(400).json({ error: 'Липсват задължителни полета' });
             }
 
-            const checkInDate = new Date(check_in);
-            const checkOutDate = new Date(check_out);
+            const checkInDate = parseSofiaDateTime(check_in);
+            const checkOutDate = parseSofiaDateTime(check_out);
 
             if (Number.isNaN(checkInDate.getTime()) || Number.isNaN(checkOutDate.getTime()) || checkInDate >= checkOutDate) {
                 return res.status(400).json({ error: 'Невалидни дати за резервация' });
@@ -305,6 +306,22 @@ export function registerBookingsRoutes(app, {
         }
 
         const now = new Date();
+        const latestPowerRows = await sql`
+            SELECT is_on, source, timestamp
+            FROM power_history
+            ORDER BY timestamp DESC
+            LIMIT 1
+        `;
+        if (latestPowerRows.length) {
+            const latest = latestPowerRows[0];
+            const latestIsOn = String(latest.is_on).toLowerCase() === 'true' || latest.is_on === true;
+            global.powerState = {
+                is_on: latestIsOn,
+                source: latest.source || 'db',
+                last_update: latest.timestamp || now
+            };
+        }
+
         const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
         const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
 
