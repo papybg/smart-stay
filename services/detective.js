@@ -12,7 +12,7 @@ export async function syncBookingsPowerFromLatestHistory() {
 
         const sql = neon(process.env.DATABASE_URL);
         const latestRows = await sql`
-            SELECT is_on, timestamp
+            SELECT is_on, timestamp, booking_id
             FROM power_history
             ORDER BY timestamp DESC
             LIMIT 1
@@ -25,18 +25,76 @@ export async function syncBookingsPowerFromLatestHistory() {
         const latest = latestRows[0];
         const state = latest.is_on ? 'on' : 'off';
         const statusTs = latest.timestamp || new Date();
+        const bookingIdRaw = latest.booking_id == null ? null : String(latest.booking_id).trim();
+        const bookingId = bookingIdRaw && /^\d+$/.test(bookingIdRaw) ? Number(bookingIdRaw) : null;
 
+        // 1) Explicit booking_id from power_history is the strongest source of truth.
+        if (bookingId) {
+            const byId = await sql`
+                UPDATE bookings
+                SET power_status = ${state},
+                    power_status_updated_at = ${statusTs}
+                WHERE id = ${bookingId}
+                  AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                RETURNING id
+            `;
+
+            if (byId.length) {
+                return {
+                    success: true,
+                    updatedCount: byId.length,
+                    state,
+                    timestamp: statusTs,
+                    strategy: 'booking_id'
+                };
+            }
+        }
+
+        // 2) Match by access window from bookings table.
         const updated = await sql`
             UPDATE bookings
             SET power_status = ${state},
                 power_status_updated_at = ${statusTs}
-            WHERE check_in <= ${statusTs}
-              AND check_out > ${statusTs}
+            WHERE power_on_time <= ${statusTs}
+              AND power_off_time >= ${statusTs}
               AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
             RETURNING id
         `;
 
-        return { success: true, updatedCount: updated.length, state, timestamp: statusTs };
+        if (updated.length) {
+            return {
+                success: true,
+                updatedCount: updated.length,
+                state,
+                timestamp: statusTs,
+                strategy: 'power_window'
+            };
+        }
+
+        // 3) If command happened just after checkout, attach it to the most recent ended booking.
+        const recentlyEnded = await sql`
+            UPDATE bookings
+            SET power_status = ${state},
+                power_status_updated_at = ${statusTs}
+            WHERE id IN (
+                SELECT id
+                FROM bookings
+                WHERE check_out <= ${statusTs}
+                  AND check_out >= (${statusTs}::timestamptz - INTERVAL '6 hours')
+                  AND COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+                ORDER BY check_out DESC
+                LIMIT 1
+            )
+            RETURNING id
+        `;
+
+        return {
+            success: true,
+            updatedCount: recentlyEnded.length,
+            state,
+            timestamp: statusTs,
+            strategy: recentlyEnded.length ? 'recent_checkout_fallback' : 'no_match'
+        };
     } catch (error) {
         console.error('[DETECTIVE] 🔴 Power sync error:', error.message);
         return { success: false, updatedCount: 0, reason: error.message };
@@ -182,7 +240,7 @@ export async function syncBookingsFromGmail() {
                     await executeQueryWithRetry(async () => {
                         await sql`
                             INSERT INTO bookings (reservation_code, guest_name, check_in, check_out, power_on_time, power_off_time, source, payment_status, lock_pin)
-                            VALUES (${details.reservation_code}, ${details.guest_name}, ${details.check_in}, ${details.check_out}, ${powerOn.toISOString()}, ${powerOff.toISOString()}, 'airbnb', 'paid', ${pin})
+                            VALUES (${details.reservation_code}, ${details.guest_name}, ${checkInDate.toISOString()}, ${checkOutDate.toISOString()}, ${powerOn.toISOString()}, ${powerOff.toISOString()}, 'airbnb', 'paid', ${pin})
                             ON CONFLICT (reservation_code) 
                             DO UPDATE SET 
                                 guest_name = EXCLUDED.guest_name, 
