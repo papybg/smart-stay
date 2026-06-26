@@ -136,8 +136,23 @@ export function isHostDbCatchAllRequest(userMessage) {
 
 export function isMailCheckRequest(message = '') {
     const text = String(message || '').toLowerCase();
-    return /провери.*(пощата|имейл|мейл|gmail)|нова резерваци.*провери|провери.*резерваци/i.test(text)
-        || /check.*(email|mail|inbox)|check.*(new )?reservation/i.test(text);
+
+    const actionHints = [
+        'провери', 'проверка', 'провери пак', 'провери отново', 'прегледай',
+        'виж', 'чекни', 'сканирай', 'синхронизирай', 'синкни', 'обнови',
+        'refresh', 'recheck', 'check', 'scan', 'sync', 'update', 'inspect', 'review'
+    ];
+    const targetHints = [
+        'поща', 'пощата', 'имейл', 'имейла', 'мейл', 'мейла', 'gmail', 'инбокс', 'inbox',
+        'email', 'mail', 'mailbox', 'резервация', 'резервации', 'reservation', 'reservations', 'booking', 'bookings'
+    ];
+
+    const hasAction = actionHints.some(token => text.includes(token));
+    const hasTarget = targetHints.some(token => text.includes(token));
+    if (hasAction && hasTarget) return true;
+
+    return /провери.*(пощата|поща|имейл|имейла|мейл|мейла|gmail|инбокс)|нова\s+резерваци.*(провери|виж|чекни|сканирай)|провери.*резерваци|синхронизирай.*(поща|gmail|резерваци)/i.test(text)
+        || /check.*(email|mail|inbox|reservation|booking)|scan.*(email|mail|inbox)|sync.*(email|mail|inbox|reservation|booking)|recheck.*(email|mail|inbox|reservation|booking)/i.test(text);
 }
 
 // ── Map / directions / places ──────────────────────────────────────────────

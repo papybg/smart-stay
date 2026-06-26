@@ -1,7 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { controlPower as sendPowerCommand, controlMeterByAction } from './homeassistant.js';
-import { validateToken } from './sessionManager.js';
 
 // ── Sub-module imports ─────────────────────────────────────────────────────
 
@@ -26,7 +25,7 @@ import {
 import { canUseGroqRouter, generateWithGroqRouter } from './ai/groq.js';
 
 import { searchBrave } from './ai/brave.js';
-import { syncBookingsFromGmail } from './detective.js';
+import { runDetectiveCommand } from './detectiveGateway.js';
 
 export { buildSystemInstruction } from './ai/instructions.js';
 import { buildSystemInstruction } from './ai/instructions.js';
@@ -981,10 +980,19 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     if (role === 'host' && isMailCheckRequest(userMessage)) {
         console.log('[MAIL_CHECK] 📬 Домакин поиска ръчна проверка на Gmail');
         try {
-            await syncBookingsFromGmail({ ignoreLastCheck: true });
-            return preferredLanguage === 'en'
-                ? 'I checked the inbox. If a new reservation email was found, it has been added to the system. Check the bookings list for details.'
-                : 'Проверих пощата. Ако имаше нов имейл за резервация, той вече е добавен в системата. Виж списъка с резервации за подробности.';
+            const execution = await runDetectiveCommand('sync_email_now', { ignoreLastCheck: true, source: 'host_chat' });
+            if (!execution.success) {
+                return preferredLanguage === 'en'
+                    ? `I could not run detective email sync (${execution.error || 'unknown error'}).`
+                    : `Не успях да пусна детектива за синк на пощата (${execution.error || 'неизвестна грешка'}).`;
+            }
+
+            const sync = execution.result || {};
+            if (preferredLanguage === 'en') {
+                return `Detective sync finished.\n\nQuery: ${sync.query || 'N/A'}\nFound unread: ${Number(sync.matchedCount || 0)}\nProcessed: ${Number(sync.processedCount || 0)}\nUpserted bookings: ${Number(sync.upsertedCount || 0)}\nCancelled: ${Number(sync.cancelledCount || 0)}\nFailed parse: ${Number(sync.failedCount || 0)}\nCodes: ${(sync.reservationCodes || []).join(', ') || 'none'}`;
+            }
+
+            return `Синкът на детектива приключи.\n\nЗаявка: ${sync.query || 'N/A'}\nНамерени непрочетени: ${Number(sync.matchedCount || 0)}\nОбработени: ${Number(sync.processedCount || 0)}\nЪпсертнати резервации: ${Number(sync.upsertedCount || 0)}\nАнулирани: ${Number(sync.cancelledCount || 0)}\nНеуспешен parse: ${Number(sync.failedCount || 0)}\nКодове: ${(sync.reservationCodes || []).join(', ') || 'няма'}`;
         } catch (e) {
             console.error('[MAIL_CHECK] 🔴 Грешка при ръчна проверка:', e.message);
             return preferredLanguage === 'en'

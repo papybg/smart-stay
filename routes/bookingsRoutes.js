@@ -1,11 +1,11 @@
 import nodemailer from 'nodemailer';
 import { parseSofiaDateTime } from '../services/time.js';
+import { runDetectiveCommand } from '../services/detectiveGateway.js';
 
 export function registerBookingsRoutes(app, {
     sql,
     assignPinFromDepot,
     controlPower,
-    syncBookingsFromGmail,
     notificationService
 }) {
     function toUtcDateOnly(dateLike) {
@@ -421,8 +421,11 @@ export function registerBookingsRoutes(app, {
     async function handleGmailSync(_req, res) {
         try {
             console.log('[DETECTIVE] 📧 Email sync стартиран');
-            await syncBookingsFromGmail();
-            return res.status(200).json({ success: true, message: '✅ Email sync завършен' });
+            const execution = await runDetectiveCommand('sync_email_now', { ignoreLastCheck: true, source: 'dashboard_sync' });
+            if (!execution.success) {
+                return res.status(500).json({ success: false, error: execution.error || 'SYNC_EMAIL_FAILED' });
+            }
+            return res.status(200).json({ success: true, message: '✅ Email sync завършен', sync: execution.result || null });
         } catch (error) {
             console.error('[DETECTIVE] 🔴 Грешка при email sync:', error.message);
             return res.status(500).json({ error: error.message });
@@ -523,13 +526,21 @@ export function registerBookingsRoutes(app, {
             });
 
             let syncTriggered = false;
-            if (typeof syncBookingsFromGmail === 'function') {
-                syncTriggered = true;
-                // изчакване за Gmail ingestion и 2 опита за sync
-                await new Promise(resolve => setTimeout(resolve, 4000));
-                await syncBookingsFromGmail();
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                await syncBookingsFromGmail();
+            let lastSyncExecution = null;
+            syncTriggered = true;
+            // изчакване за Gmail ingestion и до 2 опита за sync през единен gateway
+            await new Promise(resolve => setTimeout(resolve, 4000));
+            for (let attempt = 0; attempt < 2; attempt++) {
+                lastSyncExecution = await runDetectiveCommand('sync_email_now', { ignoreLastCheck: true, source: 'airbnb_test_email' });
+                if (!lastSyncExecution?.success) break;
+
+                const upserted = Number(lastSyncExecution?.result?.upsertedCount || 0);
+                const cancelled = Number(lastSyncExecution?.result?.cancelledCount || 0);
+                if (upserted > 0 || cancelled > 0) break;
+
+                if (attempt < 1) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
             }
 
             const rows = await sql`
@@ -552,6 +563,7 @@ export function registerBookingsRoutes(app, {
                     messageId: sendResult?.messageId || null
                 },
                 syncTriggered,
+                syncExecution: lastSyncExecution,
                 bookingFound: Boolean(booking),
                 booking,
                 validations: {

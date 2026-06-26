@@ -129,11 +129,26 @@ function normalizeBookingDateValue(dateValue, fallbackYear) {
 
 export async function syncBookingsFromGmail(options = {}) {
     const { ignoreLastCheck = false } = options;
+    const stats = {
+        success: false,
+        ignoreLastCheck,
+        query: null,
+        afterFilter: null,
+        totalCount: 0,
+        matchedCount: 0,
+        processedCount: 0,
+        upsertedCount: 0,
+        cancelledCount: 0,
+        failedCount: 0,
+        reservationCodes: [],
+        reason: null
+    };
     console.log('🕵️ Ико Детектива проверява за нови резервации...');
     try {
         if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY || !process.env.GMAIL_CLIENT_ID) {
             console.error('❌ Липсват ENV променливи!');
-            return;
+            stats.reason = 'MISSING_ENV';
+            return stats;
         }
 
         const sql = neon(process.env.DATABASE_URL);
@@ -187,19 +202,27 @@ export async function syncBookingsFromGmail(options = {}) {
         const totalCount = baseRes.data?.messages?.length || 0;
 
         const query = baseQuery; // без subject филтър - AI сам определя статуса
+        stats.query = query;
+        stats.afterFilter = afterFilter;
+        stats.totalCount = totalCount;
         console.log('[DETECTIVE] 📬 Gmail query:', { query, afterFilter, totalCount });
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
+        stats.matchedCount = messages.length;
 
         console.log(`🔎 Всички подходящи (без subject): ${totalCount}, след subject-филтър: ${messages.length}`);
 
         // after processing we'll update last check timestamp
 
         for (const msg of messages) {
+            stats.processedCount += 1;
             const details = await processMessage(msg.id, gmail, genAI);
             
             if (details && details.reservation_code) {
+                if (!stats.reservationCodes.includes(details.reservation_code)) {
+                    stats.reservationCodes.push(details.reservation_code);
+                }
                 
                 // --- АНУЛАЦИЯ ---
                 if (details.status === 'cancelled') {
@@ -212,6 +235,7 @@ export async function syncBookingsFromGmail(options = {}) {
                             WHERE reservation_code = ${details.reservation_code}
                         `;
                     });
+                    stats.cancelledCount += 1;
                     console.log(`🗑️ Резервация ${details.reservation_code} е маркирана като анулирана.`);
                 } 
                 
@@ -266,6 +290,7 @@ export async function syncBookingsFromGmail(options = {}) {
                                 lock_pin = COALESCE(bookings.lock_pin, EXCLUDED.lock_pin);
                         `;
                     });
+                    stats.upsertedCount += 1;
                     console.log(`✅ Успешен запис с график за тока!`);
                 }
                 
@@ -274,6 +299,7 @@ export async function syncBookingsFromGmail(options = {}) {
                 });
 
             } else {
+                stats.failedCount += 1;
                 console.warn(`⚠️ Писмо ${msg.id}: Неуспешен анализ.`);
             }
         }
@@ -285,7 +311,15 @@ export async function syncBookingsFromGmail(options = {}) {
             console.warn('[DETECTIVE] ⚠️ Неуспешен запис на last_email_check:', e.message);
         }
 
-    } catch (err) { console.error('❌ Критична грешка:', err); }
+        stats.success = true;
+        stats.reason = 'OK';
+        return stats;
+
+    } catch (err) {
+        console.error('❌ Критична грешка:', err);
+        stats.reason = err?.message || 'SYNC_FAILED';
+        return stats;
+    }
 }
 
 async function processMessage(id, gmail, genAI) {
