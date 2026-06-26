@@ -707,8 +707,8 @@ async function getLockCodeLookupReply(role, bookingData, language = 'bg') {
 
             if (row.lock_pin) {
                 return language === 'en'
-                    ? `I checked the database: a temporary lock code exists for booking ${row.reservation_code}. For security, I do not show the code in chat. It will be provided within the allowed access window: ${accessFrom} → ${accessTo}.`
-                    : `Проверих базата: има временен код за бравата за резервация ${row.reservation_code}. От съображения за сигурност не показвам кода в чата. Той ще бъде предоставен в разрешения прозорец за достъп: ${accessFrom} → ${accessTo}.`;
+                    ? `I checked the database: the lock code for booking ${row.reservation_code} is ${row.lock_pin}. Allowed access window: ${accessFrom} → ${accessTo}.`
+                    : `Проверих базата: кодът за бравата за резервация ${row.reservation_code} е ${row.lock_pin}. Разрешен прозорец за достъп: ${accessFrom} → ${accessTo}.`;
             }
 
             return language === 'en'

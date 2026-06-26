@@ -114,6 +114,19 @@ async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
     }
 }
 
+function normalizeBookingDateValue(dateValue, fallbackYear) {
+    const parsed = parseSofiaDateTime(dateValue);
+    if (!parsed) return dateValue;
+
+    if (fallbackYear && Math.abs(parsed.getFullYear() - fallbackYear) > 1) {
+        const corrected = new Date(parsed);
+        corrected.setFullYear(fallbackYear);
+        return corrected.toISOString();
+    }
+
+    return parsed.toISOString();
+}
+
 export async function syncBookingsFromGmail() {
     console.log('🕵️ Ико Детектива проверява за нови резервации...');
     try {
@@ -278,6 +291,8 @@ async function processMessage(id, gmail, genAI) {
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
+        const messageDate = res.data.internalDate ? new Date(Number(res.data.internalDate)) : new Date();
+        const fallbackYear = Number.isNaN(messageDate.getTime()) ? new Date().getFullYear() : messageDate.getFullYear();
         
         const payload = res.data.payload;
         const subject = payload.headers.find(h => h.name === 'Subject')?.value || '';
@@ -320,7 +335,12 @@ async function processMessage(id, gmail, genAI) {
         console.log(`🤖 AI Данни за ${id}:`, text);
 
         try {
-            return JSON.parse(text);
+            const details = JSON.parse(text);
+            if (details && typeof details === 'object') {
+                details.check_in = normalizeBookingDateValue(details.check_in, fallbackYear);
+                details.check_out = normalizeBookingDateValue(details.check_out, fallbackYear);
+            }
+            return details;
         } catch (e) {
             console.error('❌ JSON Error:', text);
             return null;
