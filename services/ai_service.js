@@ -939,16 +939,18 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         return getRoleIdentityReply(role, preferredLanguage);
     }
 
+    // Приоритет: ако потребителят изрично иска код за брава,
+    // не връщаме onboarding, а директно правим lookup.
+    if (isLockCodeLookupRequest(userMessage)) {
+        return await getLockCodeLookupReply(role, data, preferredLanguage);
+    }
+
     if (role === 'guest' && (isReservationCodeIntro(userMessage) || isBareReservationCodeMessage(userMessage) || containsReservationCode(userMessage))) {
         return getGuestOnboardingReply(data, preferredLanguage);
     }
 
     if (isReservationRefreshRequest(userMessage)) {
         return getReservationRefreshReply(role, data, preferredLanguage);
-    }
-
-    if (isLockCodeLookupRequest(userMessage)) {
-        return await getLockCodeLookupReply(role, data, preferredLanguage);
     }
 
     if (isTodayRegistrationsRequest(userMessage)) {
