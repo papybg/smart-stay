@@ -127,7 +127,8 @@ function normalizeBookingDateValue(dateValue, fallbackYear) {
     return parsed.toISOString();
 }
 
-export async function syncBookingsFromGmail() {
+export async function syncBookingsFromGmail(options = {}) {
+    const { ignoreLastCheck = false } = options;
     console.log('🕵️ Ико Детектива проверява за нови резервации...');
     try {
         if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY || !process.env.GMAIL_CLIENT_ID) {
@@ -148,7 +149,7 @@ export async function syncBookingsFromGmail() {
             console.warn('[DETECTIVE] ⚠️ Няма last_email_check или грешка при четене:', e.message);
         }
 
-        const afterFilter = lastCheck
+        const afterFilter = !ignoreLastCheck && lastCheck
             ? `after:${Math.floor(new Date(lastCheck).getTime() / 1000)}`
             : 'newer_than:30d';
 

@@ -981,7 +981,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     if (role === 'host' && isMailCheckRequest(userMessage)) {
         console.log('[MAIL_CHECK] 📬 Домакин поиска ръчна проверка на Gmail');
         try {
-            await syncBookingsFromGmail();
+            await syncBookingsFromGmail({ ignoreLastCheck: true });
             return preferredLanguage === 'en'
                 ? 'I checked the inbox. If a new reservation email was found, it has been added to the system. Check the bookings list for details.'
                 : 'Проверих пощата. Ако имаше нов имейл за резервация, той вече е добавен в системата. Виж списъка с резервации за подробности.';
