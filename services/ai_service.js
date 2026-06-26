@@ -12,7 +12,8 @@ import {
     GOOGLE_DIRECTIONS_API_KEY, GOOGLE_DIRECTIONS_TIMEOUT_MS,
     GOOGLE_DIRECTIONS_DEFAULT_ORIGIN,
     BACKUP_API_KEY, BACKUP_API_URL, BACKUP_MODEL,
-    ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS
+    ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS,
+    LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS, LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS
 } from './ai/config.js';
 
 export { assignPinFromDepot, determineUserRole } from './ai/auth.js';
@@ -657,8 +658,8 @@ function getLockAccessWindow(bookingData) {
     if (Number.isNaN(checkInTs.getTime()) || Number.isNaN(checkOutTs.getTime())) {
         return { from: null, to: null };
     }
-    const from = new Date(checkInTs.getTime() - (ACCESS_START_BEFORE_CHECKIN_HOURS * 60 * 60 * 1000));
-    const to = new Date(checkOutTs.getTime() + (ACCESS_END_AFTER_CHECKOUT_HOURS * 60 * 60 * 1000));
+    const from = new Date(checkInTs.getTime() - (LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS * 60 * 60 * 1000));
+    const to = new Date(checkOutTs.getTime() + (LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS * 60 * 60 * 1000));
     return { from, to };
 }
 
@@ -777,9 +778,9 @@ function getReservationRefreshReply(role, bookingData, language = 'bg') {
         : null;
 
     if (language === 'en') {
-        return `I rechecked your reservation in real time.\n\nReservation code: ${bookingData.reservation_code}\nGuest: ${bookingData.guest_name}\nCheck-in: ${checkIn}\nCheck-out: ${checkOut}\nTemporary lock code: managed in Tuya and sent in the allowed access window\nCode validity window (power ON → power OFF): ${accessFrom || checkIn} → ${accessTo || checkOut}`;
+        return `I rechecked your reservation in real time.\n\nReservation code: ${bookingData.reservation_code}\nGuest: ${bookingData.guest_name}\nCheck-in: ${checkIn}\nCheck-out: ${checkOut}\nTemporary lock code: managed in Tuya and sent in the allowed access window\nConfigured lock-code access window: ${accessFrom || checkIn} → ${accessTo || checkOut}`;
     }
-    return `Проверих отново резервацията в реално време.\n\nКод за резервация: ${bookingData.reservation_code}\nГост: ${bookingData.guest_name}\nНастаняване: ${checkIn}\nНапускане: ${checkOut}\nВременен код за бравата: управлява се в Tuya и се изпраща в разрешения прозорец за достъп\nВалидност на кода (пускане на ток → спиране на ток): ${accessFrom || checkIn} → ${accessTo || checkOut}`;
+    return `Проверих отново резервацията в реално време.\n\nКод за резервация: ${bookingData.reservation_code}\nГост: ${bookingData.guest_name}\nНастаняване: ${checkIn}\nНапускане: ${checkOut}\nВременен код за бравата: управлява се в Tuya и се изпраща в разрешения прозорец за достъп\nКонфигуриран прозорец за достъп до lock code: ${accessFrom || checkIn} → ${accessTo || checkOut}`;
 }
 
 function getRoleIdentityReply(role, language = 'bg') {
