@@ -312,6 +312,7 @@ export function registerBookingsRoutes(app, {
         }
 
         const now = new Date();
+        let currentIsOn = false;
         const latestPowerRows = await sql`
             SELECT is_on, source, timestamp
             FROM power_history
@@ -321,14 +322,22 @@ export function registerBookingsRoutes(app, {
         if (latestPowerRows.length) {
             const latest = latestPowerRows[0];
             const latestIsOn = String(latest.is_on).toLowerCase() === 'true' || latest.is_on === true;
+            currentIsOn = latestIsOn;
             global.powerState = {
                 is_on: latestIsOn,
                 source: latest.source || 'db',
                 last_update: latest.timestamp || now
             };
+        } else {
+            // If history is missing, default scheduler decisions to OFF.
+            currentIsOn = false;
         }
 
-        const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
+        const powerOnLookbackMinutesRaw = Number(process.env.SCHEDULER_POWER_ON_LOOKBACK_MINUTES || 360);
+        const powerOnLookbackMinutes = Number.isFinite(powerOnLookbackMinutesRaw)
+            ? Math.max(10, Math.min(powerOnLookbackMinutesRaw, 24 * 60))
+            : 360;
+        const powerOnLookbackStart = new Date(now.getTime() - powerOnLookbackMinutes * 60 * 1000);
         const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
 
         // Prefer explicit power_on_time, fallback to (check_in - 2h) for older rows.
@@ -338,14 +347,14 @@ export function registerBookingsRoutes(app, {
             WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
               AND check_out > ${now}
               AND COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) <= ${now}
-              AND COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) >= ${tenMinutesAgo}
+                            AND COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) >= ${powerOnLookbackStart}
             ORDER BY COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) DESC
             LIMIT 10
         `;
 
         let powerOnActions = 0;
         for (const booking of powerOnBookings) {
-            if (!global.powerState.is_on) {
+            if (!currentIsOn) {
                 console.log(`[SCHEDULER] 🚨 POWER-ON за ${booking.guest_name} - ВКЛ`);
                 try {
                     await sql`
@@ -356,6 +365,7 @@ export function registerBookingsRoutes(app, {
                     console.error('[DB] 🔴 Грешка при запис scheduler power-on:', dbErr.message);
                 }
 
+                currentIsOn = true;
                 global.powerState.is_on = true;
                 global.powerState.source = 'scheduler-power-on';
                 global.powerState.last_update = now;
@@ -388,7 +398,7 @@ export function registerBookingsRoutes(app, {
 
         let powerOffActions = 0;
         for (const booking of powerOffBookings) {
-            if (global.powerState.is_on) {
+            if (currentIsOn) {
                 console.log(`[SCHEDULER] 🚨 POWER-OFF ${booking.guest_name} - ИЗКЛ`);
                 try {
                     await sql`
@@ -399,6 +409,7 @@ export function registerBookingsRoutes(app, {
                     console.error('[DB] 🔴 Грешка при запис scheduler power-off:', dbErr.message);
                 }
 
+                currentIsOn = false;
                 global.powerState.is_on = false;
                 global.powerState.source = 'scheduler-power-off';
                 global.powerState.last_update = now;
@@ -426,6 +437,36 @@ export function registerBookingsRoutes(app, {
             dbAvailable: true
         };
     }
+
+    function initializeLocalReservationsScheduler() {
+        if (process.env.USE_LOCAL_CRON !== 'true') return;
+        if (global.__localReservationsSchedulerStarted) return;
+
+        global.__localReservationsSchedulerStarted = true;
+        const intervalMs = 10 * 60 * 1000;
+
+        console.log('[SCHEDULER] ⚙️ Локален reservations sync на всеки 10 мин (USE_LOCAL_CRON=true)');
+
+        runReservationsSync()
+            .then((result) => {
+                console.log('[SCHEDULER] ✅ Начален локален reservations sync:', result);
+            })
+            .catch((error) => {
+                console.error('[SCHEDULER] 🔴 Начален локален reservations sync fail:', error.message);
+            });
+
+        setInterval(() => {
+            runReservationsSync()
+                .then((result) => {
+                    console.log('[SCHEDULER] ⏰ Локален reservations sync:', result);
+                })
+                .catch((error) => {
+                    console.error('[SCHEDULER] 🔴 Локален reservations sync fail:', error.message);
+                });
+        }, intervalMs);
+    }
+
+    initializeLocalReservationsScheduler();
 
     app.post('/api/reservations/sync', async (_req, res) => {
         try {
