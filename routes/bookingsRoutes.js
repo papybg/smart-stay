@@ -8,6 +8,22 @@ export function registerBookingsRoutes(app, {
     controlPower,
     notificationService
 }) {
+    function getReservationsSyncState() {
+        if (!global.__reservationsSyncState) {
+            global.__reservationsSyncState = {
+                enabled: process.env.USE_LOCAL_CRON === 'true',
+                intervalMs: 10 * 60 * 1000,
+                lastRunAt: null,
+                lastSuccessAt: null,
+                nextRunAt: null,
+                lastResult: null,
+                lastError: null,
+                lastTrigger: null
+            };
+        }
+        return global.__reservationsSyncState;
+    }
+
     function toUtcDateOnly(dateLike) {
         const date = new Date(dateLike);
         return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -441,16 +457,41 @@ export function registerBookingsRoutes(app, {
         };
     }
 
+    async function executeReservationsSync(trigger = 'manual') {
+        const state = getReservationsSyncState();
+        state.lastRunAt = new Date().toISOString();
+        state.lastTrigger = trigger;
+
+        try {
+            const result = await runReservationsSync();
+            state.lastSuccessAt = new Date().toISOString();
+            state.lastResult = result;
+            state.lastError = null;
+            return result;
+        } catch (error) {
+            state.lastError = {
+                message: error.message,
+                at: new Date().toISOString()
+            };
+            throw error;
+        }
+    }
+
     function initializeLocalReservationsScheduler() {
+        const state = getReservationsSyncState();
+        state.enabled = process.env.USE_LOCAL_CRON === 'true';
+
         if (process.env.USE_LOCAL_CRON !== 'true') return;
         if (global.__localReservationsSchedulerStarted) return;
 
         global.__localReservationsSchedulerStarted = true;
         const intervalMs = 10 * 60 * 1000;
+        state.intervalMs = intervalMs;
+        state.nextRunAt = new Date(Date.now() + intervalMs).toISOString();
 
         console.log('[SCHEDULER] ⚙️ Локален reservations sync на всеки 10 мин (USE_LOCAL_CRON=true)');
 
-        runReservationsSync()
+        executeReservationsSync('local_initial')
             .then((result) => {
                 console.log('[SCHEDULER] ✅ Начален локален reservations sync:', result);
             })
@@ -459,7 +500,8 @@ export function registerBookingsRoutes(app, {
             });
 
         setInterval(() => {
-            runReservationsSync()
+            state.nextRunAt = new Date(Date.now() + intervalMs).toISOString();
+            executeReservationsSync('local_interval')
                 .then((result) => {
                     console.log('[SCHEDULER] ⏰ Локален reservations sync:', result);
                 })
@@ -471,13 +513,27 @@ export function registerBookingsRoutes(app, {
 
     initializeLocalReservationsScheduler();
 
+    app.get('/api/reservations/sync-status', async (_req, res) => {
+        try {
+            const state = getReservationsSyncState();
+            return res.status(200).json({
+                success: true,
+                scheduler: state,
+                serverTime: new Date().toISOString(),
+                powerState: global.powerState || null
+            });
+        } catch (error) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
     app.post('/api/reservations/sync', async (_req, res) => {
         try {
             if (!sql) {
                 return res.status(503).json({ error: 'Database not connected' });
             }
             console.log(`[SCHEDULER] ⏰ ${new Date().toISOString()} - Reservations sync`);
-            const result = await runReservationsSync();
+            const result = await executeReservationsSync('api_manual');
             return res.status(200).json({ success: true, ...result });
         } catch (error) {
             console.error('[SCHEDULER] 🔴 Грешка:', error.message);
