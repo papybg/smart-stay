@@ -1,7 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { controlPower as sendPowerCommand, controlMeterByAction } from './homeassistant.js';
-import { validateToken } from './sessionManager.js';
 
 // ── Sub-module imports ─────────────────────────────────────────────────────
 
@@ -13,7 +12,8 @@ import {
     GOOGLE_DIRECTIONS_API_KEY, GOOGLE_DIRECTIONS_TIMEOUT_MS,
     GOOGLE_DIRECTIONS_DEFAULT_ORIGIN,
     BACKUP_API_KEY, BACKUP_API_URL, BACKUP_MODEL,
-    ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS
+    ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS,
+    LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS, LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS
 } from './ai/config.js';
 
 export { assignPinFromDepot, determineUserRole } from './ai/auth.js';
@@ -26,7 +26,7 @@ import {
 import { canUseGroqRouter, generateWithGroqRouter } from './ai/groq.js';
 
 import { searchBrave } from './ai/brave.js';
-import { syncBookingsFromGmail } from './detective.js';
+import { runDetectiveCommand } from './detectiveGateway.js';
 
 export { buildSystemInstruction } from './ai/instructions.js';
 import { buildSystemInstruction } from './ai/instructions.js';
@@ -658,8 +658,8 @@ function getLockAccessWindow(bookingData) {
     if (Number.isNaN(checkInTs.getTime()) || Number.isNaN(checkOutTs.getTime())) {
         return { from: null, to: null };
     }
-    const from = new Date(checkInTs.getTime() - (ACCESS_START_BEFORE_CHECKIN_HOURS * 60 * 60 * 1000));
-    const to = new Date(checkOutTs.getTime() + (ACCESS_END_AFTER_CHECKOUT_HOURS * 60 * 60 * 1000));
+    const from = new Date(checkInTs.getTime() - (LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS * 60 * 60 * 1000));
+    const to = new Date(checkOutTs.getTime() + (LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS * 60 * 60 * 1000));
     return { from, to };
 }
 
@@ -707,8 +707,8 @@ async function getLockCodeLookupReply(role, bookingData, language = 'bg') {
 
             if (row.lock_pin) {
                 return language === 'en'
-                    ? `I checked the database: a temporary lock code exists for booking ${row.reservation_code}. For security, I do not show the code in chat. It will be provided within the allowed access window: ${accessFrom} → ${accessTo}.`
-                    : `Проверих базата: има временен код за бравата за резервация ${row.reservation_code}. От съображения за сигурност не показвам кода в чата. Той ще бъде предоставен в разрешения прозорец за достъп: ${accessFrom} → ${accessTo}.`;
+                    ? `I checked the database: the lock code for booking ${row.reservation_code} is ${row.lock_pin}. Allowed access window: ${accessFrom} → ${accessTo}.`
+                    : `Проверих базата: кодът за бравата за резервация ${row.reservation_code} е ${row.lock_pin}. Разрешен прозорец за достъп: ${accessFrom} → ${accessTo}.`;
             }
 
             return language === 'en'
@@ -778,9 +778,9 @@ function getReservationRefreshReply(role, bookingData, language = 'bg') {
         : null;
 
     if (language === 'en') {
-        return `I rechecked your reservation in real time.\n\nReservation code: ${bookingData.reservation_code}\nGuest: ${bookingData.guest_name}\nCheck-in: ${checkIn}\nCheck-out: ${checkOut}\nTemporary lock code: managed in Tuya and sent in the allowed access window\nCode validity window (power ON → power OFF): ${accessFrom || checkIn} → ${accessTo || checkOut}`;
+        return `I rechecked your reservation in real time.\n\nReservation code: ${bookingData.reservation_code}\nGuest: ${bookingData.guest_name}\nCheck-in: ${checkIn}\nCheck-out: ${checkOut}\nTemporary lock code: managed in Tuya and sent in the allowed access window\nConfigured lock-code access window: ${accessFrom || checkIn} → ${accessTo || checkOut}`;
     }
-    return `Проверих отново резервацията в реално време.\n\nКод за резервация: ${bookingData.reservation_code}\nГост: ${bookingData.guest_name}\nНастаняване: ${checkIn}\nНапускане: ${checkOut}\nВременен код за бравата: управлява се в Tuya и се изпраща в разрешения прозорец за достъп\nВалидност на кода (пускане на ток → спиране на ток): ${accessFrom || checkIn} → ${accessTo || checkOut}`;
+    return `Проверих отново резервацията в реално време.\n\nКод за резервация: ${bookingData.reservation_code}\nГост: ${bookingData.guest_name}\nНастаняване: ${checkIn}\nНапускане: ${checkOut}\nВременен код за бравата: управлява се в Tuya и се изпраща в разрешения прозорец за достъп\nКонфигуриран прозорец за достъп до lock code: ${accessFrom || checkIn} → ${accessTo || checkOut}`;
 }
 
 function getRoleIdentityReply(role, language = 'bg') {
@@ -939,16 +939,18 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         return getRoleIdentityReply(role, preferredLanguage);
     }
 
+    // Приоритет: ако потребителят изрично иска код за брава,
+    // не връщаме onboarding, а директно правим lookup.
+    if (isLockCodeLookupRequest(userMessage)) {
+        return await getLockCodeLookupReply(role, data, preferredLanguage);
+    }
+
     if (role === 'guest' && (isReservationCodeIntro(userMessage) || isBareReservationCodeMessage(userMessage) || containsReservationCode(userMessage))) {
         return getGuestOnboardingReply(data, preferredLanguage);
     }
 
     if (isReservationRefreshRequest(userMessage)) {
         return getReservationRefreshReply(role, data, preferredLanguage);
-    }
-
-    if (isLockCodeLookupRequest(userMessage)) {
-        return await getLockCodeLookupReply(role, data, preferredLanguage);
     }
 
     if (isTodayRegistrationsRequest(userMessage)) {
@@ -981,10 +983,19 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     if (role === 'host' && isMailCheckRequest(userMessage)) {
         console.log('[MAIL_CHECK] 📬 Домакин поиска ръчна проверка на Gmail');
         try {
-            await syncBookingsFromGmail();
-            return preferredLanguage === 'en'
-                ? 'I checked the inbox. If a new reservation email was found, it has been added to the system. Check the bookings list for details.'
-                : 'Проверих пощата. Ако имаше нов имейл за резервация, той вече е добавен в системата. Виж списъка с резервации за подробности.';
+            const execution = await runDetectiveCommand('sync_email_now', { ignoreLastCheck: true, source: 'host_chat' });
+            if (!execution.success) {
+                return preferredLanguage === 'en'
+                    ? `I could not run detective email sync (${execution.error || 'unknown error'}).`
+                    : `Не успях да пусна детектива за синк на пощата (${execution.error || 'неизвестна грешка'}).`;
+            }
+
+            const sync = execution.result || {};
+            if (preferredLanguage === 'en') {
+                return `Detective sync finished.\n\nQuery: ${sync.query || 'N/A'}\nFound unread: ${Number(sync.matchedCount || 0)}\nProcessed: ${Number(sync.processedCount || 0)}\nUpserted bookings: ${Number(sync.upsertedCount || 0)}\nCancelled: ${Number(sync.cancelledCount || 0)}\nFailed parse: ${Number(sync.failedCount || 0)}\nCodes: ${(sync.reservationCodes || []).join(', ') || 'none'}`;
+            }
+
+            return `Синкът на детектива приключи.\n\nЗаявка: ${sync.query || 'N/A'}\nНамерени непрочетени: ${Number(sync.matchedCount || 0)}\nОбработени: ${Number(sync.processedCount || 0)}\nЪпсертнати резервации: ${Number(sync.upsertedCount || 0)}\nАнулирани: ${Number(sync.cancelledCount || 0)}\nНеуспешен parse: ${Number(sync.failedCount || 0)}\nКодове: ${(sync.reservationCodes || []).join(', ') || 'няма'}`;
         } catch (e) {
             console.error('[MAIL_CHECK] 🔴 Грешка при ръчна проверка:', e.message);
             return preferredLanguage === 'en'

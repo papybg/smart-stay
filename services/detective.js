@@ -114,12 +114,41 @@ async function executeQueryWithRetry(queryFn, maxRetries = 3, delay = 10000) {
     }
 }
 
-export async function syncBookingsFromGmail() {
+function normalizeBookingDateValue(dateValue, fallbackYear) {
+    const parsed = parseSofiaDateTime(dateValue);
+    if (!parsed) return dateValue;
+
+    if (fallbackYear && Math.abs(parsed.getFullYear() - fallbackYear) > 1) {
+        const corrected = new Date(parsed);
+        corrected.setFullYear(fallbackYear);
+        return corrected.toISOString();
+    }
+
+    return parsed.toISOString();
+}
+
+export async function syncBookingsFromGmail(options = {}) {
+    const { ignoreLastCheck = false } = options;
+    const stats = {
+        success: false,
+        ignoreLastCheck,
+        query: null,
+        afterFilter: null,
+        totalCount: 0,
+        matchedCount: 0,
+        processedCount: 0,
+        upsertedCount: 0,
+        cancelledCount: 0,
+        failedCount: 0,
+        reservationCodes: [],
+        reason: null
+    };
     console.log('🕵️ Ико Детектива проверява за нови резервации...');
     try {
         if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY || !process.env.GMAIL_CLIENT_ID) {
             console.error('❌ Липсват ENV променливи!');
-            return;
+            stats.reason = 'MISSING_ENV';
+            return stats;
         }
 
         const sql = neon(process.env.DATABASE_URL);
@@ -135,7 +164,7 @@ export async function syncBookingsFromGmail() {
             console.warn('[DETECTIVE] ⚠️ Няма last_email_check или грешка при четене:', e.message);
         }
 
-        const afterFilter = lastCheck
+        const afterFilter = !ignoreLastCheck && lastCheck
             ? `after:${Math.floor(new Date(lastCheck).getTime() / 1000)}`
             : 'newer_than:30d';
 
@@ -173,19 +202,27 @@ export async function syncBookingsFromGmail() {
         const totalCount = baseRes.data?.messages?.length || 0;
 
         const query = baseQuery; // без subject филтър - AI сам определя статуса
+        stats.query = query;
+        stats.afterFilter = afterFilter;
+        stats.totalCount = totalCount;
         console.log('[DETECTIVE] 📬 Gmail query:', { query, afterFilter, totalCount });
         
         const res = await gmail.users.messages.list({ userId: 'me', q: query });
         const messages = res.data?.messages || [];
+        stats.matchedCount = messages.length;
 
         console.log(`🔎 Всички подходящи (без subject): ${totalCount}, след subject-филтър: ${messages.length}`);
 
         // after processing we'll update last check timestamp
 
         for (const msg of messages) {
+            stats.processedCount += 1;
             const details = await processMessage(msg.id, gmail, genAI);
             
             if (details && details.reservation_code) {
+                if (!stats.reservationCodes.includes(details.reservation_code)) {
+                    stats.reservationCodes.push(details.reservation_code);
+                }
                 
                 // --- АНУЛАЦИЯ ---
                 if (details.status === 'cancelled') {
@@ -198,6 +235,7 @@ export async function syncBookingsFromGmail() {
                             WHERE reservation_code = ${details.reservation_code}
                         `;
                     });
+                    stats.cancelledCount += 1;
                     console.log(`🗑️ Резервация ${details.reservation_code} е маркирана като анулирана.`);
                 } 
                 
@@ -252,6 +290,7 @@ export async function syncBookingsFromGmail() {
                                 lock_pin = COALESCE(bookings.lock_pin, EXCLUDED.lock_pin);
                         `;
                     });
+                    stats.upsertedCount += 1;
                     console.log(`✅ Успешен запис с график за тока!`);
                 }
                 
@@ -260,6 +299,7 @@ export async function syncBookingsFromGmail() {
                 });
 
             } else {
+                stats.failedCount += 1;
                 console.warn(`⚠️ Писмо ${msg.id}: Неуспешен анализ.`);
             }
         }
@@ -271,13 +311,23 @@ export async function syncBookingsFromGmail() {
             console.warn('[DETECTIVE] ⚠️ Неуспешен запис на last_email_check:', e.message);
         }
 
-    } catch (err) { console.error('❌ Критична грешка:', err); }
+        stats.success = true;
+        stats.reason = 'OK';
+        return stats;
+
+    } catch (err) {
+        console.error('❌ Критична грешка:', err);
+        stats.reason = err?.message || 'SYNC_FAILED';
+        return stats;
+    }
 }
 
 async function processMessage(id, gmail, genAI) {
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
+        const messageDate = res.data.internalDate ? new Date(Number(res.data.internalDate)) : new Date();
+        const fallbackYear = Number.isNaN(messageDate.getTime()) ? new Date().getFullYear() : messageDate.getFullYear();
         
         const payload = res.data.payload;
         const subject = payload.headers.find(h => h.name === 'Subject')?.value || '';
@@ -320,7 +370,12 @@ async function processMessage(id, gmail, genAI) {
         console.log(`🤖 AI Данни за ${id}:`, text);
 
         try {
-            return JSON.parse(text);
+            const details = JSON.parse(text);
+            if (details && typeof details === 'object') {
+                details.check_in = normalizeBookingDateValue(details.check_in, fallbackYear);
+                details.check_out = normalizeBookingDateValue(details.check_out, fallbackYear);
+            }
+            return details;
         } catch (e) {
             console.error('❌ JSON Error:', text);
             return null;

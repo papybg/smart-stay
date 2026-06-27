@@ -41,7 +41,8 @@ import { neon } from '@neondatabase/serverless';
 import { getAIResponse, assignPinFromDepot } from './services/ai_service.js';
 import { controlPower, controlMeterByAction, readLatestPowerStateFromHistory } from './services/homeassistant.js';
 import { generateToken, invalidateToken, validateToken, SESSION_DURATION } from './services/sessionManager.js';
-import { syncBookingsFromGmail, syncBookingsPowerFromLatestHistory } from './services/detective.js';
+import { syncBookingsPowerFromLatestHistory } from './services/detective.js';
+import { runDetectiveCommand } from './services/detectiveGateway.js';
 import { createApiKeyGuard, createSimpleRateLimiter } from './middlewares/security.js';
 import { registerPowerRoutes } from './routes/powerRoutes.js';
 import { registerAuthRoutes, registerSmartThingsCallbackRoute } from './routes/authRoutes.js';
@@ -728,7 +729,6 @@ registerBookingsRoutes(app, {
     sql,
     assignPinFromDepot,
     controlPower,
-    syncBookingsFromGmail,
     notificationService
 });
 
@@ -801,10 +801,12 @@ function initializeDetectiveScheduler() {
     const interval = 2 * 60 * 60 * 1000; // 2 часа
     console.log('[SCHEDULER] 🕵️ Детективът ще проверява имейли на всеки 2h (локален cron)');
     // run immediately once
-    syncBookingsFromGmail().catch(err => console.error('[SCHEDULER] 🔴', err.message));
+    runDetectiveCommand('sync_email_now', { ignoreLastCheck: false, source: 'local_scheduler' })
+        .catch(err => console.error('[SCHEDULER] 🔴', err.message));
     setInterval(() => {
         console.log('[SCHEDULER] ⏰ Локален cron задейства email sync');
-        syncBookingsFromGmail().catch(err => console.error('[SCHEDULER] 🔴', err.message));
+        runDetectiveCommand('sync_email_now', { ignoreLastCheck: false, source: 'local_scheduler' })
+            .catch(err => console.error('[SCHEDULER] 🔴', err.message));
     }, interval);
 }
 

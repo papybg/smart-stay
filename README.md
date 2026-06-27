@@ -262,3 +262,82 @@ smart-stay/
 - Документация и диаграми за екипно onboarding ниво
 
 Тези подобрения са препоръчителни, но не задължителни за текуща работеща експлоатация.
+
+---
+
+## 11) Настройки за lock code достъп
+
+Системата има отделен прозорец за показване/изпращане на временния lock code към госта.
+
+- `LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS` (default: `12`)
+- `LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS` (default: `3`)
+
+Пример: ако check-in е `14:00`, а check-out е `12:00`, default прозорецът за lock code ще е:
+- от `02:00` в деня на check-in
+- до `15:00` в деня на check-out
+
+Забележка: това е отделно от общия `ACCESS_*` прозорец и позволява по-гъвкава политика за конфиденциална информация.
+
+---
+
+## 12) Всички тайм лимити в системата
+
+### Достъп и сесии
+- `SESSION_DURATION` = `30 мин` (login token)
+- `ACCESS_START_BEFORE_CHECKIN_HOURS` = `2` (общ guest access)
+- `ACCESS_END_AFTER_CHECKOUT_HOURS` = `1` (общ guest access)
+- `LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS` = `12` (lock code access)
+- `LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS` = `3` (lock code access)
+
+### API rate limits
+- Global `/api`: `100 заявки / 15 мин`
+- Power `/api/meter*`: `10 заявки / 1 мин`
+- Email sync `/api/gmail/sync`, `/api/email/sync`: `5 заявки / 1 час`
+- `/api/chat` (simple limiter): `25 заявки / 60 сек`
+- `/api/meter*` (simple limiter): `20 заявки / 60 сек`
+- `/api/power-status`, `/api/power/status`, `/api/ha-webhook` (simple limiter): `60 заявки / 60 сек`
+
+### Tasker/Power anti-noise
+- `TASKER_NOISE_WINDOW_MS` = `45000 ms` (45 сек)
+- `REQUEST_LOG_SUPPRESS_MS` = `30000 ms` (30 сек)
+- `TASKER_CONFIRM_TIMEOUT_MS` = `20000 ms` (20 сек)
+- `TASKER_CONFIRM_POLL_MS` = `1000 ms` (1 сек)
+
+### AI и външни интеграции
+- `GEMINI_MODEL_TIMEOUT_MS` = `12000 ms`
+- `GEMINI_MODEL_COOLDOWN_MS` = `60000 ms`
+- `GROQ_TIMEOUT_MS` = `8000 ms`
+- `BACKUP_TIMEOUT_MS` = `15000 ms`
+- `GOOGLE_PLACES_TIMEOUT_MS` = `5000 ms`
+- `GOOGLE_PLACES_BLOCK_COOLDOWN_MS` = `3600000 ms` (1 час)
+- `GOOGLE_DIRECTIONS_TIMEOUT_MS` = `6000 ms`
+- `BRAVE_SEARCH_TIMEOUT_MS` = `6000 ms`
+- `BRAVE_SEARCH_MONTHLY_QUOTA` = `1000 / месец`
+
+### Retry / Scheduler
+- Notifications retry: `MAX_ATTEMPTS=3`, `BASE_RETRY_DELAY_MS=600` (експоненциален backoff)
+- Detective DB retry: `3 опита`, `delay 10000 ms`
+- Local detective scheduler: `на всеки 2 часа`
+
+---
+
+## 13) Препоръчан работен профил (балансиран за продукция)
+
+Този профил пази сигурността, но е по-удобен за реални гости и намалява фалшивите откази.
+
+### Препоръчани ENV стойности
+- `LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS=18`
+- `LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS=6`
+- `ACCESS_START_BEFORE_CHECKIN_HOURS=4`
+- `ACCESS_END_AFTER_CHECKOUT_HOURS=2`
+- `TASKER_NOISE_WINDOW_MS=30000`
+- `REQUEST_LOG_SUPPRESS_MS=15000`
+- `TASKER_CONFIRM_TIMEOUT_MS=25000`
+- `GEMINI_MODEL_TIMEOUT_MS=15000`
+- `GROQ_TIMEOUT_MS=10000`
+- `BACKUP_TIMEOUT_MS=20000`
+
+### Оперативни бележки
+- Ако имате повече трафик, увеличете постепенно лимитите за `/api/chat` и global `/api`.
+- Ако често има бавни отговори от външни API, увеличете timeout-ите с `20-30%`.
+- Ако искате по-строг режим, върнете `LOCK_CODE_ACCESS_*` към `12/3` или по-ниско.
