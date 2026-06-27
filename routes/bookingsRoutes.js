@@ -337,17 +337,20 @@ export function registerBookingsRoutes(app, {
         const powerOnLookbackMinutes = Number.isFinite(powerOnLookbackMinutesRaw)
             ? Math.max(10, Math.min(powerOnLookbackMinutesRaw, 24 * 60))
             : 360;
-        const powerOnLookbackStart = new Date(now.getTime() - powerOnLookbackMinutes * 60 * 1000);
+        const nowSofiaLocal = await sql`SELECT (${now}::timestamptz AT TIME ZONE 'Europe/Sofia') AS now_local`;
+        const nowLocal = nowSofiaLocal?.[0]?.now_local || now;
+        const powerOnLookbackStart = new Date(new Date(nowLocal).getTime() - powerOnLookbackMinutes * 60 * 1000);
         const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+        const oneHourAgoLocal = new Date(new Date(nowLocal).getTime() - 1 * 60 * 60 * 1000);
 
         // Prefer explicit power_on_time, fallback to (check_in - 2h) for older rows.
         const powerOnBookings = await sql`
             SELECT id, guest_name
             FROM bookings
             WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
-              AND check_out > ${now}
-              AND COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) <= ${now}
-                            AND COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) >= ${powerOnLookbackStart}
+                            AND (check_out::timestamp) > ${nowLocal}
+                            AND COALESCE(power_on_time::timestamp, ((check_in - INTERVAL '2 hours')::timestamp)) <= ${nowLocal}
+                            AND COALESCE(power_on_time::timestamp, ((check_in - INTERVAL '2 hours')::timestamp)) >= ${powerOnLookbackStart}
             ORDER BY COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) DESC
             LIMIT 10
         `;
@@ -390,8 +393,8 @@ export function registerBookingsRoutes(app, {
             SELECT id, guest_name
             FROM bookings
             WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
-              AND COALESCE(power_off_time, (check_out + INTERVAL '1 hour')) <= ${now}
-              AND COALESCE(power_off_time, (check_out + INTERVAL '1 hour')) >= ${oneHourAgo}
+                            AND COALESCE(power_off_time::timestamp, ((check_out + INTERVAL '1 hour')::timestamp)) <= ${nowLocal}
+                            AND COALESCE(power_off_time::timestamp, ((check_out + INTERVAL '1 hour')::timestamp)) >= ${oneHourAgoLocal}
             ORDER BY COALESCE(power_off_time, (check_out + INTERVAL '1 hour')) DESC
             LIMIT 10
         `;
