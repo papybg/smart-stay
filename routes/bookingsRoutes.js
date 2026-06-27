@@ -302,7 +302,13 @@ export function registerBookingsRoutes(app, {
 
     async function runReservationsSync() {
         if (!sql) {
-            return { checkinCount: 0, checkoutCount: 0, dbAvailable: false };
+            return {
+                powerOnWindowCount: 0,
+                powerOffWindowCount: 0,
+                powerOnActions: 0,
+                powerOffActions: 0,
+                dbAvailable: false
+            };
         }
 
         const now = new Date();
@@ -322,29 +328,36 @@ export function registerBookingsRoutes(app, {
             };
         }
 
-        const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+        const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
         const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
 
-        const checkinBookings = await sql`
-            SELECT id, guest_name FROM bookings
-            WHERE check_in <= ${twoHoursFromNow} AND check_in >= ${now} AND check_out > ${now}
+        // Prefer explicit power_on_time, fallback to (check_in - 2h) for older rows.
+        const powerOnBookings = await sql`
+            SELECT id, guest_name
+            FROM bookings
+            WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+              AND check_out > ${now}
+              AND COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) <= ${now}
+              AND COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) >= ${tenMinutesAgo}
+            ORDER BY COALESCE(power_on_time, (check_in - INTERVAL '2 hours')) DESC
             LIMIT 10
         `;
 
-        for (const booking of checkinBookings) {
+        let powerOnActions = 0;
+        for (const booking of powerOnBookings) {
             if (!global.powerState.is_on) {
-                console.log(`[SCHEDULER] 🚨 CHECK-IN за ${booking.guest_name} - ВКЛ`);
+                console.log(`[SCHEDULER] 🚨 POWER-ON за ${booking.guest_name} - ВКЛ`);
                 try {
                     await sql`
                         INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                        VALUES (true, ${now}, 'scheduler_checkin', ${String(booking.id)})
+                        VALUES (true, ${now}, 'scheduler_power_on', ${String(booking.id)})
                     `;
                 } catch (dbErr) {
-                    console.error('[DB] 🔴 Грешка при запис scheduler check-in:', dbErr.message);
+                    console.error('[DB] 🔴 Грешка при запис scheduler power-on:', dbErr.message);
                 }
 
                 global.powerState.is_on = true;
-                global.powerState.source = 'scheduler-checkin';
+                global.powerState.source = 'scheduler-power-on';
                 global.powerState.last_update = now;
 
                 try {
@@ -354,33 +367,40 @@ export function registerBookingsRoutes(app, {
                         WHERE id = ${booking.id}
                     `;
                 } catch (bookingErr) {
-                    console.error('[DB] 🔴 Грешка при scheduler check-in power_status:', bookingErr.message);
+                    console.error('[DB] 🔴 Грешка при scheduler power-on power_status:', bookingErr.message);
                 }
 
                 await controlPower(true);
+                powerOnActions += 1;
             }
         }
 
-        const checkoutBookings = await sql`
-            SELECT id, guest_name FROM bookings
-            WHERE check_out <= ${now} AND check_out >= ${oneHourAgo}
+        // Prefer explicit power_off_time, fallback to (check_out + 1h) for older rows.
+        const powerOffBookings = await sql`
+            SELECT id, guest_name
+            FROM bookings
+            WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+              AND COALESCE(power_off_time, (check_out + INTERVAL '1 hour')) <= ${now}
+              AND COALESCE(power_off_time, (check_out + INTERVAL '1 hour')) >= ${oneHourAgo}
+            ORDER BY COALESCE(power_off_time, (check_out + INTERVAL '1 hour')) DESC
             LIMIT 10
         `;
 
-        for (const booking of checkoutBookings) {
+        let powerOffActions = 0;
+        for (const booking of powerOffBookings) {
             if (global.powerState.is_on) {
-                console.log(`[SCHEDULER] 🚨 CHECK-OUT ${booking.guest_name} - ИЗКЛ`);
+                console.log(`[SCHEDULER] 🚨 POWER-OFF ${booking.guest_name} - ИЗКЛ`);
                 try {
                     await sql`
                         INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                        VALUES (false, ${now}, 'scheduler_checkout', ${String(booking.id)})
+                        VALUES (false, ${now}, 'scheduler_power_off', ${String(booking.id)})
                     `;
                 } catch (dbErr) {
-                    console.error('[DB] 🔴 Грешка при запис scheduler check-out:', dbErr.message);
+                    console.error('[DB] 🔴 Грешка при запис scheduler power-off:', dbErr.message);
                 }
 
                 global.powerState.is_on = false;
-                global.powerState.source = 'scheduler-checkout';
+                global.powerState.source = 'scheduler-power-off';
                 global.powerState.last_update = now;
 
                 try {
@@ -390,16 +410,19 @@ export function registerBookingsRoutes(app, {
                         WHERE id = ${booking.id}
                     `;
                 } catch (bookingErr) {
-                    console.error('[DB] 🔴 Грешка при scheduler check-out power_status:', bookingErr.message);
+                    console.error('[DB] 🔴 Грешка при scheduler power-off power_status:', bookingErr.message);
                 }
 
                 await controlPower(false);
+                powerOffActions += 1;
             }
         }
 
         return {
-            checkinCount: checkinBookings.length,
-            checkoutCount: checkoutBookings.length,
+            powerOnWindowCount: powerOnBookings.length,
+            powerOffWindowCount: powerOffBookings.length,
+            powerOnActions,
+            powerOffActions,
             dbAvailable: true
         };
     }
