@@ -132,6 +132,8 @@ smart-stay/
 
 ### `routes/bookingsRoutes.js`
 - Bookings listing/sync
+- Reservation power scheduler (power_on_time/power_off_time прозорци)
+- Scheduler status endpoint за наблюдение без логове
 - Inquiry + pricing quote
 - Requests lifecycle (approve/mark-paid/cancel/delete)
 - Gmail sync hooks
@@ -178,6 +180,7 @@ smart-stay/
 - `POST /add-booking`
 - `DELETE /bookings/:id`
 - `POST /api/reservations/sync`
+- `GET /api/reservations/sync-status`
 - `POST /api/gmail/sync`
 - `POST /api/email/sync`
 - `POST /api/inquiry`
@@ -247,6 +250,18 @@ smart-stay/
 - `https://reservation.bgm-design.com/` -> reservation page
 - `https://admin.bgm-design.com/` -> dashboard
 - `https://demo.bgm-design.com/` -> demo dashboard
+
+### Scheduler проверка без логове
+- `GET /api/reservations/sync-status` -> връща последен run/success/error, следващ run и последен резултат
+- Полезни полета в отговора:
+  - `scheduler.lastRunAt`
+  - `scheduler.lastSuccessAt`
+  - `scheduler.nextRunAt`
+  - `scheduler.lastTrigger` (`local_initial`, `local_interval`, `api_manual`)
+  - `scheduler.lastResult.powerOnWindowCount`
+  - `scheduler.lastResult.powerOnActions`
+  - `scheduler.lastError`
+- Endpoint-ът е зад същите API guards като останалите `/api` маршрути.
 
 ---
 
@@ -318,6 +333,8 @@ smart-stay/
 - Notifications retry: `MAX_ATTEMPTS=3`, `BASE_RETRY_DELAY_MS=600` (експоненциален backoff)
 - Detective DB retry: `3 опита`, `delay 10000 ms`
 - Local detective scheduler: `на всеки 2 часа`
+- Local reservations scheduler (когато `USE_LOCAL_CRON=true`): `на всеки 10 мин` + initial run при старт
+- Reservation power-on lookback: `SCHEDULER_POWER_ON_LOOKBACK_MINUTES` (default: `360`, min: `10`, max: `1440`)
 
 ---
 
