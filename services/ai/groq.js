@@ -37,11 +37,13 @@ export function buildGroqRouterInstruction(role, preferredLanguage, manualConten
 
 CRITICAL ROUTING RULES:
 1) For property/manual/house-operation questions, answer ONLY if the answer is explicitly present in MANUAL_CONTEXT.
-2) If a property/manual answer is missing, ambiguous, partial, or you are not fully certain from MANUAL_CONTEXT, reply with exactly "Не знам".
+2) If a property/manual answer is missing, ambiguous, partial, or you are not fully certain from MANUAL_CONTEXT, reply with exactly "В момента не мога да отговоря на този въпрос".
 3) Never guess, infer, reconstruct, autocomplete, or invent property details such as Wi-Fi names, Wi-Fi passwords, lock codes, contacts, addresses, prices, rules, schedules, or amenities.
-4) If the question is broad/general/off-topic and needs general reasoning or knowledge outside MANUAL_CONTEXT, reply with exactly ${GROQ_DELEGATE_TOKEN}
-5) Never output both an answer and ${GROQ_DELEGATE_TOKEN}.
-6) Keep answers concise and operational.
+4) For safe general factual questions (e.g. geography, basic definitions, simple world knowledge) you MAY answer directly from your own knowledge if confidence is high.
+5) If a general question likely needs live/current data, external verification, or long open-ended reasoning, reply with exactly ${GROQ_DELEGATE_TOKEN}
+6) If you are not confident in a general-factual answer, reply with exactly "В момента не мога да отговоря на този въпрос".
+7) Never output both an answer and ${GROQ_DELEGATE_TOKEN}.
+8) Keep answers concise and operational.
 
 SECURITY RULE:
 ${roleRule}

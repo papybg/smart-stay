@@ -1166,8 +1166,8 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         });
 
         if (routerResult?.reply) {
-            manualDraftFromRouter = routerResult.reply;
-            console.log('[GROQ_ROUTER] 🧩 Получен MANUAL_DRAFT, предавам към Gemini');
+            console.log('[GROQ_ROUTER] ✅ Директен отговор от Groq (без Gemini пост-обработка)');
+            return routerResult.reply;
         } else {
             console.log('[GROQ_ROUTER] ↪️ Делегация/без отговор -> продължавам към Gemini');
         }
