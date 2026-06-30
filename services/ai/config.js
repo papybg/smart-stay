@@ -23,7 +23,8 @@ export const modelCooldownUntil = new Map();
 export const GROQ_ROUTER_ENABLED = (process.env.GROQ_ROUTER_ENABLED || 'true').toLowerCase() !== 'false';
 export const GROQ_API_KEY = process.env.GROQ_API_KEY || null;
 export const GROQ_API_URL = (process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
-export const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+export const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+export const GROQ_FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL || 'qwen/qwen3-27b';
 export const GROQ_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS || 8000);
 export const GROQ_DELEGATE_TOKEN = '[[DELEGATE_TO_GEMINI]]';
 

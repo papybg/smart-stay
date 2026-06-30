@@ -12,6 +12,7 @@ import {
     GOOGLE_DIRECTIONS_API_KEY, GOOGLE_DIRECTIONS_TIMEOUT_MS,
     GOOGLE_DIRECTIONS_DEFAULT_ORIGIN,
     BACKUP_API_KEY, BACKUP_API_URL, BACKUP_MODEL,
+    MODELS, GROQ_MODEL, GROQ_FALLBACK_MODEL,
     ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS,
     LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS, LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS
 } from './ai/config.js';
@@ -43,7 +44,7 @@ import {
     isDatabaseSnapshotRequest, isHostDbCatchAllRequest,
     isLivePlacesLookupRequest, isMapStyleQuestion,
     isDirectionsRequest, buildDirectionsDestination,
-    isRoleIdentityRequest, shouldUseGroqRouterForMessage,
+    isRoleIdentityRequest, isModelIdentityRequest, shouldUseGroqRouterForMessage,
     detectPreferredLanguage, isSearchEligibleQuery,
     isMailCheckRequest
 } from './ai/intents.js';
@@ -794,6 +795,33 @@ function getRoleIdentityReply(role, language = 'bg') {
     return 'В момента сте неоторизиран потребител.';
 }
 
+function getModelIdentityReply(language = 'bg') {
+    const geminiChain = Array.isArray(MODELS) ? MODELS.filter(Boolean) : [];
+    const groqPrimary = String(GROQ_MODEL || '').trim();
+    const groqFallback = String(GROQ_FALLBACK_MODEL || '').trim();
+    const backupModel = String(BACKUP_MODEL || '').trim();
+
+    if (language === 'en') {
+        const lines = [
+            'Current runtime model routing:',
+            `- Groq Router primary: ${groqPrimary || 'not configured'}`,
+            `- Groq Router fallback: ${groqFallback || 'not configured'}`,
+            `- Gemini chain: ${geminiChain.length ? geminiChain.join(' -> ') : 'not configured'}`,
+            `- Backup model: ${backupModel || 'not configured'}`
+        ];
+        return lines.join('\n');
+    }
+
+    const lines = [
+        'Текуща runtime схема на моделите:',
+        `- Groq Router primary: ${groqPrimary || 'не е конфигуриран'}`,
+        `- Groq Router fallback: ${groqFallback || 'не е конфигуриран'}`,
+        `- Gemini верига: ${geminiChain.length ? geminiChain.join(' -> ') : 'не е конфигурирана'}`,
+        `- Backup модел: ${backupModel || 'не е конфигуриран'}`
+    ];
+    return lines.join('\n');
+}
+
 // ============================================================================
 // EXPORTED: checkEmergencyPower
 // ============================================================================
@@ -922,8 +950,8 @@ export async function processAlerts(aiResponse, role, bookingData) {
 // ============================================================================
 
 export async function getAIResponse(userMessage, history = [], authCode = null) {
-    if (!genAI && !(BACKUP_API_KEY && BACKUP_API_URL && BACKUP_MODEL)) {
-        console.error('🔴 ГРЕШКА: Липсват Gemini и backup API конфигурации');
+    if (!genAI && !canUseGroqRouter() && !(BACKUP_API_KEY && BACKUP_API_URL && BACKUP_MODEL)) {
+        console.error('🔴 ГРЕШКА: Липсват Gemini, Groq router и backup API конфигурации');
         return 'В момента имам техническо затруднение (API Key Error).';
     }
 
@@ -935,6 +963,10 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     let braveSearchResults = null;
 
     // 2. Детерминистични отговори (без AI)
+    if (isModelIdentityRequest(userMessage)) {
+        return getModelIdentityReply(preferredLanguage);
+    }
+
     if (isRoleIdentityRequest(userMessage)) {
         return getRoleIdentityReply(role, preferredLanguage);
     }
@@ -1121,19 +1153,43 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     let manualDraftFromRouter = null;
 
     if (!forceGeminiDirect && canUseGroqRouter()) {
-        console.log(`[GROQ_ROUTER] Старт на router проверка (manualLike=${manualScopeQuestion})`);
+        console.log(`[GROQ_ROUTER] Старт на router first-pass (manualLike=${manualScopeQuestion})`);
+        const routerResult = await generateWithGroqRouter(role, preferredLanguage, manualContent, history, userMessage);
 
-        if (manualScopeQuestion) {
-            const routerResult = await generateWithGroqRouter(role, preferredLanguage, manualContent, history, userMessage);
-            if (routerResult?.reply) {
-                manualDraftFromRouter = routerResult.reply;
-                console.log('[GROQ_ROUTER] 🧩 Получен MANUAL_DRAFT, предавам към Gemini');
-            }
+        console.log('[MODEL_ROUTING] GROQ_DECISION:', {
+            decision: routerResult?.decision || 'unknown',
+            delegated: Boolean(routerResult?.delegated),
+            model: routerResult?.model || null,
+            reason: routerResult?.reason || null,
+            manualLike: manualScopeQuestion,
+            role
+        });
+
+        if (routerResult?.reply) {
+            manualDraftFromRouter = routerResult.reply;
+            console.log('[GROQ_ROUTER] 🧩 Получен MANUAL_DRAFT, предавам към Gemini');
         } else {
-            console.log('[GROQ_ROUTER] ⏭️ Bypass към Gemini (въпрос извън manual обхвата)');
+            console.log('[GROQ_ROUTER] ↪️ Делегация/без отговор -> продължавам към Gemini');
         }
     } else if (forceGeminiDirect) {
+        console.log('[MODEL_ROUTING] GROQ_DECISION:', {
+            decision: 'skip',
+            delegated: true,
+            model: null,
+            reason: 'force_gemini_direct',
+            manualLike: manualScopeQuestion,
+            role
+        });
         console.log('[ROUTING] ⏭️ Force Gemini direct (live web/maps context)');
+    } else {
+        console.log('[MODEL_ROUTING] GROQ_DECISION:', {
+            decision: 'skip',
+            delegated: true,
+            model: null,
+            reason: 'router_unavailable',
+            manualLike: manualScopeQuestion,
+            role
+        });
     }
 
     // 6.5. Gemini генериране

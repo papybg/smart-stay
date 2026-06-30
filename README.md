@@ -319,6 +319,21 @@ smart-stay/
 - `TASKER_CONFIRM_POLL_MS` = `1000 ms` (1 сек)
 
 ### AI и външни интеграции
+- Runtime routing ред: `Groq Router -> Gemini multi-model fallback -> Backup provider`
+
+#### AI модели и fallback ред (Ико)
+- Groq Router модели (по ред на опит):
+  - `openai/gpt-oss-120b` (override: `GROQ_MODEL`)
+  - `qwen/qwen3-27b` (override: `GROQ_FALLBACK_MODEL`)
+- Gemini fallback ред (по ред на опит):
+  - `gemini-2.5-flash-lite`
+  - `gemini-2.5-flash`
+  - `gemini-2.5-pro`
+  - `gemini-3-flash-preview`
+  - `gemini-3-pro-preview`
+- Backup provider модел: идва от `BACKUP_MODEL` (OpenAI-compatible endpoint)
+- Source of truth за моделите: `services/ai/config.js` + runtime orchestration в `services/ai_service.js`
+
 - `GEMINI_MODEL_TIMEOUT_MS` = `12000 ms`
 - `GEMINI_MODEL_COOLDOWN_MS` = `60000 ms`
 - `GROQ_TIMEOUT_MS` = `8000 ms`

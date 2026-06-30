@@ -203,7 +203,12 @@ export function buildDirectionsDestination(userMessage) {
 
 export function isRoleIdentityRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /какъв съм аз|каква е ролята ми|кой съм аз|дали съм гост|дали съм домакин|am i guest|am i host|what is my role|who am i/i.test(userMessage);
+    return /какъв съм аз|каква е ролята ми|кой съм аз|дали съм гост|дали съм домакин|am i guest|am i host|what is my role|who am i|ти кой си|кой си ти/i.test(userMessage);
+}
+
+export function isModelIdentityRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /какъв модел си|кой модел си|с кой модел работиш|какви модели ползваш|what model are you|which model are you|what models do you use/i.test(userMessage);
 }
 
 // ── Groq router eligibility ────────────────────────────────────────────────
