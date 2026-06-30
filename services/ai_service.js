@@ -1037,9 +1037,10 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     const allowExternalLookups = role !== 'stranger';
+    const allowDirectionsLookup = true;
 
     // 2.1. Google Directions
-    if (allowExternalLookups && isDirectionsRequest(userMessage)) {
+    if (allowDirectionsLookup && isDirectionsRequest(userMessage)) {
         const directionsReply = await getDirectionsReply(userMessage, preferredLanguage);
         if (directionsReply) return directionsReply;
 

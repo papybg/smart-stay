@@ -42,8 +42,9 @@ CRITICAL ROUTING RULES:
 4) For safe general factual questions (e.g. geography, basic definitions, simple world knowledge) you MAY answer directly from your own knowledge if confidence is high.
 5) If a general question likely needs live/current data, external verification, or long open-ended reasoning, reply with exactly ${GROQ_DELEGATE_TOKEN}
 6) If you are not confident in a general-factual answer, reply with exactly "В момента не мога да отговоря на този въпрос".
-7) Never output both an answer and ${GROQ_DELEGATE_TOKEN}.
-8) Keep answers concise and operational.
+7) For navigation/route/distance/time-to-travel questions (e.g. "как се стига", "маршрут", "колко километра", "колко време с кола"), always reply with exactly ${GROQ_DELEGATE_TOKEN} unless the answer is explicitly present in MANUAL_CONTEXT.
+8) Never output both an answer and ${GROQ_DELEGATE_TOKEN}.
+9) Keep answers concise and operational.
 
 SECURITY RULE:
 ${roleRule}
