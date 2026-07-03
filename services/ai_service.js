@@ -309,14 +309,32 @@ function normalizeDirectionsPlace(value = '') {
         .trim();
 }
 
-function getManualRouteReplyForStranger(userMessage, language = 'bg') {
+function isRouteFollowUpMessage(userMessage = '', history = []) {
+    const text = String(userMessage || '').trim().toLowerCase();
+    if (!text) return false;
+
+    // Short follow-ups like "а от ксанти" or "от солун" should inherit route context.
+    const looksLikeOriginFollowUp = /^(а\s+)?от\s+.{2,}$/i.test(text);
+    if (!looksLikeOriginFollowUp) return false;
+
+    const recentUserMessage = (Array.isArray(history) ? history : [])
+        .slice()
+        .reverse()
+        .find(msg => msg && msg.role === 'user' && typeof msg.content === 'string' && msg.content.trim());
+
+    if (!recentUserMessage) return false;
+    return isDirectionsRequest(recentUserMessage.content);
+}
+
+function getManualRouteReplyForStranger(userMessage, language = 'bg', isRouteContext = false) {
     const text = String(userMessage || '').toLowerCase();
-    const asksDirections = isDirectionsRequest(userMessage);
+    const asksDirections = isDirectionsRequest(userMessage) || isRouteContext;
     if (!asksDirections) return null;
 
     const fromSofia = /\bсофия\b|\bsofia\b/i.test(text);
-    const fromGreece = /гръц|гърц|greece|greek|кулата|промахон|илинден|ексохи/i.test(text);
+    const fromGreece = /гръц|гърц|greece|greek|кулата|промахон|илинден|ексохи|ксанти|xanthi|ξανθη|солун|thessaloniki|thessalonica|θεσσαλονικη/i.test(text);
     const fromPlovdiv = /\bпловдив\b|\bplovdiv\b/i.test(text);
+    const fromWest = /македон|macedonia|north\s*macedonia|скопие|skopje|албани|albania|тирана|tirana|дуръс|durres|серби|serbia|белград|belgrade|румъни|romania|букурещ|bucharest|германи|germany|немци|munich|munchen|мюнхен|berlin|виена|vienna|австри|austria|загреб|zagreb|хърват|croatia|словени|slovenia|будапеща|budapest|унгар|hungary/i.test(text);
 
     if (fromSofia) {
         return language === 'en'
@@ -334,6 +352,12 @@ function getManualRouteReplyForStranger(userMessage, language = 'bg') {
         return language === 'en'
             ? 'Route from Plovdiv to Aspen Valley: most commonly via Pazardzhik - Belovo - Yundola - Yakoruda. Approx. 145 km and around 2h 45m depending on road conditions.'
             : 'Маршрут от Пловдив до Aspen Valley: най-често през Пазарджик - Белово - Юндола - Якоруда. Около 145 км и приблизително 2 ч. 45 мин. според пътната обстановка.';
+    }
+
+    if (fromWest) {
+        return language === 'en'
+            ? 'Route from the west (North Macedonia / Albania) to Aspen Valley: use Stanke Lisichkovo (Delchevo) border crossing, continue toward Blagoevgrad, then south on E79 to Simitli, and finally road II-19 through Predela pass to Razlog / Aspen Valley.'
+            : 'Маршрут от запад (Македония / Албания) до Aspen Valley: използвайте ГКПП Станке Лисичково (Делчево), продължете към Благоевград, след това на юг по E79 до Симитли и накрая по път II-19 през прохода Предел до Разлог / Aspen Valley.';
     }
 
     return language === 'en'
@@ -1121,7 +1145,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     const isAuthorized = role === 'guest' || role === 'host';
-    const hasDirectionsIntent = isDirectionsRequest(userMessage);
+    const hasDirectionsIntent = isDirectionsRequest(userMessage) || isRouteFollowUpMessage(userMessage, history);
     const hasPlacesIntent = isLivePlacesLookupRequest(userMessage) || isMapStyleQuestion(userMessage);
     const hasSearchIntent = !manualScopeQuestion && isSearchEligibleQuery(userMessage);
     const routeFallbackReply = preferredLanguage === 'en'
@@ -1242,7 +1266,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
             delegatedToExternal: false
         });
         if (hasDirectionsIntent) {
-            const routeReply = getManualRouteReplyForStranger(userMessage, preferredLanguage);
+            const routeReply = getManualRouteReplyForStranger(userMessage, preferredLanguage, true);
             if (routeReply) {
                 const usedFallback = routeReply.includes('41.874389, 23.423650');
                 console.log('[MODEL_ROUTING] ROUTE_MANUAL_RESULT', {
