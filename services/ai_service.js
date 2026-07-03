@@ -301,15 +301,60 @@ function stripHtmlTags(value = '') {
     return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeDirectionsPlace(value = '') {
+    return String(value || '')
+        .replace(/[?.!,]+$/g, '')
+        .replace(/^(как\s+да\s+стигна|как\s+да\s+отида|маршрут(ът)?\s*(е)?|route|directions)\s+/i, '')
+        .replace(/^(до|to|от|from)\s+/i, '')
+        .trim();
+}
+
+function isComplexAlias(value = '') {
+    const text = String(value || '').toLowerCase();
+    return /^(комплекса\s+аспен\s+валей|комплекс\s+аспен\s+валей|аспен\s+валей|aspen\s*valley|комплекса|комплекс|апартамент(а)?|имот(а)?|до\s+нас|to\s+the\s+complex)$/i.test(text)
+        || /(комплекса\s+аспен\s+валей|комплекс\s+аспен\s+валей|\bаспен\s+валей\b|\baspen\s*valley\b)/i.test(text);
+}
+
+function parseDirectionsEndpoints(userMessage = '') {
+    const text = String(userMessage || '').trim();
+    const homeBase = GOOGLE_DIRECTIONS_DEFAULT_ORIGIN;
+
+    if (!text) return { origin: homeBase, destination: null };
+
+    const fromToMatch = text.match(/(?:^|\s)(?:от|from)\s+(.+?)\s+(?:до|to)\s+(.+)$/i);
+    if (fromToMatch?.[1] && fromToMatch?.[2]) {
+        let origin = normalizeDirectionsPlace(fromToMatch[1]);
+        let destination = normalizeDirectionsPlace(fromToMatch[2]);
+        if (isComplexAlias(origin)) origin = homeBase;
+        if (isComplexAlias(destination)) destination = homeBase;
+        return { origin: origin || homeBase, destination: destination || null };
+    }
+
+    const toFromMatch = text.match(/(?:^|\s)(?:до|to)\s+(.+?)\s+(?:от|from)\s+(.+)$/i);
+    if (toFromMatch?.[1] && toFromMatch?.[2]) {
+        let destination = normalizeDirectionsPlace(toFromMatch[1]);
+        let origin = normalizeDirectionsPlace(toFromMatch[2]);
+        if (isComplexAlias(origin)) origin = homeBase;
+        if (isComplexAlias(destination)) destination = homeBase;
+        return { origin: origin || homeBase, destination: destination || null };
+    }
+
+    const destination = normalizeDirectionsPlace(buildDirectionsDestination(text) || '');
+    if (isComplexAlias(destination)) {
+        return { origin: homeBase, destination: homeBase };
+    }
+    return { origin: homeBase, destination: destination || null };
+}
+
 async function getDirectionsReply(userMessage, language = 'bg') {
     if (!GOOGLE_DIRECTIONS_API_KEY) return null;
 
-    const destination = buildDirectionsDestination(userMessage);
+    const { origin, destination } = parseDirectionsEndpoints(userMessage);
     if (!destination) return null;
 
     try {
         const params = new URLSearchParams({
-            origin: GOOGLE_DIRECTIONS_DEFAULT_ORIGIN,
+            origin,
             destination,
             mode: 'driving',
             language: language === 'en' ? 'en' : 'bg',
@@ -349,12 +394,19 @@ async function getDirectionsReply(userMessage, language = 'bg') {
             return `${index + 1}. ${instruction}${distanceText || durationText ? ` (${distanceText}${distanceText && durationText ? ', ' : ''}${durationText})` : ''}`;
         });
 
-        const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(GOOGLE_DIRECTIONS_DEFAULT_ORIGIN)}&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+        const resolvedOrigin = (typeof leg?.start_location?.lat === 'number' && typeof leg?.start_location?.lng === 'number')
+            ? `${leg.start_location.lat},${leg.start_location.lng}`
+            : (leg.start_address || origin);
+        const resolvedDestination = (typeof leg?.end_location?.lat === 'number' && typeof leg?.end_location?.lng === 'number')
+            ? `${leg.end_location.lat},${leg.end_location.lng}`
+            : (leg.end_address || destination);
+
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(resolvedOrigin)}&destination=${encodeURIComponent(resolvedDestination)}&travelmode=driving`;
 
         if (language === 'en') {
-            return `✅ SOURCE: Google Directions API (live)\nRoute from ${leg.start_address || GOOGLE_DIRECTIONS_DEFAULT_ORIGIN} to ${leg.end_address || destination}:\nDistance: ${leg.distance?.text || 'N/A'}\nEstimated time: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nOpen in Google Maps: ${mapsUrl}`;
+            return `✅ SOURCE: Google Directions API (live)\nRoute from ${leg.start_address || origin} to ${leg.end_address || destination}:\nDistance: ${leg.distance?.text || 'N/A'}\nEstimated time: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nOpen in Google Maps: ${mapsUrl}`;
         }
-        return `✅ ИЗТОЧНИК: Google Directions API (live)\nМаршрут от ${leg.start_address || GOOGLE_DIRECTIONS_DEFAULT_ORIGIN} до ${leg.end_address || destination}:\nРазстояние: ${leg.distance?.text || 'N/A'}\nОриентировъчно време: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nОтвори в Google Maps: ${mapsUrl}`;
+        return `✅ ИЗТОЧНИК: Google Directions API (live)\nМаршрут от ${leg.start_address || origin} до ${leg.end_address || destination}:\nРазстояние: ${leg.distance?.text || 'N/A'}\nОриентировъчно време: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nОтвори в Google Maps: ${mapsUrl}`;
     } catch (error) {
         if (error?.name === 'AbortError') {
             console.warn(`[DIRECTIONS] ⚠️ Timeout след ${GOOGLE_DIRECTIONS_TIMEOUT_MS}ms`);
@@ -1036,49 +1088,10 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         }
     }
 
-    const allowExternalLookups = role !== 'stranger';
-    const allowDirectionsLookup = true;
-
-    // 2.1. Google Directions
-    if (allowDirectionsLookup && isDirectionsRequest(userMessage)) {
-        const directionsReply = await getDirectionsReply(userMessage, preferredLanguage);
-        if (directionsReply) return directionsReply;
-
-        if (GOOGLE_PLACES_STRICT_MODE) {
-            return preferredLanguage === 'en'
-                ? '❌ SOURCE: Google Directions API (live) not available.'
-                : '❌ ИЗТОЧНИК: Google Directions API (live) не е наличен.';
-        }
-        forceGeminiDirect = true;
-        console.log('[DIRECTIONS] ↪️ Няма live directions. Форсирам Gemini direct.');
-    }
-
-    // 2.2. Google Places
-    if (allowExternalLookups && (isLivePlacesLookupRequest(userMessage) || isMapStyleQuestion(userMessage))) {
-        const livePlacesReply = await getLivePlacesReply(userMessage, preferredLanguage);
-        if (livePlacesReply) return livePlacesReply;
-
-        if (GOOGLE_PLACES_STRICT_MODE) {
-            const blockedHint = isPlacesBlockedNow() ? `\n${getPlacesBlockedHint(preferredLanguage)}` : '';
-            return preferredLanguage === 'en'
-                ? `❌ SOURCE: Google Maps Places API (live) not available.${blockedHint}`
-                : `❌ ИЗТОЧНИК: Google Maps Places API (live) не е наличен.${blockedHint}`;
-        }
-        forceGeminiDirect = true;
-        console.log('[PLACES] ↪️ Няма live maps резултат. Форсирам Gemini direct.');
-    }
-
-    // 2.3. Brave web search
-    if (allowExternalLookups && !manualScopeQuestion && isSearchEligibleQuery(userMessage)) {
-        const searchQuery = preferredLanguage === 'en'
-            ? userMessage
-            : `${userMessage} near Bansko Razlog Bulgaria`;
-        braveSearchResults = await searchBrave(searchQuery, preferredLanguage);
-        if (braveSearchResults) {
-            console.log('[BRAVE] ✅ Интегрирам резултатите в Gemini контекст');
-            forceGeminiDirect = true;
-        }
-    }
+    const isAuthorized = role === 'guest' || role === 'host';
+    const hasDirectionsIntent = isDirectionsRequest(userMessage);
+    const hasPlacesIntent = isLivePlacesLookupRequest(userMessage) || isMapStyleQuestion(userMessage);
+    const hasSearchIntent = !manualScopeQuestion && isSearchEligibleQuery(userMessage);
 
     // 2.4. Сигурностна бариера за командване на ток от неоторизиран
     const requestedPowerCommand = isPowerCommandRequest(userMessage);
@@ -1134,13 +1147,6 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     // 5. Системна инструкция
     let systemInstruction = buildSystemInstruction(role, data, powerStatus, manualContent, currentDateTime, preferredLanguage);
 
-    if (braveSearchResults) {
-        const searchContextLabel = preferredLanguage === 'en'
-            ? '\n\n=== LIVE WEB SEARCH RESULTS (via Brave Search API) ===\nFor this request, treat these live results as the highest-priority source. Answer only from these results for web-search content. Do not say that information is missing if relevant results are present. Do not invent venues, names, addresses, menus, or locations beyond what is explicitly stated below. If the live results are inconclusive, say so plainly.'
-            : '\n\n=== LIVE WEB SEARCH РЕЗУЛТАТИ (via Brave Search API) ===\nЗа този въпрос третирай тези live резултати като източник с най-висок приоритет. За уеб-търсенето отговаряй само по тези резултати. Не казвай, че няма информация, ако по-долу има релевантни резултати. Не измисляй заведения, имена, адреси, менюта или локации извън изрично написаното по-долу. Ако live резултатите са неубедителни, кажи го директно.';
-        systemInstruction += `${searchContextLabel}\n${braveSearchResults}`;
-    }
-
     // 5.5. Команди за ток
     const powerCommandResult = await checkEmergencyPower(userMessage, role, data);
     if (powerCommandResult) {
@@ -1191,6 +1197,72 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
             manualLike: manualScopeQuestion,
             role
         });
+    }
+
+    // 6.2. Строг manual-only режим за неоторизиран потребител
+    if (!isAuthorized) {
+        console.log('[MODEL_ROUTING] HIERARCHY_PATH=stranger_manual_only', {
+            role,
+            manualLike: manualScopeQuestion,
+            delegatedToExternal: false
+        });
+        return preferredLanguage === 'en'
+            ? 'I can currently answer only questions covered by the public property manual.'
+            : 'В момента мога да отговарям само на въпроси, покрити в публичния наръчник на имота.';
+    }
+
+    console.log('[MODEL_ROUTING] HIERARCHY_PATH=authorized_delegated', {
+        role,
+        manualLike: manualScopeQuestion,
+        directions: hasDirectionsIntent,
+        places: hasPlacesIntent,
+        search: hasSearchIntent
+    });
+
+    // 6.3. За оторизирани: външни lookup-и СЛЕД Groq делегация
+    if (hasDirectionsIntent) {
+        const directionsReply = await getDirectionsReply(userMessage, preferredLanguage);
+        if (directionsReply) return directionsReply;
+
+        if (GOOGLE_PLACES_STRICT_MODE) {
+            return preferredLanguage === 'en'
+                ? '❌ SOURCE: Google Directions API (live) not available.'
+                : '❌ ИЗТОЧНИК: Google Directions API (live) не е наличен.';
+        }
+        forceGeminiDirect = true;
+        console.log('[DIRECTIONS] ↪️ Няма live directions. Форсирам Gemini direct.');
+    }
+
+    if (hasPlacesIntent) {
+        const livePlacesReply = await getLivePlacesReply(userMessage, preferredLanguage);
+        if (livePlacesReply) return livePlacesReply;
+
+        if (GOOGLE_PLACES_STRICT_MODE) {
+            const blockedHint = isPlacesBlockedNow() ? `\n${getPlacesBlockedHint(preferredLanguage)}` : '';
+            return preferredLanguage === 'en'
+                ? `❌ SOURCE: Google Maps Places API (live) not available.${blockedHint}`
+                : `❌ ИЗТОЧНИК: Google Maps Places API (live) не е наличен.${blockedHint}`;
+        }
+        forceGeminiDirect = true;
+        console.log('[PLACES] ↪️ Няма live maps резултат. Форсирам Gemini direct.');
+    }
+
+    if (hasSearchIntent) {
+        const searchQuery = preferredLanguage === 'en'
+            ? userMessage
+            : `${userMessage} near Bansko Razlog Bulgaria`;
+        braveSearchResults = await searchBrave(searchQuery, preferredLanguage);
+        if (braveSearchResults) {
+            console.log('[BRAVE] ✅ Интегрирам резултатите в Gemini контекст');
+            forceGeminiDirect = true;
+        }
+    }
+
+    if (braveSearchResults) {
+        const searchContextLabel = preferredLanguage === 'en'
+            ? '\n\n=== LIVE WEB SEARCH RESULTS (via Brave Search API) ===\nFor this request, treat these live results as the highest-priority source. Answer only from these results for web-search content. Do not say that information is missing if relevant results are present. Do not invent venues, names, addresses, menus, or locations beyond what is explicitly stated below. If the live results are inconclusive, say so plainly.'
+            : '\n\n=== LIVE WEB SEARCH РЕЗУЛТАТИ (via Brave Search API) ===\nЗа този въпрос третирай тези live резултати като източник с най-висок приоритет. За уеб-търсенето отговаряй само по тези резултати. Не казвай, че няма информация, ако по-долу има релевантни резултати. Не измисляй заведения, имена, адреси, менюта или локации извън изрично написаното по-долу. Ако live резултатите са неубедителни, кажи го директно.';
+        systemInstruction += `${searchContextLabel}\n${braveSearchResults}`;
     }
 
     // 6.5. Gemini генериране
