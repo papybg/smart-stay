@@ -34,6 +34,7 @@ export function buildSystemInstruction(role, data, powerStatus, manual, currentD
 
     let roleBlock = '';
     let accessWarning = '';
+    const routeFallback = "Ако не намериш информация за маршрута в мануала, отговори: 'Моля, използвайте тези координати 41.874389, 23.423650 (https://maps.app.goo.gl/so3NdoVnPGZ3cQp49) за навигация.'";
 
     if (role === 'host') {
         console.log('[AI:SSoT] 👑 Режим ДОМАКИН - Пълен административен достъп');
@@ -91,6 +92,9 @@ export function buildSystemInstruction(role, data, powerStatus, manual, currentD
      → Следом: "...около 200km от плажа на Южния черноморски бряг"
    • Ако гост пита нещо специално което не е в MANUAL:
      → "За допълнителна информация, моля предоставете Вашата резервация или имена."
+
+✅ ПРАВИЛО 4 - ROUTE FALLBACK ОТ MANUAL:
+     • ${routeFallback}
 
 ════════════════════════════════════════════════════════════════════════
 `;

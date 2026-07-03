@@ -309,6 +309,38 @@ function normalizeDirectionsPlace(value = '') {
         .trim();
 }
 
+function getManualRouteReplyForStranger(userMessage, language = 'bg') {
+    const text = String(userMessage || '').toLowerCase();
+    const asksDirections = isDirectionsRequest(userMessage);
+    if (!asksDirections) return null;
+
+    const fromSofia = /\bсофия\b|\bsofia\b/i.test(text);
+    const fromGreece = /гръц|гърц|greece|greek|кулата|промахон|илинден|ексохи/i.test(text);
+    const fromPlovdiv = /\bпловдив\b|\bplovdiv\b/i.test(text);
+
+    if (fromSofia) {
+        return language === 'en'
+            ? 'Route from Sofia to Aspen Valley: approximately 155 km, usually around 2h 30m to 3h 30m depending on traffic. Main route: Struma Motorway (A3) to Simitli, then road II-19 through Predela toward Aspen Valley / Bansko.'
+            : 'Маршрут от София до Aspen Valley: около 155 км, обичайно между 2 ч. 30 мин. и 3 ч. 30 мин. според трафика. Основен маршрут: АМ „Струма“ (A3) до Симитли, след това път II-19 през прохода Предела в посока Aspen Valley / Банско.';
+    }
+
+    if (fromGreece) {
+        return language === 'en'
+            ? 'Route from the Greek border to Aspen Valley: via Kulata checkpoint (about 100 km, around 1h 40m in normal traffic) or via Ilinden-Exochi checkpoint (about 70 km, around 1h 15m, with mountain road sections).'
+            : 'Маршрут от гръцката граница до Aspen Valley: през ГКПП Кулата (около 100 км, обичайно ~1 ч. 40 мин. при нормален трафик) или през ГКПП Илинден - Ексохи (около 70 км, обичайно ~1 ч. 15 мин., с планински участъци).';
+    }
+
+    if (fromPlovdiv) {
+        return language === 'en'
+            ? 'Route from Plovdiv to Aspen Valley: most commonly via Pazardzhik - Belovo - Yundola - Yakoruda. Approx. 145 km and around 2h 45m depending on road conditions.'
+            : 'Маршрут от Пловдив до Aspen Valley: най-често през Пазарджик - Белово - Юндола - Якоруда. Около 145 км и приблизително 2 ч. 45 мин. според пътната обстановка.';
+    }
+
+    return language === 'en'
+        ? 'Please use these coordinates 41.874389, 23.423650 (https://maps.app.goo.gl/so3NdoVnPGZ3cQp49) for navigation.'
+        : 'Моля, използвайте тези координати 41.874389, 23.423650 (https://maps.app.goo.gl/so3NdoVnPGZ3cQp49) за навигация.';
+}
+
 function isComplexAlias(value = '') {
     const text = String(value || '').toLowerCase();
     return /^(комплекса\s+аспен\s+валей|комплекс\s+аспен\s+валей|аспен\s+валей|aspen\s*valley|комплекса|комплекс|апартамент(а)?|имот(а)?|до\s+нас|to\s+the\s+complex)$/i.test(text)
@@ -1092,6 +1124,9 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     const hasDirectionsIntent = isDirectionsRequest(userMessage);
     const hasPlacesIntent = isLivePlacesLookupRequest(userMessage) || isMapStyleQuestion(userMessage);
     const hasSearchIntent = !manualScopeQuestion && isSearchEligibleQuery(userMessage);
+    const routeFallbackReply = preferredLanguage === 'en'
+        ? 'Please use these coordinates 41.874389, 23.423650 (https://maps.app.goo.gl/so3NdoVnPGZ3cQp49) for navigation.'
+        : 'Моля, използвайте тези координати 41.874389, 23.423650 (https://maps.app.goo.gl/so3NdoVnPGZ3cQp49) за навигация.';
 
     // 2.4. Сигурностна бариера за командване на ток от неоторизиран
     const requestedPowerCommand = isPowerCommandRequest(userMessage);
@@ -1206,6 +1241,19 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
             manualLike: manualScopeQuestion,
             delegatedToExternal: false
         });
+        if (hasDirectionsIntent) {
+            const routeReply = getManualRouteReplyForStranger(userMessage, preferredLanguage);
+            if (routeReply) {
+                const usedFallback = routeReply.includes('41.874389, 23.423650');
+                console.log('[MODEL_ROUTING] ROUTE_MANUAL_RESULT', {
+                    source: usedFallback ? 'coordinates_fallback' : 'manual_route',
+                    role
+                });
+                return routeReply;
+            }
+            console.log('[MODEL_ROUTING] ROUTE_FALLBACK=manual_coordinates');
+            return routeFallbackReply;
+        }
         return preferredLanguage === 'en'
             ? 'I can currently answer only questions covered by the public property manual.'
             : 'В момента мога да отговарям само на въпроси, покрити в публичния наръчник на имота.';
