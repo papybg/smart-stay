@@ -481,13 +481,23 @@ async function getDirectionsReply(userMessage, language = 'bg') {
         const leg = data.routes[0]?.legs?.[0];
         if (!leg) return null;
 
-        const steps = Array.isArray(leg.steps) ? leg.steps.slice(0, 8) : [];
+        const allSteps = Array.isArray(leg.steps) ? leg.steps : [];
+        const steps = allSteps.slice(0, 8);
         const stepLines = steps.map((step, index) => {
             const instruction = stripHtmlTags(step?.html_instructions || step?.maneuver || '');
             const distanceText = step?.distance?.text || '';
             const durationText = step?.duration?.text || '';
             return `${index + 1}. ${instruction}${distanceText || durationText ? ` (${distanceText}${distanceText && durationText ? ', ' : ''}${durationText})` : ''}`;
         });
+        const hasMoreSteps = allSteps.length > steps.length;
+        const finalDestinationLabel = isComplexAlias(destination) || destination === ASPEN_VALLEY_COORDS
+            ? 'Aspen Valley, Разлог'
+            : (leg.end_address || destination);
+        if (hasMoreSteps) {
+            stepLines.push(`… и следвайте навигацията до: ${finalDestinationLabel}`);
+        } else {
+            stepLines.push(`Крайна точка: ${finalDestinationLabel}`);
+        }
 
         const resolvedOrigin = (typeof leg?.start_location?.lat === 'number' && typeof leg?.start_location?.lng === 'number')
             ? `${leg.start_location.lat},${leg.start_location.lng}`
@@ -499,9 +509,9 @@ async function getDirectionsReply(userMessage, language = 'bg') {
         const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(resolvedOrigin)}&destination=${encodeURIComponent(resolvedDestination)}&travelmode=driving`;
 
         if (language === 'en') {
-            return `✅ SOURCE: Google Directions API (live)\nRoute from ${leg.start_address || origin} to ${leg.end_address || destination}:\nDistance: ${leg.distance?.text || 'N/A'}\nEstimated time: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nOpen in Google Maps: ${mapsUrl}`;
+            return `✅ SOURCE: Google Directions API (live)\nRoute from ${leg.start_address || origin} to ${finalDestinationLabel}:\nDistance: ${leg.distance?.text || 'N/A'}\nEstimated time: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nOpen in Google Maps: ${mapsUrl}`;
         }
-        return `✅ ИЗТОЧНИК: Google Directions API (live)\nМаршрут от ${leg.start_address || origin} до ${leg.end_address || destination}:\nРазстояние: ${leg.distance?.text || 'N/A'}\nОриентировъчно време: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nОтвори в Google Maps: ${mapsUrl}`;
+        return `✅ ИЗТОЧНИК: Google Directions API (live)\nМаршрут от ${leg.start_address || origin} до ${finalDestinationLabel}:\nРазстояние: ${leg.distance?.text || 'N/A'}\nОриентировъчно време: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nОтвори в Google Maps: ${mapsUrl}`;
     } catch (error) {
         if (error?.name === 'AbortError') {
             console.warn(`[DIRECTIONS] ⚠️ Timeout след ${GOOGLE_DIRECTIONS_TIMEOUT_MS}ms`);
