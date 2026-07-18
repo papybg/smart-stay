@@ -33,7 +33,7 @@ export function buildGroqRouterInstruction(role, preferredLanguage, manualConten
         : 'You are speaking with an authenticated user (guest or host).';
     const manualSnippet = String(manualContent || '').slice(0, 12000);
 
-    const unauthorizedReply = 'За този въпрос е нужна оторизация. Моля, въведете регистрационния код на резервацията, за да продължим.';
+    const unauthorizedReply = 'За този въпрос е нужна оторизация. Моля, въведете регистрационния код на активна резервация, за да продължим.';
     const genericRefusalReply = 'В момента не мога да отговоря на този въпрос.';
 
     return `You are Smart-Stay Groq Router. ${languageRule}

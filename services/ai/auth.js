@@ -5,6 +5,20 @@
 import { validateToken } from '../sessionManager.js';
 import { sql, HOST_CODE, ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS } from './config.js';
 
+function isBookingWithinAccessWindow(booking) {
+    if (!booking?.check_in || !booking?.check_out) return false;
+
+    const checkInTs = new Date(booking.check_in);
+    const checkOutTs = new Date(booking.check_out);
+    if (Number.isNaN(checkInTs.getTime()) || Number.isNaN(checkOutTs.getTime())) return false;
+
+    const windowStart = new Date(checkInTs.getTime() - (ACCESS_START_BEFORE_CHECKIN_HOURS * 60 * 60 * 1000));
+    const windowEnd = new Date(checkOutTs.getTime() + (ACCESS_END_AFTER_CHECKOUT_HOURS * 60 * 60 * 1000));
+    const now = new Date();
+
+    return now >= windowStart && now <= windowEnd;
+}
+
 // ── Host verification ──────────────────────────────────────────────────────
 
 /**
@@ -156,8 +170,14 @@ export async function verifyGuestByHMCode(authCode, userMessage, history = []) {
         `;
 
         if (bookings.length > 0) {
-            console.log('[DATABASE] ✅ Резервация намерена за код:', codeToVerify);
-            return { role: 'guest', booking: bookings[0] };
+            const booking = bookings[0];
+            if (!isBookingWithinAccessWindow(booking)) {
+                console.log('[DATABASE] ⚠️ Кодът съществува, но е извън разрешения прозорец за достъп:', codeToVerify);
+                return { role: 'stranger', booking: null };
+            }
+
+            console.log('[DATABASE] ✅ Резервация намерена за код (в разрешен прозорец):', codeToVerify);
+            return { role: 'guest', booking };
         }
 
         // Диагностичен лог: кодът съществува ли, но е изтекъл/анулиран
