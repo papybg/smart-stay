@@ -1279,8 +1279,8 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
             return routeFallbackReply;
         }
         return preferredLanguage === 'en'
-            ? 'I can currently answer only questions covered by the public property manual.'
-            : 'В момента мога да отговарям само на въпроси, покрити в публичния наръчник на имота.';
+            ? 'This question requires authorization. Please enter your reservation registration code so I can continue.'
+            : 'За този въпрос е нужна оторизация. Моля, въведете регистрационния код на резервацията, за да продължим.';
     }
 
     console.log('[MODEL_ROUTING] HIERARCHY_PATH=authorized_delegated', {

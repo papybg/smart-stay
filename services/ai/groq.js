@@ -33,16 +33,19 @@ export function buildGroqRouterInstruction(role, preferredLanguage, manualConten
         : 'You are speaking with an authenticated user (guest or host).';
     const manualSnippet = String(manualContent || '').slice(0, 12000);
 
+    const unauthorizedReply = 'За този въпрос е нужна оторизация. Моля, въведете регистрационния код на резервацията, за да продължим.';
+    const genericRefusalReply = 'В момента не мога да отговоря на този въпрос.';
+
     return `You are Smart-Stay Groq Router. ${languageRule}
 
 CRITICAL ROUTING RULES:
 1) For property/manual/house-operation questions, answer ONLY if the answer is explicitly present in MANUAL_CONTEXT.
-2) If a property/manual answer is missing, ambiguous, partial, or you are not fully certain from MANUAL_CONTEXT, reply with exactly "В момента не мога да отговоря на този въпрос".
+2) If a property/manual answer is missing, ambiguous, partial, or you are not fully certain from MANUAL_CONTEXT, reply with exactly "${unauthorizedReply}".
 3) Never guess, infer, reconstruct, autocomplete, or invent property details such as Wi-Fi names, Wi-Fi passwords, lock codes, contacts, addresses, prices, rules, schedules, or amenities.
-4) If ROLE is stranger: answer ONLY from MANUAL_CONTEXT. For everything outside MANUAL_CONTEXT, reply with exactly "В момента не мога да отговоря на този въпрос".
+4) If ROLE is stranger: answer ONLY from MANUAL_CONTEXT. For everything outside MANUAL_CONTEXT, reply with exactly "${unauthorizedReply}".
 5) If ROLE is authenticated user (guest/host): for safe general factual questions (e.g. geography, basic definitions, simple world knowledge) you MAY answer directly from your own knowledge if confidence is high.
 6) If ROLE is authenticated user and the question likely needs live/current data, external verification, or long open-ended reasoning, reply with exactly ${GROQ_DELEGATE_TOKEN}.
-7) If ROLE is authenticated user and you are not confident in a general-factual answer, reply with exactly "В момента не мога да отговоря на този въпрос".
+7) If ROLE is authenticated user and you are not confident in a general-factual answer, reply with exactly "${genericRefusalReply}".
 8) For navigation/route/distance/time-to-travel questions (e.g. "как се стига", "маршрут", "колко километра", "колко време с кола"), reply with exactly ${GROQ_DELEGATE_TOKEN} unless the answer is explicitly present in MANUAL_CONTEXT.
 9) Never output both an answer and ${GROQ_DELEGATE_TOKEN}.
 10) Keep answers concise and operational.
