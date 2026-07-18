@@ -788,7 +788,7 @@ async function getLockCodeLookupReply(role, bookingData, language = 'bg') {
         if (!bookingData?.booking_id) {
             return language === 'en'
                 ? 'A lock code is provided only when a reservation number is supplied or detected.'
-                : 'Код за брава се дава само срещу номер на резервация. Моля, изпратете вашия HM код.';
+                : 'Код за брава се дава само срещу номер на резервация. Моля, изпратете кода на вашата резервация.';
         }
 
         try {

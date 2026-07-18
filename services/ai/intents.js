@@ -67,19 +67,29 @@ export function isPowerStatusRequest(userMessage) {
 
 // ── Reservation / booking ──────────────────────────────────────────────────
 
+function isReservationCodeToken(value = '') {
+    const token = String(value || '').trim();
+    return /^(?=[A-Za-z0-9_-]{5,40}$)(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]+$/.test(token);
+}
+
+function findReservationCodeTokenInText(value = '') {
+    const tokens = String(value || '').match(/[A-Za-z0-9_-]{5,40}/g) || [];
+    return tokens.find(token => isReservationCodeToken(token)) || null;
+}
+
 export function containsReservationCode(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /HM[A-Z0-9_-]+/i.test(userMessage);
+    return Boolean(findReservationCodeTokenInText(userMessage));
 }
 
 export function isBareReservationCodeMessage(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /^HM[A-Z0-9_-]+$/i.test(String(userMessage).trim());
+    return isReservationCodeToken(userMessage);
 }
 
 export function isReservationCodeIntro(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /код(ът)?\s*(ми)?\s*за\s*резервация|reservation code|my code is|my reservation is|i am\s+hm[a-z0-9_-]+|i'm\s+hm[a-z0-9_-]+|аз\s+съм\s*hm[a-z0-9_-]+|имам резервация|i have reservation|i have a reservation/i.test(userMessage);
+    return /код(ът)?\s*(ми)?\s*за\s*резервация|reservation code|my code is|my reservation is|i am\s+[a-z0-9_-]{5,40}|i'm\s+[a-z0-9_-]{5,40}|аз\s+съм\s*[a-z0-9_-]{5,40}|имам резервация|i have reservation|i have a reservation/i.test(userMessage);
 }
 
 export function isReservationRefreshRequest(userMessage) {

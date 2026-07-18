@@ -19,6 +19,16 @@ function isBookingWithinAccessWindow(booking) {
     return now >= windowStart && now <= windowEnd;
 }
 
+function isReservationCodeToken(value = '') {
+    const token = String(value || '').trim();
+    return /^(?=[A-Za-z0-9_-]{5,40}$)(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]+$/.test(token);
+}
+
+function findReservationCodeTokenInText(value = '') {
+    const tokens = String(value || '').match(/[A-Za-z0-9_-]{5,40}/g) || [];
+    return tokens.find(token => isReservationCodeToken(token)) || null;
+}
+
 // ── Host verification ──────────────────────────────────────────────────────
 
 /**
@@ -91,23 +101,22 @@ export function isHostVerifiedInHistory(history = []) {
 // ── Guest verification ─────────────────────────────────────────────────────
 
 /**
- * Верифицира гост чрез HM резервационен код в базата данни.
+ * Верифицира гост чрез резервационен код в базата данни.
  */
 export async function verifyGuestByHMCode(authCode, userMessage, history = []) {
-    console.log('[SECURITY] Верификация на гост: търся HM код...');
-    const hmCodePattern = /HM[A-Z0-9_-]+/i;
+    console.log('[SECURITY] Верификация на гост: търся код за резервация...');
 
     let codeToVerify = null;
-    if (authCode && hmCodePattern.test(authCode)) {
-        codeToVerify = authCode.toUpperCase();
-        console.log('[SECURITY] HM код намерен в authCode');
+    if (authCode && isReservationCodeToken(authCode)) {
+        codeToVerify = String(authCode).trim().toUpperCase();
+        console.log('[SECURITY] Код за резервация намерен в authCode');
     }
 
     if (!codeToVerify && userMessage) {
-        const match = userMessage.match(hmCodePattern);
-        if (match) {
-            codeToVerify = match[0].toUpperCase();
-            console.log('[SECURITY] HM код намерен в userMessage');
+        const token = findReservationCodeTokenInText(userMessage);
+        if (token) {
+            codeToVerify = token.toUpperCase();
+            console.log('[SECURITY] Код за резервация намерен в userMessage');
         }
     }
 
@@ -115,17 +124,17 @@ export async function verifyGuestByHMCode(authCode, userMessage, history = []) {
         for (let index = history.length - 1; index >= 0; index--) {
             const msg = history[index];
             if (!msg || msg.role !== 'user' || typeof msg.content !== 'string') continue;
-            const match = msg.content.match(hmCodePattern);
-            if (match) {
-                codeToVerify = match[0].toUpperCase();
-                console.log('[SECURITY] HM код намерен в history');
+            const token = findReservationCodeTokenInText(msg.content);
+            if (token) {
+                codeToVerify = token.toUpperCase();
+                console.log('[SECURITY] Код за резервация намерен в history');
                 break;
             }
         }
     }
 
     if (!codeToVerify) {
-        console.log('[SECURITY] Не е намерен HM код в authCode или съобщение');
+        console.log('[SECURITY] Не е намерен код за резервация в authCode или съобщение');
         // Опит за поименна верификация
         if (userMessage && sql) {
             const nameMatch = userMessage.match(/\b([A-Za-zА-Яа-я]+)\s+([A-Za-zА-Яа-я]+)\b/);
@@ -155,13 +164,13 @@ export async function verifyGuestByHMCode(authCode, userMessage, history = []) {
     }
 
     if (!sql) {
-        console.warn('[DATABASE] SQL клиент не е инициализиран - не мога да верифицирам HM код');
+        console.warn('[DATABASE] SQL клиент не е инициализиран - не мога да верифицирам код за резервация');
         return { role: 'stranger', booking: null };
     }
 
     try {
         const normalizedReservationCode = codeToVerify.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-        console.log('[DATABASE] Запитвам таблица резервации за HM код:', codeToVerify);
+        console.log('[DATABASE] Запитвам таблица резервации за код:', codeToVerify);
         const bookings = await sql`
             SELECT * FROM bookings
             WHERE regexp_replace(UPPER(reservation_code), '[^A-Z0-9]', '', 'g') = ${normalizedReservationCode}
@@ -191,7 +200,7 @@ export async function verifyGuestByHMCode(authCode, userMessage, history = []) {
             console.log('[DATABASE] ⚠️ Кодът съществува, но не е активен (изтекъл или анулиран):', codeToVerify);
         }
 
-        console.log('[DATABASE] ❌ Не е намерена резервация за HM код:', codeToVerify);
+        console.log('[DATABASE] ❌ Не е намерена резервация за код:', codeToVerify);
         return { role: 'stranger', booking: null };
     } catch (e) {
         console.error('[DATABASE] Грешка при запитване на резервации:', e.message);
@@ -325,7 +334,7 @@ export async function determineUserRole(authCode, userMessage, history = []) {
         return { role: 'host', data: null };
     }
 
-    // ПРОВЕРКА #2: GUEST (HM код в базата)
+    // ПРОВЕРКА #2: GUEST (код за резервация в базата)
     const guestCheck = await verifyGuestByHMCode(authCode, userMessage, history);
     if (guestCheck.role === 'guest' && guestCheck.booking) {
         const booking = guestCheck.booking;
