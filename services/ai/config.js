@@ -57,6 +57,10 @@ export const GOOGLE_PLACES_BLOCK_COOLDOWN_MS = Number(process.env.GOOGLE_PLACES_
 export const GOOGLE_DIRECTIONS_API_KEY = process.env.GOOGLE_DIRECTIONS_API_KEY || GOOGLE_PLACES_API_KEY;
 export const GOOGLE_DIRECTIONS_TIMEOUT_MS = Number(process.env.GOOGLE_DIRECTIONS_TIMEOUT_MS || 6000);
 export const GOOGLE_DIRECTIONS_DEFAULT_ORIGIN = process.env.GOOGLE_DIRECTIONS_DEFAULT_ORIGIN || 'Aspen Valley Golf, Ski and Spa Resort, Razlog';
+export const GOOGLE_DIRECTIONS_CACHE_TTL_MS = Number(process.env.GOOGLE_DIRECTIONS_CACHE_TTL_MS || 1800000);
+export const GOOGLE_DIRECTIONS_RATE_LIMIT_WINDOW_MS = Number(process.env.GOOGLE_DIRECTIONS_RATE_LIMIT_WINDOW_MS || 600000);
+export const GOOGLE_DIRECTIONS_RATE_LIMIT_MAX = Number(process.env.GOOGLE_DIRECTIONS_RATE_LIMIT_MAX || 6);
+export const GOOGLE_MAPS_BUDGET_ALERTS_CONFIGURED = (process.env.GOOGLE_MAPS_BUDGET_ALERTS_CONFIGURED || 'false').toLowerCase() === 'true';
 
 // ── Brave Search ───────────────────────────────────────────────────────────
 export const BRAVE_SEARCH_API_KEY = process.env.BRAVE_SEARCH_API_KEY || null;

@@ -10,6 +10,10 @@ import {
     GOOGLE_PLACES_STRICT_MODE, GOOGLE_PLACES_TIMEOUT_MS,
     GOOGLE_PLACES_BLOCK_COOLDOWN_MS,
     GOOGLE_DIRECTIONS_API_KEY, GOOGLE_DIRECTIONS_TIMEOUT_MS,
+    GOOGLE_DIRECTIONS_CACHE_TTL_MS,
+    GOOGLE_DIRECTIONS_RATE_LIMIT_WINDOW_MS,
+    GOOGLE_DIRECTIONS_RATE_LIMIT_MAX,
+    GOOGLE_MAPS_BUDGET_ALERTS_CONFIGURED,
     BACKUP_API_KEY, BACKUP_API_URL, BACKUP_MODEL,
     MODELS, GROQ_MODEL, GROQ_FALLBACK_MODEL,
     ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS,
@@ -302,6 +306,48 @@ function stripHtmlTags(value = '') {
 
 const ASPEN_VALLEY_COORDS = '41.874389,23.423650';
 const SOFIA_AIRPORT_CANONICAL = 'Sofia Airport (SOF), Sofia, Bulgaria';
+const directionsCache = new Map();
+const directionsRateState = new Map();
+let hasWarnedForMapsBudgetAlerts = false;
+
+function normalizeRateLimitKeySegment(value = '') {
+    return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 80);
+}
+
+function getDirectionsRateLimitKey(role = 'stranger', bookingData = null) {
+    if (role === 'guest' && bookingData?.reservation_code) {
+        return `guest:${normalizeRateLimitKeySegment(bookingData.reservation_code)}`;
+    }
+    if (role === 'host') return 'host:global';
+    return `stranger:${normalizeRateLimitKeySegment(bookingData?.reservation_code || '') || 'anon'}`;
+}
+
+function isBroadCountryOrigin(value = '') {
+    const normalized = String(value || '').toLowerCase().replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+    return /^(гърция|гръц(ия|ка)|greece|greek|македония|северна\s+македония|north\s*macedonia|macedonia|албания|albania|сърбия|serbia|румъния|romania|турция|turkey)$/.test(normalized);
+}
+const BORDER_ORIGINS = [
+    {
+        pattern: /^(гърция|гръц(ия|ка)|greece|greek)$/i,
+        place: 'Kulata-Promachonas Border Crossing, Bulgaria'
+    },
+    {
+        pattern: /^(македония|северна\s+македония|north\s*macedonia|macedonia|албания|albania)$/i,
+        place: 'Stanke Lisichkovo Border Checkpoint, Bulgaria'
+    },
+    {
+        pattern: /^(сърбия|serbia)$/i,
+        place: 'Kalotina Border Checkpoint, Bulgaria'
+    },
+    {
+        pattern: /^(румъния|romania)$/i,
+        place: 'Ruse Border Checkpoint, Bulgaria'
+    },
+    {
+        pattern: /^(турция|turkey)$/i,
+        place: 'Kapitan Andreevo Border Checkpoint, Bulgaria'
+    }
+];
 
 function normalizeDirectionsPlace(value = '') {
     return String(value || '')
@@ -403,6 +449,12 @@ function normalizeKnownDirectionsPlace(value = '') {
         return 'Razlog, Bulgaria';
     }
 
+    for (const border of BORDER_ORIGINS) {
+        if (border.pattern.test(normalized)) {
+            return border.place;
+        }
+    }
+
     return raw;
 }
 
@@ -410,42 +462,80 @@ function parseDirectionsEndpoints(userMessage = '') {
     const text = String(userMessage || '').trim();
     const homeBase = ASPEN_VALLEY_COORDS;
 
-    if (!text) return { origin: homeBase, destination: null };
+    if (!text) return { origin: homeBase, destination: null, rawOrigin: '', rawDestination: '' };
 
     const fromToMatch = text.match(/(?:^|\s)(?:от|from)\s+(.+?)\s+(?:до|to)\s+(.+)$/i);
     if (fromToMatch?.[1] && fromToMatch?.[2]) {
-        let origin = normalizeDirectionsPlace(fromToMatch[1]);
-        let destination = normalizeDirectionsPlace(fromToMatch[2]);
+        const rawOrigin = normalizeDirectionsPlace(fromToMatch[1]);
+        const rawDestination = normalizeDirectionsPlace(fromToMatch[2]);
+        let origin = rawOrigin;
+        let destination = rawDestination;
         origin = normalizeKnownDirectionsPlace(origin);
         destination = normalizeKnownDirectionsPlace(destination);
         if (isComplexAlias(origin)) origin = homeBase;
         if (isComplexAlias(destination)) destination = homeBase;
-        return { origin: origin || homeBase, destination: destination || null };
+        return { origin: origin || homeBase, destination: destination || null, rawOrigin, rawDestination };
     }
 
     const toFromMatch = text.match(/(?:^|\s)(?:до|to)\s+(.+?)\s+(?:от|from)\s+(.+)$/i);
     if (toFromMatch?.[1] && toFromMatch?.[2]) {
-        let destination = normalizeDirectionsPlace(toFromMatch[1]);
-        let origin = normalizeDirectionsPlace(toFromMatch[2]);
+        const rawDestination = normalizeDirectionsPlace(toFromMatch[1]);
+        const rawOrigin = normalizeDirectionsPlace(toFromMatch[2]);
+        let destination = rawDestination;
+        let origin = rawOrigin;
         destination = normalizeKnownDirectionsPlace(destination);
         origin = normalizeKnownDirectionsPlace(origin);
         if (isComplexAlias(origin)) origin = homeBase;
         if (isComplexAlias(destination)) destination = homeBase;
-        return { origin: origin || homeBase, destination: destination || null };
+        return { origin: origin || homeBase, destination: destination || null, rawOrigin, rawDestination };
     }
 
-    const destination = normalizeKnownDirectionsPlace(normalizeDirectionsPlace(buildDirectionsDestination(text) || ''));
+    const rawDestination = normalizeDirectionsPlace(buildDirectionsDestination(text) || '');
+    const destination = normalizeKnownDirectionsPlace(rawDestination);
     if (isComplexAlias(destination)) {
-        return { origin: homeBase, destination: homeBase };
+        return { origin: homeBase, destination: homeBase, rawOrigin: '', rawDestination };
     }
-    return { origin: homeBase, destination: destination || null };
+    return { origin: homeBase, destination: destination || null, rawOrigin: '', rawDestination };
 }
 
-async function getDirectionsReply(userMessage, language = 'bg') {
+async function getDirectionsReply(userMessage, language = 'bg', role = 'stranger', bookingData = null) {
     if (!GOOGLE_DIRECTIONS_API_KEY) return null;
 
-    const { origin, destination } = parseDirectionsEndpoints(userMessage);
+    const { origin, destination, rawOrigin } = parseDirectionsEndpoints(userMessage);
     if (!destination) return null;
+
+    if (rawOrigin && isBroadCountryOrigin(rawOrigin)) {
+        return language === 'en'
+            ? 'To avoid routing from a random point in that country, please specify a city or border checkpoint (e.g. Kulata, Ilinden, Stanke Lisichkovo).'
+            : 'За да избегна маршрут от случайна точка в държавата, посочете град или ГКПП (напр. Кулата, Илинден, Станке Лисичково).';
+    }
+
+    const limiterKey = getDirectionsRateLimitKey(role, bookingData);
+    const nowTs = Date.now();
+    const limiter = directionsRateState.get(limiterKey) || { count: 0, resetAt: nowTs + GOOGLE_DIRECTIONS_RATE_LIMIT_WINDOW_MS };
+    if (nowTs > limiter.resetAt) {
+        limiter.count = 0;
+        limiter.resetAt = nowTs + GOOGLE_DIRECTIONS_RATE_LIMIT_WINDOW_MS;
+    }
+    limiter.count += 1;
+    directionsRateState.set(limiterKey, limiter);
+
+    if (limiter.count > GOOGLE_DIRECTIONS_RATE_LIMIT_MAX) {
+        return language === 'en'
+            ? 'Route requests are temporarily rate-limited. Please try again in a few minutes, or use coordinates 41.874389, 23.423650.'
+            : 'Заявките за маршрут са временно ограничени. Опитайте след няколко минути или използвайте координати 41.874389, 23.423650.';
+    }
+
+    if (!GOOGLE_MAPS_BUDGET_ALERTS_CONFIGURED && !hasWarnedForMapsBudgetAlerts) {
+        hasWarnedForMapsBudgetAlerts = true;
+        console.warn('[DIRECTIONS] ⚠️ GOOGLE_MAPS_BUDGET_ALERTS_CONFIGURED=false. Препоръчително е да настроите budget alerts в Google Cloud.');
+    }
+
+    const cacheKey = `${String(language || 'bg').toLowerCase()}|${String(origin || '').toLowerCase()}|${String(destination || '').toLowerCase()}`;
+    const cached = directionsCache.get(cacheKey);
+    if (cached && cached.expiresAt > nowTs && typeof cached.reply === 'string' && cached.reply.trim()) {
+        return cached.reply;
+    }
 
     try {
         const params = new URLSearchParams({
@@ -509,9 +599,13 @@ async function getDirectionsReply(userMessage, language = 'bg') {
         const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(resolvedOrigin)}&destination=${encodeURIComponent(resolvedDestination)}&travelmode=driving`;
 
         if (language === 'en') {
-            return `✅ SOURCE: Google Directions API (live)\nRoute from ${leg.start_address || origin} to ${finalDestinationLabel}:\nDistance: ${leg.distance?.text || 'N/A'}\nEstimated time: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nOpen in Google Maps: ${mapsUrl}`;
+            const reply = `✅ SOURCE: Google Directions API (live)\nRoute from ${leg.start_address || origin} to ${finalDestinationLabel}:\nDistance: ${leg.distance?.text || 'N/A'}\nEstimated time: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nOpen in Google Maps: ${mapsUrl}`;
+            directionsCache.set(cacheKey, { reply, expiresAt: Date.now() + GOOGLE_DIRECTIONS_CACHE_TTL_MS });
+            return reply;
         }
-        return `✅ ИЗТОЧНИК: Google Directions API (live)\nМаршрут от ${leg.start_address || origin} до ${finalDestinationLabel}:\nРазстояние: ${leg.distance?.text || 'N/A'}\nОриентировъчно време: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nОтвори в Google Maps: ${mapsUrl}`;
+        const reply = `✅ ИЗТОЧНИК: Google Directions API (live)\nМаршрут от ${leg.start_address || origin} до ${finalDestinationLabel}:\nРазстояние: ${leg.distance?.text || 'N/A'}\nОриентировъчно време: ${leg.duration?.text || 'N/A'}\n\n${stepLines.join('\n')}\n\nОтвори в Google Maps: ${mapsUrl}`;
+        directionsCache.set(cacheKey, { reply, expiresAt: Date.now() + GOOGLE_DIRECTIONS_CACHE_TTL_MS });
+        return reply;
     } catch (error) {
         if (error?.name === 'AbortError') {
             console.warn(`[DIRECTIONS] ⚠️ Timeout след ${GOOGLE_DIRECTIONS_TIMEOUT_MS}ms`);
@@ -1342,7 +1436,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
 
     // 6.3. За оторизирани: външни lookup-и СЛЕД Groq делегация
     if (hasDirectionsIntent) {
-        const directionsReply = await getDirectionsReply(userMessage, preferredLanguage);
+        const directionsReply = await getDirectionsReply(userMessage, preferredLanguage, role, data);
         if (directionsReply) return directionsReply;
 
         if (GOOGLE_PLACES_STRICT_MODE) {
@@ -1350,8 +1444,8 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
                 ? '❌ SOURCE: Google Directions API (live) not available.'
                 : '❌ ИЗТОЧНИК: Google Directions API (live) не е наличен.';
         }
-        forceGeminiDirect = true;
-        console.log('[DIRECTIONS] ↪️ Няма live directions. Форсирам Gemini direct.');
+        console.log('[DIRECTIONS] ↪️ Няма live directions. Връщам координати fallback (без Gemini).');
+        return routeFallbackReply;
     }
 
     if (hasPlacesIntent) {
