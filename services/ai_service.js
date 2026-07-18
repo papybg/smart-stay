@@ -10,7 +10,6 @@ import {
     GOOGLE_PLACES_STRICT_MODE, GOOGLE_PLACES_TIMEOUT_MS,
     GOOGLE_PLACES_BLOCK_COOLDOWN_MS,
     GOOGLE_DIRECTIONS_API_KEY, GOOGLE_DIRECTIONS_TIMEOUT_MS,
-    GOOGLE_DIRECTIONS_DEFAULT_ORIGIN,
     BACKUP_API_KEY, BACKUP_API_URL, BACKUP_MODEL,
     MODELS, GROQ_MODEL, GROQ_FALLBACK_MODEL,
     ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS,
@@ -301,6 +300,9 @@ function stripHtmlTags(value = '') {
     return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+const ASPEN_VALLEY_COORDS = '41.874389,23.423650';
+const SOFIA_AIRPORT_CANONICAL = 'Sofia Airport (SOF), Sofia, Bulgaria';
+
 function normalizeDirectionsPlace(value = '') {
     return String(value || '')
         .replace(/[?.!,]+$/g, '')
@@ -368,12 +370,45 @@ function getManualRouteReplyForStranger(userMessage, language = 'bg', isRouteCon
 function isComplexAlias(value = '') {
     const text = String(value || '').toLowerCase();
     return /^(комплекса\s+аспен\s+валей|комплекс\s+аспен\s+валей|аспен\s+валей|aspen\s*valley|комплекса|комплекс|апартамент(а)?|имот(а)?|до\s+нас|to\s+the\s+complex)$/i.test(text)
-        || /(комплекса\s+аспен\s+валей|комплекс\s+аспен\s+валей|\bаспен\s+валей\b|\baspen\s*valley\b)/i.test(text);
+        || /(комплекса\s+аспен\s+валей|комплекс\s+аспен\s+валей|\bаспен\s+валей\b|\baspen\s*valley\b|\bd106\b|\bд106\b|св\.?\s*никола\s*32|янколова\s*река\s*96|2760\s*разлог)/i.test(text);
+}
+
+function normalizeKnownDirectionsPlace(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return raw;
+
+    if (isComplexAlias(raw)) {
+        return ASPEN_VALLEY_COORDS;
+    }
+
+    const normalized = raw
+        .toLowerCase()
+        .replace(/[.,]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (/(летище\s*софия|sof\b|sofia\s*airport|airport\s*sofia|международно\s+летище\s+софия)/i.test(normalized)) {
+        return SOFIA_AIRPORT_CANONICAL;
+    }
+
+    if (/^(софия|sofia|sofia\s+bulgaria|софия\s+българия)$/.test(normalized)) {
+        return 'Sofia, Bulgaria';
+    }
+
+    if (/^(банско|bansko)$/.test(normalized)) {
+        return 'Bansko, Bulgaria';
+    }
+
+    if (/^(разлог|razlog)$/.test(normalized)) {
+        return 'Razlog, Bulgaria';
+    }
+
+    return raw;
 }
 
 function parseDirectionsEndpoints(userMessage = '') {
     const text = String(userMessage || '').trim();
-    const homeBase = GOOGLE_DIRECTIONS_DEFAULT_ORIGIN;
+    const homeBase = ASPEN_VALLEY_COORDS;
 
     if (!text) return { origin: homeBase, destination: null };
 
@@ -381,6 +416,8 @@ function parseDirectionsEndpoints(userMessage = '') {
     if (fromToMatch?.[1] && fromToMatch?.[2]) {
         let origin = normalizeDirectionsPlace(fromToMatch[1]);
         let destination = normalizeDirectionsPlace(fromToMatch[2]);
+        origin = normalizeKnownDirectionsPlace(origin);
+        destination = normalizeKnownDirectionsPlace(destination);
         if (isComplexAlias(origin)) origin = homeBase;
         if (isComplexAlias(destination)) destination = homeBase;
         return { origin: origin || homeBase, destination: destination || null };
@@ -390,12 +427,14 @@ function parseDirectionsEndpoints(userMessage = '') {
     if (toFromMatch?.[1] && toFromMatch?.[2]) {
         let destination = normalizeDirectionsPlace(toFromMatch[1]);
         let origin = normalizeDirectionsPlace(toFromMatch[2]);
+        destination = normalizeKnownDirectionsPlace(destination);
+        origin = normalizeKnownDirectionsPlace(origin);
         if (isComplexAlias(origin)) origin = homeBase;
         if (isComplexAlias(destination)) destination = homeBase;
         return { origin: origin || homeBase, destination: destination || null };
     }
 
-    const destination = normalizeDirectionsPlace(buildDirectionsDestination(text) || '');
+    const destination = normalizeKnownDirectionsPlace(normalizeDirectionsPlace(buildDirectionsDestination(text) || ''));
     if (isComplexAlias(destination)) {
         return { origin: homeBase, destination: homeBase };
     }
