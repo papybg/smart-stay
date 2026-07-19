@@ -81,6 +81,79 @@ function shouldTripPlacesCircuitBreaker(statusCode, errorBody = '') {
     return false;
 }
 
+function isGeoSensitiveTourismQuery(text = '') {
+    const value = String(text || '').toLowerCase();
+    return /екопът|екопътек|еко път|пътека|пътеки|преход|hiking|trail|trails|eco\s*path|tourist\s*route|nature\s*route|tour\s*route/i.test(value);
+}
+
+const LOCAL_SEARCH_CENTER = { lat: 41.874389, lng: 23.423650 };
+const DEFAULT_LOCAL_RADIUS_KM = 15;
+
+function parseRequestedRadiusKm(text = '') {
+    const value = String(text || '').toLowerCase();
+    const match = value.match(/(?:до|within|up\s*to)\s*(\d{1,3}(?:[.,]\d+)?)\s*(?:км|km)\b/i)
+        || value.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:км|km)\s*(?:радиус|radius)?/i);
+    if (!match?.[1]) return null;
+    const parsed = Number(match[1].replace(',', '.'));
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(1, Math.min(100, parsed));
+}
+
+function shouldUseLocalAreaRadius(text = '') {
+    return /(района|в\s+района|околност(та)?|наблизо|близо|край\s+комплекс(а)?|около\s+комплекс(а)?|окло\s+комплекс(а)?|nearby|around\s+the\s+complex|near\s+the\s+complex)/i
+        .test(String(text || '').toLowerCase());
+}
+
+function getLocalRadiusConstraint(userMessage = '') {
+    const requestedRadiusKm = parseRequestedRadiusKm(userMessage);
+    const hasLocalAreaHint = shouldUseLocalAreaRadius(userMessage);
+    if (!hasLocalAreaHint && !requestedRadiusKm) {
+        return { enabled: false, radiusKm: null, requestedRadiusKm: null };
+    }
+
+    const radiusKm = requestedRadiusKm || DEFAULT_LOCAL_RADIUS_KM;
+    return {
+        enabled: true,
+        radiusKm,
+        requestedRadiusKm,
+        localDefaultApplied: !requestedRadiusKm
+    };
+}
+
+function haversineKm(a, b) {
+    const R = 6371;
+    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLon = ((b.lng - a.lng) * Math.PI) / 180;
+    const x = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function buildGeoAnchoredSearchQuery(text = '', language = 'bg') {
+    const base = String(text || '').trim();
+    if (!base) {
+        return language === 'en'
+            ? 'services in Razlog and Bansko, Pirin, Bulgaria'
+            : 'услуги в гр. Разлог и гр. Банско, Пирин, България';
+    }
+
+    const hasLocalArea = /банско|разлог|bansko|razlog/i.test(base);
+    if (isGeoSensitiveTourismQuery(base)) {
+        return language === 'en'
+            ? `${base} city of Razlog city of Bansko Blagoevgrad Province Pirin Bulgaria`
+            : `${base} в района на гр. Разлог и гр. Банско, област Благоевград, Пирин, България`;
+    }
+
+    if (hasLocalArea) {
+        return language === 'en'
+            ? `${base} Pirin Bulgaria`
+            : `${base} Пирин България`;
+    }
+
+    return language === 'en'
+        ? `${base} near Bansko and Razlog, Pirin, Bulgaria`
+        : `${base} близо до Банско и Разлог, Пирин, България`;
+}
+
 // ── Automation client ──────────────────────────────────────────────────────
 
 const automationClient = {
@@ -618,11 +691,8 @@ async function getDirectionsReply(userMessage, language = 'bg', role = 'stranger
 
 // ── Google Places ──────────────────────────────────────────────────────────
 
-function buildPlacesSearchQuery(userMessage) {
-    const text = String(userMessage || '').trim();
-    if (!text) return 'services in Bansko and Razlog';
-    if (/банско|разлог|bansko|razlog/i.test(text)) return text;
-    return `${text} near Bansko and Razlog`;
+function buildPlacesSearchQuery(userMessage, language = 'bg') {
+    return buildGeoAnchoredSearchQuery(userMessage, language);
 }
 
 async function getLivePlacesReply(userMessage, language = 'bg') {
@@ -630,22 +700,37 @@ async function getLivePlacesReply(userMessage, language = 'bg') {
     if (isPlacesBlockedNow()) return null;
 
     try {
-        const textQuery = buildPlacesSearchQuery(userMessage);
+        const textQuery = buildPlacesSearchQuery(userMessage, language);
+        const radiusConstraint = getLocalRadiusConstraint(userMessage);
         const controller = new AbortController();
         const timeoutHandle = setTimeout(() => controller.abort(), GOOGLE_PLACES_TIMEOUT_MS);
+
+        const payload = {
+            textQuery,
+            pageSize: Math.max(1, Math.min(GOOGLE_PLACES_MAX_RESULTS, 5)),
+            languageCode: language === 'en' ? 'en' : 'bg'
+        };
+
+        if (radiusConstraint.enabled) {
+            payload.locationRestriction = {
+                circle: {
+                    center: {
+                        latitude: LOCAL_SEARCH_CENTER.lat,
+                        longitude: LOCAL_SEARCH_CENTER.lng
+                    },
+                    radius: radiusConstraint.radiusKm * 1000
+                }
+            };
+        }
 
         const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-                'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.googleMapsUri'
+                'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.googleMapsUri,places.location'
             },
-            body: JSON.stringify({
-                textQuery,
-                pageSize: Math.max(1, Math.min(GOOGLE_PLACES_MAX_RESULTS, 5)),
-                languageCode: language === 'en' ? 'en' : 'bg'
-            }),
+            body: JSON.stringify(payload),
             signal: controller.signal
         });
         clearTimeout(timeoutHandle);
@@ -662,20 +747,62 @@ async function getLivePlacesReply(userMessage, language = 'bg') {
         const data = await response.json();
         const places = Array.isArray(data?.places) ? data.places : [];
 
-        if (!places.length) {
+        const enrichedPlaces = places
+            .map((place) => {
+                const lat = place?.location?.latitude;
+                const lng = place?.location?.longitude;
+                const hasLocation = typeof lat === 'number' && typeof lng === 'number';
+                const distanceKm = hasLocation
+                    ? haversineKm(LOCAL_SEARCH_CENTER, { lat, lng })
+                    : null;
+                return {
+                    place,
+                    distanceKm
+                };
+            })
+            .filter((entry) => {
+                if (!radiusConstraint.enabled) return true;
+                if (!Number.isFinite(entry.distanceKm)) return false;
+                return entry.distanceKm <= radiusConstraint.radiusKm;
+            })
+            .sort((a, b) => {
+                const ad = Number.isFinite(a.distanceKm) ? a.distanceKm : Number.POSITIVE_INFINITY;
+                const bd = Number.isFinite(b.distanceKm) ? b.distanceKm : Number.POSITIVE_INFINITY;
+                return ad - bd;
+            });
+
+        if (!enrichedPlaces.length) {
+            if (radiusConstraint.enabled) {
+                return language === 'en'
+                    ? `✅ SOURCE: Google Maps Places API (live)\nI could not find reliable results within ${radiusConstraint.radiusKm} km from Aspen Valley.\nIf you want more options, specify a larger radius in km.`
+                    : `✅ ИЗТОЧНИК: Google Maps Places API (live)\nНе открих надеждни резултати в радиус до ${radiusConstraint.radiusKm} км от комплекса.\nАко желаете допълнителни предложения, моля уточнете по-голям радиус в км.`;
+            }
+
             return language === 'en'
                 ? '✅ SOURCE: Google Maps Places API (live)\nI could not find reliable live map results for this request in Bansko/Razlog right now.'
                 : '✅ ИЗТОЧНИК: Google Maps Places API (live)\nНе открих надеждни live резултати в картите за тази заявка в района на Банско/Разлог.';
         }
 
-        const lines = places.map((place, index) => {
+        const lines = enrichedPlaces.map(({ place, distanceKm }, index) => {
             const name = place?.displayName?.text || (language === 'en' ? `Place ${index + 1}` : `Локация ${index + 1}`);
             const address = place?.formattedAddress || (language === 'en' ? 'Address unavailable' : 'Няма адрес');
             const mapsUrl = place?.googleMapsUri || '';
+            const distanceLine = Number.isFinite(distanceKm)
+                ? (language === 'en'
+                    ? `   Distance from complex: ${distanceKm.toFixed(1)} km`
+                    : `   Разстояние от комплекса: ${distanceKm.toFixed(1)} км`)
+                : '';
+
             return mapsUrl
-                ? `${index + 1}. ${name}\n   ${address}\n   ${mapsUrl}`
-                : `${index + 1}. ${name}\n   ${address}`;
+                ? `${index + 1}. ${name}\n   ${address}${distanceLine ? `\n${distanceLine}` : ''}\n   ${mapsUrl}`
+                : `${index + 1}. ${name}\n   ${address}${distanceLine ? `\n${distanceLine}` : ''}`;
         });
+
+        if (radiusConstraint.enabled) {
+            return language === 'en'
+                ? `✅ SOURCE: Google Maps Places API (live)\nThese are the nearest results within ${radiusConstraint.radiusKm} km from Aspen Valley, sorted from nearest to farthest:\n\n${lines.join('\n\n')}\n\nIf you want additional options, please specify up to what distance (km) to search.`
+                : `✅ ИЗТОЧНИК: Google Maps Places API (live)\nТова са най-близките резултати до ${radiusConstraint.radiusKm} км от комплекса, подредени от най-близки към най-далечни:\n\n${lines.join('\n\n')}\n\nАко желаете допълнителни предложения, моля уточнете до какво разстояние (км) да търся.`;
+        }
 
         return language === 'en'
             ? `✅ SOURCE: Google Maps Places API (live)\nLive map results in Bansko/Razlog:\n\n${lines.join('\n\n')}`
@@ -1507,9 +1634,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     if (hasSearchIntent) {
-        const searchQuery = preferredLanguage === 'en'
-            ? userMessage
-            : `${userMessage} near Bansko Razlog Bulgaria`;
+        const searchQuery = buildGeoAnchoredSearchQuery(userMessage, preferredLanguage);
         braveSearchResults = await searchBrave(searchQuery, preferredLanguage);
         if (braveSearchResults) {
             console.log('[BRAVE] ✅ Интегрирам резултатите в Gemini контекст');
@@ -1518,6 +1643,13 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     if (braveSearchResults) {
+        if (isGeoSensitiveTourismQuery(userMessage)) {
+            const geoSafetyInstruction = preferredLanguage === 'en'
+                ? '\n\nGeo safety rule: For hiking, eco paths, and tourist route topics, accept only places in Pirin, Bulgaria (Razlog/Bansko area). Ignore or explicitly reject results from North Macedonia or other countries with similar place names.'
+                : '\n\nГео правило: При екопътеки, преходи и туристически маршрути приемай само места в Пирин, България (района Разлог/Банско). Игнорирай или изрично отхвърляй резултати от Северна Македония или други държави със сходни топоними.';
+            systemInstruction += geoSafetyInstruction;
+        }
+
         const searchContextLabel = preferredLanguage === 'en'
             ? '\n\n=== LIVE WEB SEARCH RESULTS (via Brave Search API) ===\nFor this request, treat these live results as the highest-priority source. Answer only from these results for web-search content. Do not say that information is missing if relevant results are present. Do not invent venues, names, addresses, menus, or locations beyond what is explicitly stated below. If the live results are inconclusive, say so plainly.'
             : '\n\n=== LIVE WEB SEARCH РЕЗУЛТАТИ (via Brave Search API) ===\nЗа този въпрос третирай тези live резултати като източник с най-висок приоритет. За уеб-търсенето отговаряй само по тези резултати. Не казвай, че няма информация, ако по-долу има релевантни резултати. Не измисляй заведения, имена, адреси, менюта или локации извън изрично написаното по-долу. Ако live резултатите са неубедителни, кажи го директно.';

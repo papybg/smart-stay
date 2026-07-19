@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "eval:live": "node tools/auto-eval/run.js",
     "build:dashboard-css": "tailwindcss -c tailwind.dashboard.config.cjs -i styles/dashboard.tailwind.input.css -o public/dashboard.tailwind.css --minify",
     "build:index-css": "tailwindcss -c tailwind.index.config.cjs -i styles/dashboard.tailwind.input.css -o public/index.tailwind.css --minify",
     "build:css": "npm run build:dashboard-css && npm run build:index-css"

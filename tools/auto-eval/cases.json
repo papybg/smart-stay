@@ -1,0 +1,116 @@
+[
+  {
+    "id": "route-sofia-airport",
+    "type": "route",
+    "prompt": "Как да стигна до комплекса от летище София?",
+    "expectedDestination": "Aspen Valley, Razlog",
+    "expectedLatLng": { "lat": 41.874389, "lng": 23.423650 },
+    "maxDistanceKm": 20
+  },
+  {
+    "id": "route-greece",
+    "type": "route",
+    "prompt": "Как да стигна до комплекса от Гърция?",
+    "expectedDestination": "Aspen Valley, Razlog",
+    "allowClarification": true,
+    "expectedLatLng": { "lat": 41.874389, "lng": 23.423650 },
+    "maxDistanceKm": 20
+  },
+  {
+    "id": "route-macedonia",
+    "type": "route",
+    "prompt": "Как да стигна до комплекса от Северна Македония?",
+    "expectedDestination": "Aspen Valley, Razlog",
+    "allowClarification": true,
+    "expectedLatLng": { "lat": 41.874389, "lng": 23.423650 },
+    "maxDistanceKm": 20
+  },
+  {
+    "id": "route-dobrinishte-spa",
+    "type": "route",
+    "prompt": "Как да стигна от комплекса до Спа комплекс Добринище?",
+    "expectedDestination": "Dobrinishte, Bulgaria",
+    "expectedLatLng": { "lat": 41.820147, "lng": 23.559318 },
+    "maxDistanceKm": 25
+  },
+  {
+    "id": "poi-ski-schools",
+    "type": "poi",
+    "prompt": "Препоръчай ски училища в Банско.",
+    "areaHint": "Bansko Bulgaria",
+    "strict": true,
+    "maxRadiusKm": 25,
+    "minCandidates": 3,
+    "minVerified": 2
+  },
+  {
+    "id": "poi-restaurants",
+    "type": "poi",
+    "prompt": "Препоръчай заведения в Разлог и Банско.",
+    "areaHint": "Razlog Bansko Bulgaria",
+    "strict": true,
+    "maxRadiusKm": 35,
+    "minCandidates": 3,
+    "minVerified": 2
+  },
+  {
+    "id": "poi-fitness",
+    "type": "poi",
+    "prompt": "Кажи ми фитнеси около Разлог.",
+    "areaHint": "Razlog Bulgaria",
+    "strict": true,
+    "maxRadiusKm": 20,
+    "minCandidates": 2,
+    "minVerified": 1
+  },
+  {
+    "id": "poi-golf",
+    "type": "poi",
+    "prompt": "Има ли голф наблизо?",
+    "areaHint": "Razlog Bansko Bulgaria",
+    "strict": true,
+    "maxRadiusKm": 35,
+    "minCandidates": 1,
+    "minVerified": 1
+  },
+  {
+    "id": "poi-popular-destinations-razlog",
+    "type": "poi",
+    "prompt": "Дай ми пет популярни дестинации за посещение около Разлог.",
+    "areaHint": "Razlog Bansko Bulgaria",
+    "strict": true,
+    "maxRadiusKm": 45,
+    "minCandidates": 5,
+    "minVerified": 4
+  },
+  {
+    "id": "poi-eco-trails-razlog",
+    "type": "poi",
+    "prompt": "Колко екопътеки има около Разлог? Изброй поне 3 с реални имена.",
+    "areaHint": "Razlog Bulgaria",
+    "strict": true,
+    "maxRadiusKm": 45,
+    "minCandidates": 3,
+    "minVerified": 2
+  },
+  {
+    "id": "poi-family-attractions",
+    "type": "poi",
+    "prompt": "Препоръчай 4 семейни атракции около Разлог и Банско.",
+    "areaHint": "Razlog Bansko Bulgaria",
+    "strict": true,
+    "maxRadiusKm": 45,
+    "minCandidates": 4,
+    "minVerified": 3
+  },
+  {
+    "id": "poi-spa-wellness",
+    "type": "poi",
+    "prompt": "Кои са популярните СПА и уелнес места около Разлог и Банско?",
+    "areaHint": "Razlog Bansko Bulgaria",
+    "strict": true,
+    "maxRadiusKm": 45,
+    "minCandidates": 3,
+    "minVerified": 2
+  }
+]

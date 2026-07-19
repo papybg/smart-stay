@@ -1,0 +1,314 @@
+{
+  "status": "FAIL",
+  "total": 12,
+  "evaluated": 12,
+  "skipped": 0,
+  "passed": 9,
+  "failed": 3,
+  "passRate": 75,
+  "rows": [
+    {
+      "id": "route-sofia-airport",
+      "type": "route",
+      "pass": true,
+      "skipped": false,
+      "reason": "ok",
+      "details": {
+        "km": 0.03,
+        "maxKm": 20,
+        "destRaw": "41.87443400000001,23.423269",
+        "attempts": 3
+      }
+    },
+    {
+      "id": "route-greece",
+      "type": "route",
+      "pass": true,
+      "skipped": false,
+      "reason": "clarification_ok",
+      "details": {
+        "attempts": 3
+      }
+    },
+    {
+      "id": "route-macedonia",
+      "type": "route",
+      "pass": true,
+      "skipped": false,
+      "reason": "clarification_ok",
+      "details": {
+        "attempts": 3
+      }
+    },
+    {
+      "id": "route-dobrinishte-spa",
+      "type": "route",
+      "pass": true,
+      "skipped": false,
+      "reason": "ok",
+      "details": {
+        "km": 0,
+        "maxKm": 25,
+        "destRaw": "41.8201474,23.559318",
+        "attempts": 3
+      }
+    },
+    {
+      "id": "poi-ski-schools",
+      "type": "poi",
+      "pass": true,
+      "skipped": false,
+      "reason": "ok",
+      "details": {
+        "candidates": [
+          "Ски Училище Банско",
+          "Cool Ski School Bansko",
+          "Ski School George"
+        ],
+        "rawCandidates": [
+          "Ски Училище Банско",
+          "Cool Ski School Bansko",
+          "Ski School George"
+        ],
+        "verified": [
+          "Ski School Bansko",
+          "Cool Ski School Bansko",
+          "Ski School George"
+        ],
+        "verifiedRecords": [
+          {
+            "inputName": "Ски Училище Банско",
+            "placeId": "ChIJOfkzjqauqxQRRPQjYv00Vs4",
+            "name": "Ski School Bansko",
+            "address": "кв. Глазне, ul. \"Rila\" 10, 2770 Bansko"
+          },
+          {
+            "inputName": "Cool Ski School Bansko",
+            "placeId": "ChIJBZxn28ytqxQR0ronw-CM998",
+            "name": "Cool Ski School Bansko",
+            "address": "Stragite str, кв. Глазне, ул. Страгите 2, 2770 Bansko"
+          },
+          {
+            "inputName": "Ski School George",
+            "placeId": "ChIJ50gQtp2uqxQRPbMP-2W_avI",
+            "name": "Ski School George",
+            "address": "кв. Грамадето, Polezhan St 11, 2770 Bansko"
+          }
+        ],
+        "attempts": 3
+      }
+    },
+    {
+      "id": "poi-restaurants",
+      "type": "poi",
+      "pass": false,
+      "skipped": false,
+      "reason": "too_few_clean_candidates",
+      "details": {
+        "candidates": [
+          "Ресторант \"3 Планини\":** Намира се срещу комплекса."
+        ],
+        "rawCandidates": [
+          "**Ресторант \"3 Планини\":** Намира се срещу комплекса."
+        ],
+        "attempts": 3
+      }
+    },
+    {
+      "id": "poi-fitness",
+      "type": "poi",
+      "pass": true,
+      "skipped": false,
+      "reason": "ok",
+      "details": {
+        "candidates": [
+          "Адрес:** 2760 Разлог",
+          "Разстояние от комплекса:** около 1,5 км (по посока Разлог)"
+        ],
+        "rawCandidates": [
+          "**Адрес:** 2760 Разлог",
+          "**Разстояние от комплекса:** около 1,5 км (по посока Разлог)"
+        ],
+        "verified": [
+          "Park \"Razlog\""
+        ],
+        "verifiedRecords": [
+          {
+            "inputName": "Адрес:** 2760 Разлог",
+            "placeId": "ChIJmVZvMtCrqxQRkmVCi73aEZs",
+            "name": "Park \"Razlog\"",
+            "address": "ul. \"Sveti Kliment Ohridski\" 24, 2760 Razlog"
+          }
+        ],
+        "attempts": 3
+      }
+    },
+    {
+      "id": "poi-golf",
+      "type": "poi",
+      "pass": true,
+      "skipped": false,
+      "reason": "ok",
+      "details": {
+        "candidates": [
+          "Pirin Golf & Country Club",
+          "Pirin Golf Hotel & SPA",
+          "Aspen Resort Golf & Ski"
+        ],
+        "rawCandidates": [
+          "Pirin Golf & Country Club",
+          "Pirin Golf Hotel & SPA",
+          "Aspen Resort Golf & Ski"
+        ],
+        "verified": [
+          "Pirin Golf & Country Club Apartment Complex",
+          "Pirin Golf Hotel And Spa",
+          "Aspen Resort Golf & Ski"
+        ],
+        "verifiedRecords": [
+          {
+            "inputName": "Pirin Golf & Country Club",
+            "placeId": "ChIJnyIEiJCsqxQRSEBDAOF-uIY",
+            "name": "Pirin Golf & Country Club Apartment Complex",
+            "address": "Pirin Golf & Country Club Apartment Complex, 2760 Razlog"
+          },
+          {
+            "inputName": "Pirin Golf Hotel & SPA",
+            "placeId": "ChIJNcTd79uyqxQRUVqNT6c5a9g",
+            "name": "Pirin Golf Hotel And Spa",
+            "address": "Pirin Golf Hotel & Spa - Entire Place, 2760 Razlog"
+          },
+          {
+            "inputName": "Aspen Resort Golf & Ski",
+            "placeId": "ChIJixhvHe6rqxQRG_oxxTrvtoE",
+            "name": "Aspen Resort Golf & Ski",
+            "address": "Curnako Plot 5 2760, 2760 Bansko"
+          }
+        ],
+        "attempts": 3
+      }
+    },
+    {
+      "id": "poi-popular-destinations-razlog",
+      "type": "poi",
+      "pass": false,
+      "skipped": false,
+      "reason": "too_few_clean_candidates",
+      "details": {
+        "candidates": [
+          "Ресторант \"3 Планини\":** Намира се срещу комплекса.",
+          "Магазини:** Лидъл в Разлог и Била в Банско."
+        ],
+        "rawCandidates": [
+          "**Ресторант \"3 Планини\":** Намира се срещу комплекса.",
+          "**Магазини:** Лидъл в Разлог и Била в Банско."
+        ],
+        "attempts": 3
+      }
+    },
+    {
+      "id": "poi-eco-trails-razlog",
+      "type": "poi",
+      "pass": false,
+      "skipped": false,
+      "reason": "too_few_clean_candidates",
+      "details": {
+        "candidates": [],
+        "rawCandidates": [],
+        "attempts": 3
+      }
+    },
+    {
+      "id": "poi-family-attractions",
+      "type": "poi",
+      "pass": true,
+      "skipped": false,
+      "reason": "ok",
+      "details": {
+        "candidates": [
+          "Източник:* https://justwalked.com/travel",
+          "Източник:* https://boiana",
+          "Източник:* https://bg.airbnb.com/razlog",
+          "Източник:* https://decanaplanina.com/2018/08/20idei"
+        ],
+        "rawCandidates": [
+          "*Източник:* https://justwalked.com/travel",
+          "*Източник:* https://boiana",
+          "*Източник:* https://bg.airbnb.com/razlog",
+          "*Източник:* https://decanaplanina.com/2018/08/20idei"
+        ],
+        "verified": [
+          "Friends Travel",
+          "Aquilon Residence & Spa",
+          "Pirin Golf Villa Relax / Пирин Голф Къща Релакс ***"
+        ],
+        "verifiedRecords": [
+          {
+            "inputName": "Източник:* https://justwalked.com/travel",
+            "placeId": "ChIJK4pTR5GvqxQRFUY7l9xC7Lg",
+            "name": "Friends Travel",
+            "address": "кв. Новия град, ul. \"Glazne\" 14 а, 2770 Bansko"
+          },
+          {
+            "inputName": "Източник:* https://boiana",
+            "placeId": "ChIJ0_8qRQCpqxQRRqu8-HjpK58",
+            "name": "Aquilon Residence & Spa",
+            "address": "ул. Шеста 6, 2778 Banja"
+          },
+          {
+            "inputName": "Източник:* https://bg.airbnb.com/razlog",
+            "placeId": "ChIJDbLJr0-tqxQRfRhDOV6F4-o",
+            "name": "Pirin Golf Villa Relax / Пирин Голф Къща Релакс ***",
+            "address": "Пирин Голф и СПА, област 52 Къща 17, 2760 Razlog"
+          }
+        ],
+        "attempts": 3
+      }
+    },
+    {
+      "id": "poi-spa-wellness",
+      "type": "poi",
+      "pass": true,
+      "skipped": false,
+      "reason": "ok",
+      "details": {
+        "candidates": [
+          "Hot Springs Medical & Spa Hotel",
+          "СПА хотел Катарино",
+          "Pulse Therme"
+        ],
+        "rawCandidates": [
+          "Hot Springs Medical & Spa Hotel",
+          "СПА хотел Катарино",
+          "Pulse Therme"
+        ],
+        "verified": [
+          "Hot Springs Medical & Spa Hotel",
+          "Katarino SPA Hotel",
+          "Pulse Therme Bansko"
+        ],
+        "verifiedRecords": [
+          {
+            "inputName": "Hot Springs Medical & Spa Hotel",
+            "placeId": "ChIJ13ADMQOpqxQRX4RqTFSY5ZE",
+            "name": "Hot Springs Medical & Spa Hotel",
+            "address": "ул.\"Втора\" 43, 2778 Баня"
+          },
+          {
+            "inputName": "СПА хотел Катарино",
+            "placeId": "ChIJ75GtFgurqxQRaoQA34XcCTA",
+            "name": "Katarino SPA Hotel",
+            "address": "Unnamed Road, 2760 Razlog"
+          },
+          {
+            "inputName": "Pulse Therme",
+            "placeId": "ChIJd7k6CSuvqxQR0vMljHHlBPo",
+            "name": "Pulse Therme Bansko",
+            "address": "кв. Стария град, ul. \"Akademik Yordan Ivanov\" 9, 2770 Bansko"
+          }
+        ],
+        "attempts": 3
+      }
+    }
+  ]
+}
