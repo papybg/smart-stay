@@ -19,6 +19,29 @@ function isBookingWithinAccessWindow(booking) {
     return now >= windowStart && now <= windowEnd;
 }
 
+function getBookingAccessWindowStatus(booking) {
+    if (!booking?.check_in || !booking?.check_out) {
+        return { inWindow: false, phase: 'invalid', windowStart: null, windowEnd: null };
+    }
+
+    const checkInTs = new Date(booking.check_in);
+    const checkOutTs = new Date(booking.check_out);
+    if (Number.isNaN(checkInTs.getTime()) || Number.isNaN(checkOutTs.getTime())) {
+        return { inWindow: false, phase: 'invalid', windowStart: null, windowEnd: null };
+    }
+
+    const windowStart = new Date(checkInTs.getTime() - (ACCESS_START_BEFORE_CHECKIN_HOURS * 60 * 60 * 1000));
+    const windowEnd = new Date(checkOutTs.getTime() + (ACCESS_END_AFTER_CHECKOUT_HOURS * 60 * 60 * 1000));
+    const now = new Date();
+    if (now < windowStart) {
+        return { inWindow: false, phase: 'before_open', windowStart, windowEnd };
+    }
+    if (now > windowEnd) {
+        return { inWindow: false, phase: 'after_close', windowStart, windowEnd };
+    }
+    return { inWindow: true, phase: 'active', windowStart, windowEnd };
+}
+
 function isReservationCodeToken(value = '') {
     const token = String(value || '').trim();
     return /^(?=[A-Za-z0-9_-]{5,40}$)(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]+$/.test(token);
@@ -152,8 +175,24 @@ export async function verifyGuestByHMCode(authCode, userMessage, history = []) {
                         LIMIT 1
                     `;
                     if (rows.length) {
-                        console.log('[SECURITY] Намерена резервация по име:', rows[0].guest_name);
-                        return { role: 'guest', booking: rows[0] };
+                        const booking = rows[0];
+                        const access = getBookingAccessWindowStatus(booking);
+                        if (!access.inWindow) {
+                            console.log('[SECURITY] Резервацията по име е извън разрешения прозорец за достъп:', booking.guest_name);
+                            return {
+                                role: 'stranger',
+                                booking: null,
+                                accessWindow: {
+                                    phase: access.phase,
+                                    windowStart: access.windowStart ? access.windowStart.toISOString() : null,
+                                    windowEnd: access.windowEnd ? access.windowEnd.toISOString() : null,
+                                    reservationCode: booking.reservation_code || null
+                                }
+                            };
+                        }
+
+                        console.log('[SECURITY] Намерена резервация по име:', booking.guest_name);
+                        return { role: 'guest', booking };
                     }
                 } catch (e) {
                     console.warn('[SECURITY] Грешка при верификация по име:', e.message);
@@ -180,9 +219,19 @@ export async function verifyGuestByHMCode(authCode, userMessage, history = []) {
 
         if (bookings.length > 0) {
             const booking = bookings[0];
-            if (!isBookingWithinAccessWindow(booking)) {
+            const access = getBookingAccessWindowStatus(booking);
+            if (!access.inWindow) {
                 console.log('[DATABASE] ⚠️ Кодът съществува, но е извън разрешения прозорец за достъп:', codeToVerify);
-                return { role: 'stranger', booking: null };
+                return {
+                    role: 'stranger',
+                    booking: null,
+                    accessWindow: {
+                        phase: access.phase,
+                        windowStart: access.windowStart ? access.windowStart.toISOString() : null,
+                        windowEnd: access.windowEnd ? access.windowEnd.toISOString() : null,
+                        reservationCode: booking.reservation_code || codeToVerify
+                    }
+                };
             }
 
             console.log('[DATABASE] ✅ Резервация намерена за код (в разрешен прозорец):', codeToVerify);
@@ -350,6 +399,12 @@ export async function determineUserRole(authCode, userMessage, history = []) {
         console.log('[SECURITY] Определена роля: ГОСТ');
         console.log('[SECURITY] ========== ПРОВЕРКА НА СИГУРНОСТ ЗАВЪРШЕНА ==========\n');
         return { role: 'guest', data: guestData };
+    }
+
+    if (guestCheck?.accessWindow) {
+        console.log('[SECURITY] Определена роля: НЕПОЗНАТ (извън прозорец за достъп)');
+        console.log('[SECURITY] ========== ПРОВЕРКА НА СИГУРНОСТ ЗАВЪРШЕНА ==========' );
+        return { role: 'stranger', data: null, accessWindow: guestCheck.accessWindow };
     }
 
     // ПРОВЕРКА #2.5: HOST от history (fallback за chat сесии без token)

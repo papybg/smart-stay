@@ -36,14 +36,14 @@ export const BACKUP_TIMEOUT_MS = Number(process.env.BACKUP_TIMEOUT_MS || 15000);
 
 // ── Достъп / Времеви прозорец ──────────────────────────────────────────────
 export const ACCESS_START_BEFORE_CHECKIN_HOURS = Number(process.env.ACCESS_START_BEFORE_CHECKIN_HOURS || 24);
-export const ACCESS_END_AFTER_CHECKOUT_HOURS = Number(process.env.ACCESS_END_AFTER_CHECKOUT_HOURS || 2);
+export const ACCESS_END_AFTER_CHECKOUT_HOURS = Number(process.env.ACCESS_END_AFTER_CHECKOUT_HOURS || 3);
 // Специален прозорец за показване/изпращане на lock code към госта.
 // По подразбиране е синхронизиран с общия ACCESS_* прозорец.
 export const LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS = Number(
     process.env.LOCK_CODE_ACCESS_START_BEFORE_CHECKIN_HOURS || 24
 );
 export const LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS = Number(
-    process.env.LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS || 2
+    process.env.LOCK_CODE_ACCESS_END_AFTER_CHECKOUT_HOURS || 3
 );
 
 // ── Google Places ──────────────────────────────────────────────────────────

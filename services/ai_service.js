@@ -1073,6 +1073,47 @@ function getModelIdentityReply(language = 'bg') {
     return lines.join('\n');
 }
 
+function formatAccessWindowDateTime(value, language = 'bg') {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Sofia',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        hour12: false
+    }).formatToParts(date);
+
+    const day = parts.find(p => p.type === 'day')?.value || '00';
+    const month = parts.find(p => p.type === 'month')?.value || '00';
+    const year = parts.find(p => p.type === 'year')?.value || '0000';
+    const hour = parts.find(p => p.type === 'hour')?.value || '00';
+    const connector = language === 'en' ? 'at' : 'в';
+
+    return `${day}.${month}.${year} ${connector} ${hour}:00`;
+}
+
+function getAccessWindowStateReply(accessWindow, language = 'bg') {
+    if (!accessWindow?.phase) return null;
+
+    if (accessWindow.phase === 'before_open') {
+        const availableAt = formatAccessWindowDateTime(accessWindow.windowStart, language) || '-';
+        return language === 'en'
+            ? `Hi there! 😊 Iko will be ready to assist you from ${availableAt}. Until then, feel free to reach your host at +359 888 600 851.`
+            : `Здравейте! 😊 Ико ще е готов да ви съдейства от ${availableAt}. Дотогава може да се свържете с домакина на +359 888 600 851.`;
+    }
+
+    if (accessWindow.phase === 'after_close') {
+        return language === 'en'
+            ? 'Hope you had an amazing stay! 😊 Iko is no longer active for this reservation. For any feedback, please contact your host at +359 888 600 851.'
+            : 'Надяваме се, че сте имали страхотен престой! 😊 Ико вече не е активен за тази резервация. За обратна връзка, моля свържете се с домакина на +359 888 600 851.';
+    }
+
+    return null;
+}
+
 // ============================================================================
 // EXPORTED: checkEmergencyPower
 // ============================================================================
@@ -1207,11 +1248,14 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
 
     // 1. Роля + предпочитан език
-    const { role, data } = await determineUserRole(authCode, userMessage, history);
+    const { role, data, accessWindow } = await determineUserRole(authCode, userMessage, history);
     const preferredLanguage = detectPreferredLanguage(userMessage, history);
     const manualScopeQuestion = shouldUseGroqRouterForMessage(userMessage);
     let forceGeminiDirect = false;
     let braveSearchResults = null;
+
+    const accessWindowReply = getAccessWindowStateReply(accessWindow, preferredLanguage);
+    if (accessWindowReply) return accessWindowReply;
 
     // 2. Детерминистични отговори (без AI)
     if (isModelIdentityRequest(userMessage)) {
