@@ -111,7 +111,7 @@ export function isTodayRegistrationsRequest(userMessage) {
 
 export function isActiveNowRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /активни\s+резерваци(я|и)\s+сега|активни\s+регистраци(я|и)\s+сега|колко\s+са\s+активните\s+сега|има\s+ли\s+активни\s+гост(и|а)\s+в\s+момента|кой\s+е\s+настанен\s+в\s+момента|active\s+bookings\s+now|active\s+registrations\s+now/i.test(userMessage);
+    return /активни\s+резерваци(я|и)\s+сега|активни\s+регистраци(я|и)\s+сега|активни\s+регистраци(я|и)\s+към\s+момента|активни\s+резерваци(я|и)\s+към\s+момента|какви\s+активни\s+регистраци(я|и)\s+има\s+към\s+момента|колко\s+са\s+активните\s+сега|колко\s+са\s+активните\s+към\s+момента|има\s+ли\s+активни\s+гост(и|а)\s+в\s+момента|кой\s+е\s+настанен\s+в\s+момента|active\s+bookings\s+now|active\s+registrations\s+now|active\s+bookings\s+at\s+the\s+moment|active\s+registrations\s+at\s+the\s+moment/i.test(userMessage);
 }
 
 export function isTomorrowRegistrationsRequest(userMessage) {

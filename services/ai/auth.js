@@ -5,6 +5,12 @@
 import { validateToken } from '../sessionManager.js';
 import { sql, HOST_CODE, ACCESS_START_BEFORE_CHECKIN_HOURS, ACCESS_END_AFTER_CHECKOUT_HOURS } from './config.js';
 
+function normalizeAccessCode(value = '') {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
+}
+
 function isBookingWithinAccessWindow(booking) {
     if (!booking?.check_in || !booking?.check_out) return false;
 
@@ -65,10 +71,13 @@ export function isHostVerified(authCode, userMessage) {
 
     console.log('[SECURITY] Верификация на домакина: проверявам authCode...');
 
+    const normalizedHostCode = normalizeAccessCode(HOST_CODE);
+    const exactHostCode = String(HOST_CODE).trim().toLowerCase();
+
     if (authCode) {
-        const normalizedAuthCode = String(authCode).trim().toLowerCase();
-        const normalizedHostCode = String(HOST_CODE).trim().toLowerCase();
-        if (normalizedAuthCode === normalizedHostCode) {
+        const normalizedAuthCode = normalizeAccessCode(authCode);
+        const exactAuthCode = String(authCode).trim().toLowerCase();
+        if (exactAuthCode === exactHostCode || (normalizedAuthCode && normalizedAuthCode === normalizedHostCode)) {
             console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: authCode съвпада с HOST_CODE');
             return true;
         }
@@ -77,18 +86,28 @@ export function isHostVerified(authCode, userMessage) {
     if (userMessage) {
         console.log('[SECURITY] Верификация на домакина: проверявам userMessage...');
         const trimmedMessage = String(userMessage).trim().toLowerCase();
-        const normalizedHostCode = String(HOST_CODE).trim().toLowerCase();
+        const normalizedMessage = normalizeAccessCode(trimmedMessage);
 
-        if (trimmedMessage === normalizedHostCode) {
+        if (trimmedMessage === exactHostCode || (normalizedMessage && normalizedMessage === normalizedHostCode)) {
             console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: userMessage съвпада с HOST_CODE');
             return true;
         }
 
-        const escapedHostCode = normalizedHostCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedHostCode = exactHostCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const hostCodePattern = new RegExp(`(^|[^a-z0-9])${escapedHostCode}([^a-z0-9]|$)`, 'i');
         if (hostCodePattern.test(trimmedMessage)) {
             console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: намерен точен HOST_CODE в userMessage');
             return true;
+        }
+
+        // fallback: сравнение с всеки алфанумерен token от съобщението
+        const tokens = trimmedMessage.match(/[a-z0-9_-]{4,80}/gi) || [];
+        for (const token of tokens) {
+            const normalizedToken = normalizeAccessCode(token);
+            if (normalizedToken && normalizedToken === normalizedHostCode) {
+                console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: HOST_CODE съвпада с token от userMessage');
+                return true;
+            }
         }
     }
 
@@ -102,8 +121,9 @@ export function isHostVerified(authCode, userMessage) {
 export function isHostVerifiedInHistory(history = []) {
     if (!HOST_CODE || !Array.isArray(history) || history.length === 0) return false;
 
-    const normalizedHostCode = String(HOST_CODE).trim().toLowerCase();
-    const escapedHostCode = normalizedHostCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const exactHostCode = String(HOST_CODE).trim().toLowerCase();
+    const normalizedHostCode = normalizeAccessCode(HOST_CODE);
+    const escapedHostCode = exactHostCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const hostCodePattern = new RegExp(`(^|[^a-z0-9])${escapedHostCode}([^a-z0-9]|$)`, 'i');
 
     const recentUserMessages = history
@@ -113,7 +133,14 @@ export function isHostVerifiedInHistory(history = []) {
     for (let index = recentUserMessages.length - 1; index >= 0; index--) {
         const text = String(recentUserMessages[index].content || '').trim().toLowerCase();
         if (!text) continue;
-        if (text === normalizedHostCode || hostCodePattern.test(text)) {
+        const normalizedText = normalizeAccessCode(text);
+        if (text === exactHostCode || (normalizedText && normalizedText === normalizedHostCode) || hostCodePattern.test(text)) {
+            console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: HOST_CODE намерен в history');
+            return true;
+        }
+
+        const tokens = text.match(/[a-z0-9_-]{4,80}/gi) || [];
+        if (tokens.some(token => normalizeAccessCode(token) === normalizedHostCode)) {
             console.log('[SECURITY] ✅ ДОМАКИН ВЕРИФИЦИРАН: HOST_CODE намерен в history');
             return true;
         }
