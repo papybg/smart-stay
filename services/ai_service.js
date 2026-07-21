@@ -42,7 +42,7 @@ import {
     isReservationCodeIntro, isReservationRefreshRequest,
     isLockCodeLookupRequest,
     isTodayRegistrationsRequest, isActiveNowRequest,
-    isTomorrowRegistrationsRequest, isUpcomingBookingsRequest, isCheckoutTodayRequest,
+    isTomorrowRegistrationsRequest, isUpcomingBookingsRequest, isUpcomingMonthRequest, isAllBookingsRequest, isCheckoutTodayRequest,
     isRecentCancelledRequest, isUnknownPowerStatusRequest,
     isDatabaseSnapshotRequest, isHostDbCatchAllRequest,
     isLivePlacesLookupRequest, isMapStyleQuestion,
@@ -1105,6 +1105,98 @@ async function getUpcomingBookingsReply(role, language = 'bg') {
     }
 }
 
+async function getUpcomingMonthBookingsReply(role, language = 'bg') {
+    if (role !== 'host') {
+        return language === 'en'
+            ? 'This report is available only for host access.'
+            : 'Тази справка е достъпна само за домакин.';
+    }
+    if (!sql) {
+        return language === 'en'
+            ? 'Database is not available right now.'
+            : 'Базата данни не е достъпна в момента.';
+    }
+
+    try {
+        const rows = await sql`
+            SELECT reservation_code, guest_name, check_in, check_out, payment_status
+            FROM bookings
+            WHERE COALESCE(LOWER(payment_status), 'paid') <> 'cancelled'
+              AND check_in > NOW()
+              AND check_in <= (NOW() + INTERVAL '30 day')
+            ORDER BY check_in ASC
+            LIMIT 50
+        `;
+
+        if (!rows.length) {
+            return language === 'en'
+                ? 'There are no bookings in the next 30 days.'
+                : 'Няма резервации за следващите 30 дни.';
+        }
+
+        const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+        const lines = rows.map(row => {
+            const checkIn = new Date(row.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+            const checkOut = new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+            return `• ${row.guest_name || '—'} | ${row.reservation_code || '—'} | ${checkIn} → ${checkOut} | ${row.payment_status || 'paid'}`;
+        });
+
+        return language === 'en'
+            ? `Bookings for next 30 days (${rows.length}):\n\n${lines.join('\n')}`
+            : `Резервации за следващите 30 дни (${rows.length}):\n\n${lines.join('\n')}`;
+    } catch (error) {
+        console.error('[HOST] 🔴 Грешка при резервации за следващите 30 дни:', error.message);
+        return language === 'en'
+            ? 'I could not load next-30-days bookings from the database.'
+            : 'Не успях да заредя резервациите за следващите 30 дни от базата.';
+    }
+}
+
+async function getAllBookingsReply(role, language = 'bg') {
+    if (role !== 'host') {
+        return language === 'en'
+            ? 'This report is available only for host access.'
+            : 'Тази справка е достъпна само за домакин.';
+    }
+    if (!sql) {
+        return language === 'en'
+            ? 'Database is not available right now.'
+            : 'Базата данни не е достъпна в момента.';
+    }
+
+    try {
+        const rows = await sql`
+            SELECT reservation_code, guest_name, check_in, check_out, payment_status
+            FROM bookings
+            ORDER BY check_in DESC
+            LIMIT 60
+        `;
+
+        if (!rows.length) {
+            return language === 'en'
+                ? 'There are no bookings in the database.'
+                : 'Няма резервации в базата.';
+        }
+
+        const locale = language === 'en' ? 'en-GB' : 'bg-BG';
+        const lines = rows.map(row => {
+            const checkIn = new Date(row.check_in).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+            const checkOut = new Date(row.check_out).toLocaleString(locale, { timeZone: 'Europe/Sofia' });
+            const status = row.payment_status || 'paid';
+            return `• ${row.guest_name || '—'} | ${row.reservation_code || '—'} | ${checkIn} → ${checkOut} | ${status}`;
+        });
+
+        return language === 'en'
+            ? `Bookings in database (latest ${rows.length}):\n\n${lines.join('\n')}`
+            : `Резервации в базата (последни ${rows.length}):\n\n${lines.join('\n')}`;
+    } catch (error) {
+        console.error('[HOST] 🔴 Грешка при всички резервации:', error.message);
+        return language === 'en'
+            ? 'I could not load bookings from the database.'
+            : 'Не успях да заредя резервациите от базата.';
+    }
+}
+
 // ── Lock code / booking reply helpers ─────────────────────────────────────
 
 function getLockAccessWindow(bookingData) {
@@ -1504,6 +1596,12 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
     }
     if (isUpcomingBookingsRequest(userMessage)) {
         return await getUpcomingBookingsReply(role, preferredLanguage);
+    }
+    if (isUpcomingMonthRequest(userMessage)) {
+        return await getUpcomingMonthBookingsReply(role, preferredLanguage);
+    }
+    if (isAllBookingsRequest(userMessage)) {
+        return await getAllBookingsReply(role, preferredLanguage);
     }
     if (isDatabaseSnapshotRequest(userMessage)) {
         return await getDatabaseSnapshotReply(role, preferredLanguage);

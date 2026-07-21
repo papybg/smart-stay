@@ -152,6 +152,22 @@ export function isUpcomingBookingsRequest(userMessage) {
         && /(резервац|гост|booking)/i.test(userMessage);
 }
 
+export function isUpcomingMonthRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const text = String(userMessage || '').toLowerCase();
+    return /(резервац|гост|booking)/i.test(text)
+        && /(близк(ия|ия?)\s+месец|следващ(ия|ия?)\s+месец|идния\s+месец|next\s+month|next\s+30\s+days|30\s+дни|30\s+дена)/i.test(text);
+}
+
+export function isAllBookingsRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const text = String(userMessage || '').toLowerCase();
+    const hasBookingTopic = /(резервац|booking|bookings|гост|гости)/i.test(text);
+    const hasAllHint = /(всичк|въобще|общо|пълен\s+списък|покажи\s+всички|all\s+bookings|entire\s+list|full\s+list)/i.test(text);
+    const hasDbHint = /(база(та)?|database|bookings)/i.test(text);
+    return hasBookingTopic && (hasAllHint || hasDbHint);
+}
+
 export function isCheckoutTodayRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     return /check\s*-?out\s+днес|напускан(е|ия)\s+днес|излиза(т)?\s+днес|checkout\s+today|check-out\s+today/i.test(userMessage);
