@@ -366,6 +366,7 @@ async function processMessage(id, gmail, genAI) {
         const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
         const messageDate = res.data.internalDate ? new Date(Number(res.data.internalDate)) : new Date();
         const fallbackYear = Number.isNaN(messageDate.getTime()) ? new Date().getFullYear() : messageDate.getFullYear();
+        const currentYear = new Date().getFullYear();
         
         const payload = res.data.payload;
         const subject = payload.headers.find(h => h.name === 'Subject')?.value || '';
@@ -389,6 +390,7 @@ async function processMessage(id, gmail, genAI) {
         - Look for times like "22:00", "14:00", "2 PM", "10 PM".
         - If NO time is found in text, use defaults: Check-in = 15:00, Check-out = 11:00.
         - Combine Date and Time into ISO format: "YYYY-MM-DD HH:mm:ss".
+        - IMPORTANT: Current year is ${currentYear}. All reservation dates must be ${currentYear} or later unless explicitly stated otherwise in the email.
         
         FORMAT (JSON ONLY):
         {
