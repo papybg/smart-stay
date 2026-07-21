@@ -120,6 +120,36 @@ function getLocalRadiusConstraint(userMessage = '') {
     };
 }
 
+function isItineraryPlanningRequest(text = '') {
+    const value = String(text || '').toLowerCase();
+    return /(график|дневен\s+план|план\s+за\s+посещения|маршрут\s+за\s+ден|itinerary|travel\s+plan|day\s+plan|schedule)/i.test(value)
+        || /(?:дву|три|четири|пет)\s*днев|\b[2-5]\s*(?:дни|days)\b/i.test(value);
+}
+
+function buildTokenEfficientPlanningInstruction(language = 'bg') {
+    if (language === 'en') {
+        return `
+
+Economy planning mode (token-saving):
+- For itinerary/travel-plan requests, provide one day at a time (start with Day 1 only).
+- Max 4 stops for the day; keep output concise.
+- Use compact line format: HH:MM departure | destination | stay duration | travel time | break/meal.
+- Assume local radius 15 km when user says nearby/around the complex unless a radius is explicitly given.
+- If user asks for multiple days, end with: "If you want, I can continue with Day 2."
+`;
+    }
+
+    return `
+
+Икономичен режим за планиране (спестяване на токени):
+- При заявки за график/план за посещения давай по един ден наведнъж (започни само с Ден 1).
+- Максимум 4 спирки за деня; отговорът да е кратък.
+- Компактен формат на ред: ЧЧ:ММ тръгване | дестинация | престой | време за път | почивка/хранене.
+- При думи като „наблизо/района/край комплекса“ приемай радиус 15 км, освен ако не е посочен друг.
+- Ако е поискан многодневен план, завършвай с: „Ако желаете, продължавам с Ден 2.“
+`;
+}
+
 function haversineKm(a, b) {
     const R = 6371;
     const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -1519,6 +1549,9 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
 
     // 5. Системна инструкция
     let systemInstruction = buildSystemInstruction(role, data, powerStatus, manualContent, currentDateTime, preferredLanguage);
+    if (isItineraryPlanningRequest(userMessage)) {
+        systemInstruction += buildTokenEfficientPlanningInstruction(preferredLanguage);
+    }
 
     // 5.5. Команди за ток
     const powerCommandResult = await checkEmergencyPower(userMessage, role, data);

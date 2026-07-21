@@ -127,6 +127,27 @@ function normalizeBookingDateValue(dateValue, fallbackYear) {
     return parsed.toISOString();
 }
 
+function normalizeReservationStatus(rawStatus, sourceText = '') {
+    const statusText = String(rawStatus || '').trim().toLowerCase();
+    const contextText = String(sourceText || '').toLowerCase();
+
+    if (/cancel|cancell|anul|отмен|анулир/.test(statusText)) {
+        return 'cancelled';
+    }
+    if (/confirm|approved|booked|paid|потвър|резервир/.test(statusText)) {
+        return 'confirmed';
+    }
+
+    if (/reservation (is )?cancelled|booking (is )?cancelled|cancelled reservation|cancellation confirmed|отменена резервация|резервацията е отменена|анулирана резервация/.test(contextText)) {
+        return 'cancelled';
+    }
+    if (/reservation confirmed|booking confirmed|нова резервация|потвърдена резервация/.test(contextText)) {
+        return 'confirmed';
+    }
+
+    return 'unknown';
+}
+
 export async function syncBookingsFromGmail(options = {}) {
     const { ignoreLastCheck = false } = options;
     const stats = {
@@ -153,20 +174,7 @@ export async function syncBookingsFromGmail(options = {}) {
 
         const sql = neon(process.env.DATABASE_URL);
 
-        // read last check timestamp from settings table
-        let lastCheck = null;
-        try {
-            const row = await sql`SELECT value FROM system_settings WHERE key = 'last_email_check'`;
-            if (row.length) {
-                lastCheck = row[0].value;
-            }
-        } catch (e) {
-            console.warn('[DETECTIVE] ⚠️ Няма last_email_check или грешка при четене:', e.message);
-        }
-
-        const afterFilter = !ignoreLastCheck && lastCheck
-            ? `after:${Math.floor(new Date(lastCheck).getTime() / 1000)}`
-            : 'newer_than:30d';
+        const afterFilter = 'newer_than:1d';
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const oauth2Client = new google.auth.OAuth2(
@@ -179,8 +187,8 @@ export async function syncBookingsFromGmail(options = {}) {
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
         // ФИЛТЪР
-        // по-широк филтър: търсим думи, които означават потвърждение/анулиране/резервация
-        // + само непрочетени и в рамките на последните 30 дни
+        // търсим всички писма (прочетени и непрочетени) за последните 24 часа
+        // от позволените податели
         const allowedSenders = [
             'automated@airbnb.com',
             'pepetrow@gmail.com',
@@ -196,19 +204,16 @@ export async function syncBookingsFromGmail(options = {}) {
             ? '(' + allowedSenders.map(sender => `from:${sender}`).join(' OR ') + ')'
             : '(from:automated@airbnb.com)';
 
-        const baseQuery = `${senderQuery} is:unread ${afterFilter}`;
-        // широкият (без subject) за статистика
-        const baseRes = await gmail.users.messages.list({ userId: 'me', q: baseQuery });
-        const totalCount = baseRes.data?.messages?.length || 0;
+        const query = `${senderQuery} ${afterFilter}`;
+        const res = await gmail.users.messages.list({ userId: 'me', q: query });
+        const messages = res.data?.messages || [];
 
-        const query = baseQuery; // без subject филтър - AI сам определя статуса
+        const totalCount = messages.length;
         stats.query = query;
         stats.afterFilter = afterFilter;
         stats.totalCount = totalCount;
         console.log('[DETECTIVE] 📬 Gmail query:', { query, afterFilter, totalCount });
-        
-        const res = await gmail.users.messages.list({ userId: 'me', q: query });
-        const messages = res.data?.messages || [];
+
         stats.matchedCount = messages.length;
 
         console.log(`🔎 Всички подходящи (без subject): ${totalCount}, след subject-филтър: ${messages.length}`);
@@ -223,9 +228,11 @@ export async function syncBookingsFromGmail(options = {}) {
                 if (!stats.reservationCodes.includes(details.reservation_code)) {
                     stats.reservationCodes.push(details.reservation_code);
                 }
+                const normalizedStatus = normalizeReservationStatus(details.status);
+                let handled = false;
                 
                 // --- АНУЛАЦИЯ ---
-                if (details.status === 'cancelled') {
+                if (normalizedStatus === 'cancelled') {
                     console.log(`🚫 Анулация за: ${details.reservation_code}`);
                     await executeQueryWithRetry(async () => {
                         await sql`
@@ -237,10 +244,11 @@ export async function syncBookingsFromGmail(options = {}) {
                     });
                     stats.cancelledCount += 1;
                     console.log(`🗑️ Резервация ${details.reservation_code} е маркирана като анулирана.`);
+                    handled = true;
                 } 
                 
                 // --- НОВА / ОБНОВЕНА ---
-                else {
+                else if (normalizedStatus === 'confirmed') {
                     // ТУК Е ПРОМЯНАТА: ИЗЧИСЛЯВАМЕ ТОКА
                     const checkInDate = parseSofiaDateTime(details.check_in);
                     const checkOutDate = parseSofiaDateTime(details.check_out);
@@ -292,11 +300,17 @@ export async function syncBookingsFromGmail(options = {}) {
                     });
                     stats.upsertedCount += 1;
                     console.log(`✅ Успешен запис с график за тока!`);
+                    handled = true;
+                } else {
+                    stats.failedCount += 1;
+                    console.warn(`[DETECTIVE] ⚠️ Неразпознат статус "${details.status}" за ${details.reservation_code}. Пропускам писмото.`);
                 }
-                
-                await gmail.users.messages.modify({
-                    userId: 'me', id: msg.id, requestBody: { removeLabelIds: ['UNREAD'] }
-                });
+
+                if (handled) {
+                    await gmail.users.messages.modify({
+                        userId: 'me', id: msg.id, requestBody: { removeLabelIds: ['UNREAD'] }
+                    });
+                }
 
             } else {
                 stats.failedCount += 1;
@@ -354,7 +368,7 @@ async function processMessage(id, gmail, genAI) {
         
         FORMAT (JSON ONLY):
         {
-            "status": "confirmed" OR "cancelled",
+            "status": "confirmed" OR "cancelled" (use exactly one of these two, lowercase),
             "reservation_code": "HM...",
             "guest_name": "Name",
             "check_in": "YYYY-MM-DD HH:mm:ss", 
@@ -372,6 +386,7 @@ async function processMessage(id, gmail, genAI) {
         try {
             const details = JSON.parse(text);
             if (details && typeof details === 'object') {
+                details.status = normalizeReservationStatus(details.status, `${subject}\n${body}`);
                 details.check_in = normalizeBookingDateValue(details.check_in, fallbackYear);
                 details.check_out = normalizeBookingDateValue(details.check_out, fallbackYear);
             }
