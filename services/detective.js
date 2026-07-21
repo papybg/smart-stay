@@ -127,6 +127,12 @@ function normalizeBookingDateValue(dateValue, fallbackYear) {
     return parsed.toISOString();
 }
 
+function normalizeReservationCodeValue(value = '') {
+    return String(value || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+}
+
 function normalizeReservationStatus(rawStatus, sourceText = '') {
     const statusText = String(rawStatus || '').trim().toLowerCase();
     const contextText = String(sourceText || '').toLowerCase();
@@ -160,6 +166,7 @@ export async function syncBookingsFromGmail(options = {}) {
         processedCount: 0,
         upsertedCount: 0,
         cancelledCount: 0,
+        cancelledNoMatchCount: 0,
         failedCount: 0,
         reservationCodes: [],
         reason: null
@@ -234,16 +241,32 @@ export async function syncBookingsFromGmail(options = {}) {
                 // --- АНУЛАЦИЯ ---
                 if (normalizedStatus === 'cancelled') {
                     console.log(`🚫 Анулация за: ${details.reservation_code}`);
-                    await executeQueryWithRetry(async () => {
-                        await sql`
+                    const normalizedReservationCode = normalizeReservationCodeValue(details.reservation_code);
+                    if (!normalizedReservationCode) {
+                        stats.failedCount += 1;
+                        console.warn('[DETECTIVE] ⚠️ Празен/невалиден reservation_code при анулация. Пропускам.');
+                        continue;
+                    }
+
+                    const cancelledRows = await executeQueryWithRetry(async () => {
+                        return await sql`
                             UPDATE bookings 
                             SET payment_status = 'cancelled', lock_pin = NULL, updated_at = NOW(),
                             power_on_time = NULL, power_off_time = NULL
-                            WHERE reservation_code = ${details.reservation_code}
+                            WHERE regexp_replace(UPPER(reservation_code), '[^A-Z0-9]', '', 'g') = ${normalizedReservationCode}
+                            RETURNING id, reservation_code
                         `;
                     });
-                    stats.cancelledCount += 1;
-                    console.log(`🗑️ Резервация ${details.reservation_code} е маркирана като анулирана.`);
+
+                    const affected = Array.isArray(cancelledRows) ? cancelledRows.length : 0;
+                    if (affected > 0) {
+                        stats.cancelledCount += affected;
+                        console.log(`🗑️ Анулирани резервации: ${affected} (код: ${details.reservation_code}).`);
+                    } else {
+                        stats.cancelledNoMatchCount += 1;
+                        console.warn(`[DETECTIVE] ⚠️ Няма съвпадение за анулация по код ${details.reservation_code} (normalized=${normalizedReservationCode}).`);
+                    }
+
                     handled = true;
                 } 
                 

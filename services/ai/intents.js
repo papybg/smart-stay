@@ -175,7 +175,8 @@ export function isCheckoutTodayRequest(userMessage) {
 
 export function isRecentCancelledRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /анулиран(и|ия)\s+(резерваци(я|и))?|cancelled\s+bookings|canceled\s+bookings|анулаци(я|и)\s+последните/i.test(userMessage);
+    return /анулиран|отменен|отказан|cancelled|canceled/i.test(userMessage)
+        && /(резервац|booking|гост|има\s+ли|колко|покажи|дай)/i.test(userMessage);
 }
 
 export function isUnknownPowerStatusRequest(userMessage) {
