@@ -111,7 +111,32 @@ export function isTodayRegistrationsRequest(userMessage) {
 
 export function isActiveNowRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /активни\s+резерваци(я|и)\s+сега|активни\s+регистраци(я|и)\s+сега|активни\s+регистраци(я|и)\s+към\s+момента|активни\s+резерваци(я|и)\s+към\s+момента|какви\s+активни\s+регистраци(я|и)\s+има\s+към\s+момента|колко\s+са\s+активните\s+сега|колко\s+са\s+активните\s+към\s+момента|има\s+ли\s+активни\s+гост(и|а)\s+в\s+момента|кой\s+е\s+настанен\s+в\s+момента|active\s+bookings\s+now|active\s+registrations\s+now|active\s+bookings\s+at\s+the\s+moment|active\s+registrations\s+at\s+the\s+moment/i.test(userMessage);
+    const text = String(userMessage || '').toLowerCase();
+
+    const explicitPatterns = [
+        /активни\s+резерваци(я|и)\s+сега/i,
+        /активни\s+рег(и|е)страци(я|и)\s+сега/i,
+        /активни\s+рег(и|е)страци(я|и)\s+към\s+момента/i,
+        /активни\s+резерваци(я|и)\s+към\s+момента/i,
+        /какви\s+активни\s+рег(и|е)страци(я|и)\s+има\s+към\s+момента/i,
+        /колко\s+са\s+активните\s+сега/i,
+        /колко\s+са\s+активните\s+към\s+момента/i,
+        /има\s+ли\s+активни\s+гост(и|а)\s+в\s+момента/i,
+        /кой\s+е\s+настанен\s+в\s+момента/i,
+        /active\s+bookings\s+now/i,
+        /active\s+registrations\s+now/i,
+        /active\s+bookings\s+at\s+the\s+moment/i,
+        /active\s+registrations\s+at\s+the\s+moment/i
+    ];
+
+    if (explicitPatterns.some(pattern => pattern.test(text))) return true;
+
+    // Fallback: allow broader phrasing and minor spelling mistakes.
+    const hasActiveStem = /активн|active|current|currently|ongoing/.test(text);
+    const hasBookingStem = /резервац|рег(и|е)страц|booking|bookings|registration|registrations/.test(text);
+    const hasNowHint = /сега|в\s+момента|към\s+момента|момента|now|at\s+the\s+moment|currently|right\s+now/.test(text);
+
+    return hasActiveStem && hasBookingStem && hasNowHint;
 }
 
 export function isTomorrowRegistrationsRequest(userMessage) {
