@@ -114,6 +114,8 @@ export function isActiveNowRequest(userMessage) {
     const text = String(userMessage || '').toLowerCase();
 
     const explicitPatterns = [
+        /(какви|акви)\s+активни\s+резерваци(я|и)\s+има/i,
+        /(какви|акви)\s+активни\s+рег(и|е)страци(я|и)\s+има/i,
         /активни\s+резерваци(я|и)\s+сега/i,
         /активни\s+рег(и|е)страци(я|и)\s+сега/i,
         /активни\s+рег(и|е)страци(я|и)\s+към\s+момента/i,
@@ -166,7 +168,8 @@ export function isDatabaseSnapshotRequest(userMessage) {
 
 export function isHostDbCatchAllRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /(база(та)?|database|bookings)/i.test(userMessage) && /(резервац|регистрац|активни|днес|утре|анулиран|справка|статус|summary|report)/i.test(userMessage);
+    return /(база(та)?|database|bookings|резервации|резервация|гости|гостите)/i.test(userMessage)
+        && /(резервац|регистрац|активни|днес|утре|анулиран|справка|статус|колко|summary|report|покажи|дай|има\s+ли)/i.test(userMessage);
 }
 
 export function isMailCheckRequest(message = '') {
