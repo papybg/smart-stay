@@ -201,18 +201,21 @@ export function isMailCheckRequest(message = '') {
     const actionHints = [
         'провери', 'проверка', 'провери пак', 'провери отново', 'прегледай',
         'виж', 'чекни', 'сканирай', 'синхронизирай', 'синкни', 'обнови',
-        'refresh', 'recheck', 'check', 'scan', 'sync', 'update', 'inspect', 'review'
+        'направи', 'стартирай', 'пусни',
+        'refresh', 'recheck', 'check', 'scan', 'sync', 'update', 'inspect', 'review',
+        'run', 'start', 'trigger'
     ];
     const targetHints = [
         'поща', 'пощата', 'имейл', 'имейла', 'мейл', 'мейла', 'gmail', 'инбокс', 'inbox',
-        'email', 'mail', 'mailbox', 'резервация', 'резервации', 'reservation', 'reservations', 'booking', 'bookings'
+        'email', 'mail', 'mailbox', 'резервация', 'резервации', 'reservation', 'reservations', 'booking', 'bookings',
+        'детектив', 'detective', 'нова проверка', 'нови резервации', 'промени'
     ];
 
     const hasAction = actionHints.some(token => text.includes(token));
     const hasTarget = targetHints.some(token => text.includes(token));
     if (hasAction && hasTarget) return true;
 
-    return /провери.*(пощата|поща|имейл|имейла|мейл|мейла|gmail|инбокс)|нова\s+резерваци.*(провери|виж|чекни|сканирай)|провери.*резерваци|синхронизирай.*(поща|gmail|резерваци)/i.test(text)
+    return /провери.*(пощата|поща|имейл|имейла|мейл|мейла|gmail|инбокс)|нова\s+резерваци.*(провери|виж|чекни|сканирай)|провери.*резерваци|синхронизирай.*(поща|gmail|резерваци)|детектив.*(провери|проверка|сканирай|синк|стартирай|пусни|run|start|trigger)|(?:пусни|стартирай|направи).*детектив|нова\s+проверка|нова\s+проверкa|проверка\s+за\s+промени/i.test(text)
         || /check.*(email|mail|inbox|reservation|booking)|scan.*(email|mail|inbox)|sync.*(email|mail|inbox|reservation|booking)|recheck.*(email|mail|inbox|reservation|booking)/i.test(text);
 }
 
