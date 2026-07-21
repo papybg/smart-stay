@@ -181,7 +181,7 @@ export async function syncBookingsFromGmail(options = {}) {
 
         const sql = neon(process.env.DATABASE_URL);
 
-        const afterFilter = 'newer_than:1d';
+        const afterFilter = ignoreLastCheck ? 'newer_than:7d' : 'newer_than:1d';
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const oauth2Client = new google.auth.OAuth2(
@@ -194,7 +194,8 @@ export async function syncBookingsFromGmail(options = {}) {
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
         // ФИЛТЪР
-        // търсим всички писма (прочетени и непрочетени) за последните 24 часа
+        // търсим всички писма (прочетени и непрочетени)
+        // при ръчен sync: последни 7 дни; при автоматичен: последни 24 часа
         // от позволените податели
         const allowedSenders = [
             'automated@airbnb.com',
