@@ -146,6 +146,12 @@ export function isTomorrowRegistrationsRequest(userMessage) {
     return /резерваци(я|и)\s+за\s+утре|регистраци(я|и)\s+за\s+утре|tomorrow\s+bookings|tomorrow\s+registrations/i.test(userMessage);
 }
 
+export function isUpcomingBookingsRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /(предстоящ|бъдещ|upcoming|следващ|наближаващ)/i.test(userMessage)
+        && /(резервац|гост|booking)/i.test(userMessage);
+}
+
 export function isCheckoutTodayRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     return /check\s*-?out\s+днес|напускан(е|ия)\s+днес|излиза(т)?\s+днес|checkout\s+today|check-out\s+today/i.test(userMessage);
