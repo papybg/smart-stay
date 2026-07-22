@@ -23,7 +23,7 @@ const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 const HA_URL = (process.env.HA_URL || '').replace(/\/$/, '');
 const HA_TOKEN = process.env.HA_TOKEN || '';
 const HA_SWITCH_ON  = process.env.HA_SWITCH_ENTITY_ON  || process.env.HA_SWITCH_ENTITY || '';
-const HA_SWITCH_OFF = process.env.HA_SWITCH_ENTITY_OFF || process.env.HA_SWITCH_ENTITY || '';
+const HA_SWITCH_OFF = process.env.HA_SWITCH_ENTITY_OFF || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
 
 const POWER_TRACE_LOGS_ENABLED = (process.env.POWER_TRACE_LOGS || 'true').toLowerCase() !== 'false';
 
