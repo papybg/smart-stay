@@ -11,8 +11,8 @@
 // ENV variables needed:
 //   HA_URL   = https://xxxx.ngrok-free.app  (или статичен домейн)
 //   HA_TOKEN = Long-Lived Access Token от Home Assistant
-//   HA_SWITCH_ENTITY_ON  = switch.entity_id за включване (напр. switch.meter_on)
-//   HA_SWITCH_ENTITY_OFF = switch.entity_id за изключване (може да е същото)
+//   HA_SCRIPT_ENTITY_ON  = script.entity_id за включване (напр. script.vklyuchi_toka_bezopasno)
+//   HA_SCRIPT_ENTITY_OFF = script.entity_id за изключване (напр. script.izklyuchi_toka_bezopasno)
 // ============================================================================
 
 import axios from 'axios';
@@ -22,8 +22,8 @@ const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
 const HA_URL = (process.env.HA_URL || '').replace(/\/$/, '');
 const HA_TOKEN = process.env.HA_TOKEN || '';
-const HA_SWITCH_ON  = process.env.HA_SWITCH_ENTITY_ON  || process.env.HA_SWITCH_ENTITY || '';
-const HA_SWITCH_OFF = process.env.HA_SWITCH_ENTITY_OFF || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
+const HA_SCRIPT_ON = process.env.HA_SCRIPT_ENTITY_ON || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
+const HA_SCRIPT_OFF = process.env.HA_SCRIPT_ENTITY_OFF || process.env.HA_SCRIPT_ENTITY_ON || process.env.HA_SWITCH_ENTITY_OFF || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
 
 const POWER_TRACE_LOGS_ENABLED = (process.env.POWER_TRACE_LOGS || 'true').toLowerCase() !== 'false';
 
@@ -90,12 +90,13 @@ async function callHAService(entityId, turnOn, traceId) {
         return false;
     }
     if (!entityId) {
-        traceLog(traceId, 'HA/ERR', 'Entity ID липсва (HA_SWITCH_ENTITY_ON/OFF)', null, 'error');
+        traceLog(traceId, 'HA/ERR', 'Entity ID липсва (HA_SCRIPT_ENTITY_ON/OFF)', null, 'error');
         return false;
     }
 
     const domain = entityId.split('.')[0]; // switch, light, script и т.н.
-    const service = turnOn ? 'turn_on' : 'turn_off';
+    const isScriptEntity = domain === 'script';
+    const service = isScriptEntity ? 'turn_on' : (turnOn ? 'turn_on' : 'turn_off');
     const url = `${HA_URL}/api/services/${domain}/${service}`;
 
     traceLog(traceId, 'HA/1', 'Изпращане на команда към Home Assistant', {
@@ -152,7 +153,7 @@ export async function controlPower(turnOn, context = {}) {
         source: traceContext.source
     });
 
-    const entityId = turnOn ? HA_SWITCH_ON : HA_SWITCH_OFF;
+    const entityId = turnOn ? HA_SCRIPT_ON : HA_SCRIPT_OFF;
     const success = await callHAService(entityId, turnOn, traceId);
 
     traceLog(traceId, 'CP/2', 'controlPower завършен', { success });
@@ -175,7 +176,7 @@ export async function controlMeterByAction(action, context = {}) {
     }
 
     const turnOn = normalized === 'on';
-    const entityId = turnOn ? HA_SWITCH_ON : HA_SWITCH_OFF;
+    const entityId = turnOn ? HA_SCRIPT_ON : HA_SCRIPT_OFF;
 
     traceLog(traceId, 'CM/2', 'Изпращане към HA', { normalized, entityId });
 
