@@ -206,28 +206,11 @@ export function registerPowerRoutes(app, {
 				elapsedMs: Date.now() - startedAt
 			});
 
-			const nowIso = new Date().toISOString();
-			global.powerState = {
-				is_on: action === 'on',
-				source: 'ha_command',
-				last_update: nowIso
-			};
-
-			if (sql) {
-				try {
-					await sql`
-						INSERT INTO power_history (is_on, source, timestamp)
-						VALUES (${action === 'on'}, ${'ha_command'}, ${nowIso})
-					`;
-				} catch (dbErr) {
-					console.warn('[POWER] ⚠️ DB insert error:', dbErr.message);
-				}
-			}
-
-			recordPowerTrace('info', traceId, '🧠 5/6', 'Global power state updated', {
-				is_on: global.powerState.is_on,
-				source: global.powerState.source,
-				last_update: global.powerState.last_update
+			const acceptedAtIso = new Date().toISOString();
+			recordPowerTrace('info', traceId, '🧠 5/6', 'Command accepted; waiting for authoritative HA automation feedback', {
+				action,
+				acceptedAt: acceptedAtIso,
+				expectedFeedbackEndpoints: ['/api/power-status', '/api/ha-webhook']
 			});
 
 			recordPowerTrace('info', traceId, '🏁 6/6', 'Command flow finished', {
@@ -242,7 +225,8 @@ export function registerPowerRoutes(app, {
 				command: result.command || action,
 				usedTaskerFallback: Boolean(result?.usedTaskerFallback),
 				taskerConfirmed: Boolean(result?.taskerConfirmed),
-				timestamp: nowIso
+				awaitingConfirmation: true,
+				timestamp: acceptedAtIso
 			});
 		} catch (error) {
 			const traceId = String(req.headers['x-trace-id'] || '').trim() || 'no-trace';

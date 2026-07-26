@@ -266,27 +266,7 @@ const automationClient = {
                 return false;
             }
 
-            const nowIso = new Date().toISOString();
-            global.powerState = {
-                is_on: state,
-                source,
-                last_update: nowIso
-            };
-
-            if (sql) {
-                try {
-                    await sql`
-                        INSERT INTO power_history (is_on, source, timestamp, booking_id)
-                        VALUES (${state}, ${source}, ${nowIso}, ${bookingId ? String(bookingId) : null})
-                    `;
-                } catch (dbErr) {
-                    console.warn('[AUTOMATION] ⚠️ DB insert error:', dbErr.message);
-                }
-            } else {
-                console.warn('[AUTOMATION] ⚠️ DATABASE_URL липсва, power_history няма да бъде обновен');
-            }
-
-            console.log('[AUTOMATION] ✅ HA командата е приета успешно');
+            console.log('[AUTOMATION] ✅ Командата е изпратена към HA. Очаква се реален статус от /api/power-status или /api/ha-webhook.');
             return true;
         } catch (e) {
             console.error('[AUTOMATION] ❌ Управлението на тока не успя:', e.message);
@@ -1444,14 +1424,14 @@ export async function checkEmergencyPower(userMessage, role, bookingData) {
             const success = await automationClient.controlPower(true, bookingData?.id, commandSource);
             console.log(`[POWER] Резултат от HA команда: success=${success}`);
             return success
-                ? 'Разбрах. Пуснах тока успешно. ✅'
+                ? 'Разбрах. Изпратих команда за пускане на тока. Ще се счита за изпълнена след потвърждение от HA автоматизацията. ✅'
                 : 'Изпратих команда за включване на тока, но Home Assistant не потвърди успех. Провери системата.';
         } else if (isExclude) {
             console.log('[POWER] ⚡ КОМАНДА: ИЗКЛЮЧИ ТОКА');
             const success = await automationClient.controlPower(false, bookingData?.id, commandSource);
             console.log(`[POWER] Резултат от HA команда: success=${success}`);
             return success
-                ? 'Разбрах. Спрях тока успешно. ✅'
+                ? 'Разбрах. Изпратих команда за спиране на тока. Ще се счита за изпълнена след потвърждение от HA автоматизацията. ✅'
                 : 'Изпратих команда за спиране на тока, но Home Assistant не потвърди успех. Провери системата.';
         }
     }

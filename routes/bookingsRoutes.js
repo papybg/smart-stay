@@ -375,31 +375,9 @@ export function registerBookingsRoutes(app, {
         for (const booking of powerOnBookings) {
             if (!currentIsOn) {
                 console.log(`[SCHEDULER] 🚨 POWER-ON за ${booking.guest_name} - ВКЛ`);
-                try {
-                    await sql`
-                        INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                        VALUES (true, ${now}, 'scheduler_power_on', ${String(booking.id)})
-                    `;
-                } catch (dbErr) {
-                    console.error('[DB] 🔴 Грешка при запис scheduler power-on:', dbErr.message);
-                }
-
                 currentIsOn = true;
-                global.powerState.is_on = true;
-                global.powerState.source = 'scheduler-power-on';
-                global.powerState.last_update = now;
-
-                try {
-                    await sql`
-                        UPDATE bookings
-                        SET power_status = 'on', power_status_updated_at = ${now}
-                        WHERE id = ${booking.id}
-                    `;
-                } catch (bookingErr) {
-                    console.error('[DB] 🔴 Грешка при scheduler power-on power_status:', bookingErr.message);
-                }
-
                 await controlPower(true);
+                console.log('[SCHEDULER] ℹ️ Командата е изпратена. Реалният статус ще се запише само чрез /api/power-status или /api/ha-webhook.');
                 powerOnActions += 1;
             }
         }
@@ -419,31 +397,9 @@ export function registerBookingsRoutes(app, {
         for (const booking of powerOffBookings) {
             if (currentIsOn) {
                 console.log(`[SCHEDULER] 🚨 POWER-OFF ${booking.guest_name} - ИЗКЛ`);
-                try {
-                    await sql`
-                        INSERT INTO power_history (is_on, timestamp, source, booking_id)
-                        VALUES (false, ${now}, 'scheduler_power_off', ${String(booking.id)})
-                    `;
-                } catch (dbErr) {
-                    console.error('[DB] 🔴 Грешка при запис scheduler power-off:', dbErr.message);
-                }
-
                 currentIsOn = false;
-                global.powerState.is_on = false;
-                global.powerState.source = 'scheduler-power-off';
-                global.powerState.last_update = now;
-
-                try {
-                    await sql`
-                        UPDATE bookings
-                        SET power_status = 'off', power_status_updated_at = ${now}
-                        WHERE id = ${booking.id}
-                    `;
-                } catch (bookingErr) {
-                    console.error('[DB] 🔴 Грешка при scheduler power-off power_status:', bookingErr.message);
-                }
-
                 await controlPower(false);
+                console.log('[SCHEDULER] ℹ️ Командата е изпратена. Реалният статус ще се запише само чрез /api/power-status или /api/ha-webhook.');
                 powerOffActions += 1;
             }
         }
