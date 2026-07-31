@@ -119,6 +119,19 @@ async function readLatestPowerStateFromHistory() {
     }
 }
 
+async function writePowerStateToHistory(isOn, source, traceId) {
+    if (!sql) return;
+    try {
+        traceLog(traceId, 'DB/WRITE', 'Запис на състояние в power_history', { isOn, source });
+        await sql`
+            INSERT INTO power_history (is_on, source, timestamp) 
+            VALUES (${isOn}, ${source}, ${new Date().toISOString()})
+        `;
+    } catch (error) {
+        traceLog(traceId, 'DB/ERR', 'Грешка при запис в power_history', { error: error.message }, 'error');
+    }
+}
+
 function buildAutoRemoteMessageUrl(taskerCommand) {
     const raw = String(process.env.AUTOREMOTE_URL || '').trim();
     if (!raw) return '';
@@ -225,6 +238,7 @@ async function executeWithTaskerTimeoutFallback({ turnOn, command, targetDeviceI
             result: 'executed',
             action: turnOn ? 'on' : 'off'
         });
+        await writePowerStateToHistory(turnOn, 'smartthings_command', traceId);
         return { success: true, usedTaskerFallback: false, taskerConfirmed: false };
     }
 

@@ -17,6 +17,7 @@
 
 import axios from 'axios';
 import { neon } from '@neondatabase/serverless';
+import { controlPower as controlPowerViaSmartThings } from './autoremote.js';
 
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
@@ -132,7 +133,10 @@ async function callHAService(entityId, turnOn, traceId) {
             error: err.message
         }, 'error');
         console.error('[HA] ❌ Грешка:', err.response?.data || err.message);
-        return false;
+        
+        // Fallback to SmartThings
+        traceLog(traceId, 'HA/FALLBACK', 'Преминаване към резервен механизъм през SmartThings', {}, 'warn');
+        return await controlPowerViaSmartThings(turnOn, { traceId });
     }
 }
 
