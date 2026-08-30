@@ -22,9 +22,14 @@ import { controlPower as controlPowerViaSmartThings } from './autoremote.js';
 const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
 const HA_URL = (process.env.HA_URL || '').replace(/\/$/, '');
+const HA_SLAVE_URL = (process.env.HA_SLAVE_URL || '').replace(/\/$/, '');
 const HA_TOKEN = process.env.HA_TOKEN || '';
+const HA_SLAVE_TOKEN = process.env.HA_SLAVE_TOKEN || HA_TOKEN;
 const HA_SCRIPT_ON = process.env.HA_SCRIPT_ENTITY_ON || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
 const HA_SCRIPT_OFF = process.env.HA_SCRIPT_ENTITY_OFF || process.env.HA_SCRIPT_ENTITY_ON || process.env.HA_SWITCH_ENTITY_OFF || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
+const HA_SLAVE_SCRIPT_ON = process.env.HA_SLAVE_SCRIPT_ENTITY_ON || HA_SCRIPT_ON;
+const HA_SLAVE_SCRIPT_OFF = process.env.HA_SLAVE_SCRIPT_ENTITY_OFF || HA_SCRIPT_OFF;
+const POWER_FAILOVER_DELAY_MS = Number(process.env.POWER_FAILOVER_DELAY_MS || 30000);
 
 const POWER_TRACE_LOGS_ENABLED = (process.env.POWER_TRACE_LOGS || 'true').toLowerCase() !== 'false';
 
@@ -85,9 +90,14 @@ export async function readLatestPowerStateFromHistory() {
 
 // ── Home Assistant API call ───────────────────────────────────────────────────
 
-async function callHAService(entityId, turnOn, traceId) {
-    if (!HA_URL || !HA_TOKEN) {
-        traceLog(traceId, 'HA/ERR', 'HA_URL или HA_TOKEN липсват в ENV', null, 'error');
+async function callHAServiceToTarget(entityId, turnOn, traceId, {
+    baseUrl,
+    token,
+    targetName,
+    allowSmartThingsFallback
+}) {
+    if (!baseUrl || !token) {
+        traceLog(traceId, 'HA/ERR', `${targetName} URL или TOKEN липсват`, null, 'error');
         return false;
     }
     if (!entityId) {
@@ -98,13 +108,9 @@ async function callHAService(entityId, turnOn, traceId) {
     const domain = entityId.split('.')[0]; // switch, light, script и т.н.
     const isScriptEntity = domain === 'script';
     const service = isScriptEntity ? 'turn_on' : (turnOn ? 'turn_on' : 'turn_off');
-    const url = `${HA_URL}/api/services/${domain}/${service}`;
+    const url = `${baseUrl}/api/services/${domain}/${service}`;
 
-    traceLog(traceId, 'HA/1', 'Изпращане на команда към Home Assistant', {
-        url,
-        entity_id: entityId,
-        service
-    });
+    traceLog(traceId, 'HA/1', `Send ${targetName}`, { entity_id: entityId, service });
 
     try {
         const response = await axios.post(
@@ -112,32 +118,71 @@ async function callHAService(entityId, turnOn, traceId) {
             { entity_id: entityId },
             {
                 headers: {
-                    Authorization: `Bearer ${HA_TOKEN}`,
+                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
                 timeout: 10000
             }
         );
 
-        traceLog(traceId, 'HA/2', 'Команда изпратена успешно', {
-            status: response.status,
-            entity_id: entityId
-        });
+        traceLog(traceId, 'HA/2', `${targetName} OK`, { status: response.status });
 
         return true;
     } catch (err) {
         const status = err.response?.status;
-        traceLog(traceId, 'HA/ERR', 'Грешка при HA команда', {
-            entity_id: entityId,
-            status,
-            error: err.message
-        }, 'error');
-        console.error('[HA] ❌ Грешка:', err.response?.data || err.message);
-        
-        // Fallback to SmartThings
-        traceLog(traceId, 'HA/FALLBACK', 'Преминаване към резервен механизъм през SmartThings', {}, 'warn');
+        traceLog(traceId, 'HA/ERR', `${targetName} FAIL`, { status, error: err.message }, 'error');
+        if (!allowSmartThingsFallback) return false;
+        traceLog(traceId, 'HA/FALLBACK', 'Fallback SmartThings', null, 'warn');
         return await controlPowerViaSmartThings(turnOn, { traceId });
     }
+}
+
+async function hasDbConfirmationAfter({ expectedState, sentAtIso }) {
+    if (!sql || !sentAtIso) return false;
+    try {
+        const rows = await sql`
+            SELECT id
+            FROM power_history
+            WHERE is_on = ${expectedState}
+              AND timestamp > ${sentAtIso}::timestamptz
+            ORDER BY timestamp ASC
+            LIMIT 1
+        `;
+        return rows.length > 0;
+    } catch (error) {
+        return false;
+    }
+}
+
+function scheduleSlaveFailover({ turnOn, action, traceId, sentAtIso }) {
+    const delayMs = Number.isFinite(POWER_FAILOVER_DELAY_MS) && POWER_FAILOVER_DELAY_MS > 0
+        ? POWER_FAILOVER_DELAY_MS
+        : 30000;
+
+    setTimeout(async () => {
+        const confirmed = await hasDbConfirmationAfter({ expectedState: turnOn, sentAtIso });
+        if (confirmed) {
+            traceLog(traceId, 'FO/OK', 'Master confirmed');
+            return;
+        }
+
+        traceLog(traceId, 'FO/1', 'Master timeout 30s. Send Slave...', null, 'warn');
+
+        if (!HA_SLAVE_URL) {
+            traceLog(traceId, 'FO/ERR', 'HA_SLAVE_URL missing', null, 'error');
+            return;
+        }
+
+        const slaveEntityId = turnOn ? HA_SLAVE_SCRIPT_ON : HA_SLAVE_SCRIPT_OFF;
+        await callHAServiceToTarget(slaveEntityId, turnOn, traceId, {
+            baseUrl: HA_SLAVE_URL,
+            token: HA_SLAVE_TOKEN,
+            targetName: 'SLAVE',
+            allowSmartThingsFallback: false
+        });
+
+        traceLog(traceId, 'FO/2', `Slave sent: ${action}`);
+    }, delayMs);
 }
 
 // ── Public API (съвместимо с autoremote.js) ───────────────────────────────────
@@ -158,7 +203,12 @@ export async function controlPower(turnOn, context = {}) {
     });
 
     const entityId = turnOn ? HA_SCRIPT_ON : HA_SCRIPT_OFF;
-    const success = await callHAService(entityId, turnOn, traceId);
+    const success = await callHAServiceToTarget(entityId, turnOn, traceId, {
+        baseUrl: HA_URL,
+        token: HA_TOKEN,
+        targetName: 'MASTER',
+        allowSmartThingsFallback: true
+    });
 
     traceLog(traceId, 'CP/2', 'controlPower завършен', { success });
     return success;
@@ -181,18 +231,33 @@ export async function controlMeterByAction(action, context = {}) {
 
     const turnOn = normalized === 'on';
     const entityId = turnOn ? HA_SCRIPT_ON : HA_SCRIPT_OFF;
+    const sentAtIso = new Date().toISOString();
 
-    traceLog(traceId, 'CM/2', 'Изпращане към HA', { normalized, entityId });
+    traceLog(traceId, 'CM/2', 'Send MASTER', { action: normalized });
 
-    const success = await callHAService(entityId, turnOn, traceId);
+    const masterSuccess = await callHAServiceToTarget(entityId, turnOn, traceId, {
+        baseUrl: HA_URL,
+        token: HA_TOKEN,
+        targetName: 'MASTER',
+        allowSmartThingsFallback: false
+    });
 
-    traceLog(traceId, 'CM/3', 'controlMeterByAction завършен', { success, normalized });
+    scheduleSlaveFailover({
+        turnOn,
+        action: normalized,
+        traceId,
+        sentAtIso
+    });
+
+    traceLog(traceId, 'CM/3', 'Accepted + timer 30s', { masterSuccess });
 
     return {
-        success,
+        success: true,
+        accepted: true,
         command: normalized,
         traceId,
         usedTaskerFallback: false,
-        taskerConfirmed: false
+        taskerConfirmed: false,
+        awaitingConfirmation: true
     };
 }
