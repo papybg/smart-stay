@@ -25,11 +25,20 @@ const HA_URL = (process.env.HA_URL || '').replace(/\/$/, '');
 const HA_SLAVE_URL = (process.env.HA_SLAVE_URL || '').replace(/\/$/, '');
 const HA_TOKEN = process.env.HA_TOKEN || '';
 const HA_SLAVE_TOKEN = process.env.HA_SLAVE_TOKEN || HA_TOKEN;
+const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID || '';
+const CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET || '';
+const CF_ACCESS_HEADER_NAME = process.env.HA_CUSTOM_HEADER_NAME || '';
+const CF_ACCESS_HEADER_VALUE = process.env.HA_CUSTOM_HEADER_VALUE || '';
+const CF_ACCESS_SLAVE_CLIENT_ID = process.env.CF_ACCESS_SLAVE_CLIENT_ID || CF_ACCESS_CLIENT_ID;
+const CF_ACCESS_SLAVE_CLIENT_SECRET = process.env.CF_ACCESS_SLAVE_CLIENT_SECRET || CF_ACCESS_CLIENT_SECRET;
+const CF_ACCESS_SLAVE_HEADER_NAME = process.env.HA_SLAVE_CUSTOM_HEADER_NAME || CF_ACCESS_HEADER_NAME;
+const CF_ACCESS_SLAVE_HEADER_VALUE = process.env.HA_SLAVE_CUSTOM_HEADER_VALUE || CF_ACCESS_HEADER_VALUE;
 const HA_SCRIPT_ON = process.env.HA_SCRIPT_ENTITY_ON || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
 const HA_SCRIPT_OFF = process.env.HA_SCRIPT_ENTITY_OFF || process.env.HA_SCRIPT_ENTITY_ON || process.env.HA_SWITCH_ENTITY_OFF || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
 const HA_SLAVE_SCRIPT_ON = process.env.HA_SLAVE_SCRIPT_ENTITY_ON || HA_SCRIPT_ON;
 const HA_SLAVE_SCRIPT_OFF = process.env.HA_SLAVE_SCRIPT_ENTITY_OFF || HA_SCRIPT_OFF;
 const POWER_FAILOVER_DELAY_MS = Number(process.env.POWER_FAILOVER_DELAY_MS || 30000);
+const POWER_FORCE_SLAVE_ONLY = String(process.env.POWER_FORCE_SLAVE_ONLY || 'false').toLowerCase() === 'true';
 
 const POWER_TRACE_LOGS_ENABLED = (process.env.POWER_TRACE_LOGS || 'true').toLowerCase() !== 'false';
 
@@ -62,6 +71,39 @@ function normalizeBaseUrl(value) {
     if (!raw) return '';
     const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
     return withScheme.replace(/\/$/, '');
+}
+
+function safeUrlForLog(value) {
+    try {
+        const u = new URL(value);
+        return `${u.protocol}//${u.host}`;
+    } catch {
+        return String(value || 'invalid');
+    }
+}
+
+function buildTargetHeaders(token, targetName) {
+    const headers = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+    };
+
+    const isSlaveTarget = String(targetName || '').toUpperCase() === 'SLAVE';
+    const clientId = isSlaveTarget ? CF_ACCESS_SLAVE_CLIENT_ID : CF_ACCESS_CLIENT_ID;
+    const clientSecret = isSlaveTarget ? CF_ACCESS_SLAVE_CLIENT_SECRET : CF_ACCESS_CLIENT_SECRET;
+    const customHeaderName = isSlaveTarget ? CF_ACCESS_SLAVE_HEADER_NAME : CF_ACCESS_HEADER_NAME;
+    const customHeaderValue = isSlaveTarget ? CF_ACCESS_SLAVE_HEADER_VALUE : CF_ACCESS_HEADER_VALUE;
+
+    if (clientId && clientSecret) {
+        headers['CF-Access-Client-Id'] = clientId;
+        headers['CF-Access-Client-Secret'] = clientSecret;
+    }
+
+    if (customHeaderName && customHeaderValue) {
+        headers[customHeaderName] = customHeaderValue;
+    }
+
+    return headers;
 }
 
 function parsePowerState(raw) {
@@ -119,17 +161,19 @@ async function callHAServiceToTarget(entityId, turnOn, traceId, {
     const service = isScriptEntity ? 'turn_on' : (turnOn ? 'turn_on' : 'turn_off');
     const url = `${normalizedBaseUrl}/api/services/${domain}/${service}`;
 
-    traceLog(traceId, 'HA/1', `Send ${targetName}`, { entity_id: entityId, service });
+    traceLog(traceId, 'HA/1', `Send ${targetName}`, {
+        entity_id: entityId,
+        service,
+        url: safeUrlForLog(normalizedBaseUrl)
+    });
 
     try {
+        const headers = buildTargetHeaders(token, targetName);
         const response = await axios.post(
             url,
             { entity_id: entityId },
             {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
+                headers,
                 timeout: 10000
             }
         );
@@ -183,14 +227,13 @@ function scheduleSlaveFailover({ turnOn, action, traceId, sentAtIso }) {
         }
 
         const slaveEntityId = turnOn ? HA_SLAVE_SCRIPT_ON : HA_SLAVE_SCRIPT_OFF;
-        await callHAServiceToTarget(slaveEntityId, turnOn, traceId, {
+        const slaveOk = await callHAServiceToTarget(slaveEntityId, turnOn, traceId, {
             baseUrl: HA_SLAVE_URL,
             token: HA_SLAVE_TOKEN,
             targetName: 'SLAVE',
             allowSmartThingsFallback: false
         });
-
-        traceLog(traceId, 'FO/2', `Slave sent: ${action}`);
+        traceLog(traceId, 'FO/2', slaveOk ? `Slave OK: ${action}` : `Slave FAIL: ${action}`, null, slaveOk ? 'info' : 'error');
     }, delayMs);
 }
 
@@ -211,25 +254,29 @@ export async function controlPower(turnOn, context = {}) {
         source: traceContext.source
     });
 
-    const entityId = turnOn ? HA_SCRIPT_ON : HA_SCRIPT_OFF;
+    const entityId = turnOn
+        ? (POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_SCRIPT_ON : HA_SCRIPT_ON)
+        : (POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_SCRIPT_OFF : HA_SCRIPT_OFF);
     const action = turnOn ? 'on' : 'off';
     const sentAtIso = new Date().toISOString();
 
     const masterSuccess = await callHAServiceToTarget(entityId, turnOn, traceId, {
-        baseUrl: HA_URL,
-        token: HA_TOKEN,
-        targetName: 'MASTER',
+        baseUrl: POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_URL : HA_URL,
+        token: POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_TOKEN : HA_TOKEN,
+        targetName: POWER_FORCE_SLAVE_ONLY ? 'SLAVE' : 'MASTER',
         allowSmartThingsFallback: false
     });
 
-    scheduleSlaveFailover({
-        turnOn,
-        action,
-        traceId,
-        sentAtIso
-    });
+    if (!POWER_FORCE_SLAVE_ONLY) {
+        scheduleSlaveFailover({
+            turnOn,
+            action,
+            traceId,
+            sentAtIso
+        });
+    }
 
-    traceLog(traceId, 'CP/2', 'Accepted + timer 30s', { masterSuccess });
+    traceLog(traceId, 'CP/2', POWER_FORCE_SLAVE_ONLY ? 'Slave-only mode' : 'Accepted + timer 30s', { masterSuccess });
     return true;
 }
 
@@ -249,26 +296,30 @@ export async function controlMeterByAction(action, context = {}) {
     }
 
     const turnOn = normalized === 'on';
-    const entityId = turnOn ? HA_SCRIPT_ON : HA_SCRIPT_OFF;
+    const entityId = turnOn
+        ? (POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_SCRIPT_ON : HA_SCRIPT_ON)
+        : (POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_SCRIPT_OFF : HA_SCRIPT_OFF);
     const sentAtIso = new Date().toISOString();
 
-    traceLog(traceId, 'CM/2', 'Send MASTER', { action: normalized });
+    traceLog(traceId, 'CM/2', POWER_FORCE_SLAVE_ONLY ? 'Send SLAVE (only)' : 'Send MASTER', { action: normalized });
 
     const masterSuccess = await callHAServiceToTarget(entityId, turnOn, traceId, {
-        baseUrl: HA_URL,
-        token: HA_TOKEN,
-        targetName: 'MASTER',
+        baseUrl: POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_URL : HA_URL,
+        token: POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_TOKEN : HA_TOKEN,
+        targetName: POWER_FORCE_SLAVE_ONLY ? 'SLAVE' : 'MASTER',
         allowSmartThingsFallback: false
     });
 
-    scheduleSlaveFailover({
-        turnOn,
-        action: normalized,
-        traceId,
-        sentAtIso
-    });
+    if (!POWER_FORCE_SLAVE_ONLY) {
+        scheduleSlaveFailover({
+            turnOn,
+            action: normalized,
+            traceId,
+            sentAtIso
+        });
+    }
 
-    traceLog(traceId, 'CM/3', 'Accepted + timer 30s', { masterSuccess });
+    traceLog(traceId, 'CM/3', POWER_FORCE_SLAVE_ONLY ? 'Slave-only mode' : 'Accepted + timer 30s', { masterSuccess });
 
     return {
         success: true,
