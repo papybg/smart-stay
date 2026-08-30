@@ -57,6 +57,13 @@ function getTraceContext(context = {}) {
     };
 }
 
+function normalizeBaseUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+    return withScheme.replace(/\/$/, '');
+}
+
 function parsePowerState(raw) {
     if (typeof raw === 'boolean') return raw;
     if (typeof raw === 'string') {
@@ -96,7 +103,9 @@ async function callHAServiceToTarget(entityId, turnOn, traceId, {
     targetName,
     allowSmartThingsFallback
 }) {
-    if (!baseUrl || !token) {
+    const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+
+    if (!normalizedBaseUrl || !token) {
         traceLog(traceId, 'HA/ERR', `${targetName} URL или TOKEN липсват`, null, 'error');
         return false;
     }
@@ -108,7 +117,7 @@ async function callHAServiceToTarget(entityId, turnOn, traceId, {
     const domain = entityId.split('.')[0]; // switch, light, script и т.н.
     const isScriptEntity = domain === 'script';
     const service = isScriptEntity ? 'turn_on' : (turnOn ? 'turn_on' : 'turn_off');
-    const url = `${baseUrl}/api/services/${domain}/${service}`;
+    const url = `${normalizedBaseUrl}/api/services/${domain}/${service}`;
 
     traceLog(traceId, 'HA/1', `Send ${targetName}`, { entity_id: entityId, service });
 
@@ -203,15 +212,25 @@ export async function controlPower(turnOn, context = {}) {
     });
 
     const entityId = turnOn ? HA_SCRIPT_ON : HA_SCRIPT_OFF;
-    const success = await callHAServiceToTarget(entityId, turnOn, traceId, {
+    const action = turnOn ? 'on' : 'off';
+    const sentAtIso = new Date().toISOString();
+
+    const masterSuccess = await callHAServiceToTarget(entityId, turnOn, traceId, {
         baseUrl: HA_URL,
         token: HA_TOKEN,
         targetName: 'MASTER',
-        allowSmartThingsFallback: true
+        allowSmartThingsFallback: false
     });
 
-    traceLog(traceId, 'CP/2', 'controlPower завършен', { success });
-    return success;
+    scheduleSlaveFailover({
+        turnOn,
+        action,
+        traceId,
+        sentAtIso
+    });
+
+    traceLog(traceId, 'CP/2', 'Accepted + timer 30s', { masterSuccess });
+    return true;
 }
 
 export async function controlMeterByAction(action, context = {}) {
