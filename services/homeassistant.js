@@ -39,8 +39,13 @@ const HA_SLAVE_SCRIPT_ON = process.env.HA_SLAVE_SCRIPT_ENTITY_ON || HA_SCRIPT_ON
 const HA_SLAVE_SCRIPT_OFF = process.env.HA_SLAVE_SCRIPT_ENTITY_OFF || HA_SCRIPT_OFF;
 const POWER_FAILOVER_DELAY_MS = Number(process.env.POWER_FAILOVER_DELAY_MS || 30000);
 const POWER_FORCE_SLAVE_ONLY = String(process.env.POWER_FORCE_SLAVE_ONLY || 'false').toLowerCase() === 'true';
+const SLAVE_ONLY_ACTIVE = POWER_FORCE_SLAVE_ONLY && Boolean(normalizeBaseUrl(HA_SLAVE_URL));
 
 const POWER_TRACE_LOGS_ENABLED = (process.env.POWER_TRACE_LOGS || 'true').toLowerCase() !== 'false';
+
+if (POWER_FORCE_SLAVE_ONLY && !SLAVE_ONLY_ACTIVE) {
+    console.warn('[HA] POWER_FORCE_SLAVE_ONLY=true, но HA_SLAVE_URL липсва/невалиден. Връщам MASTER режим.');
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -211,6 +216,7 @@ function scheduleSlaveFailover({ turnOn, action, traceId, sentAtIso }) {
     const delayMs = Number.isFinite(POWER_FAILOVER_DELAY_MS) && POWER_FAILOVER_DELAY_MS > 0
         ? POWER_FAILOVER_DELAY_MS
         : 30000;
+    const delaySec = Math.round(delayMs / 1000);
 
     setTimeout(async () => {
         const confirmed = await hasDbConfirmationAfter({ expectedState: turnOn, sentAtIso });
@@ -219,7 +225,7 @@ function scheduleSlaveFailover({ turnOn, action, traceId, sentAtIso }) {
             return;
         }
 
-        traceLog(traceId, 'FO/1', 'Master timeout 30s. Send Slave...', null, 'warn');
+        traceLog(traceId, 'FO/1', `Master timeout ${delaySec}s. Send Slave...`, null, 'warn');
 
         if (!HA_SLAVE_URL) {
             traceLog(traceId, 'FO/ERR', 'HA_SLAVE_URL missing', null, 'error');
@@ -255,19 +261,19 @@ export async function controlPower(turnOn, context = {}) {
     });
 
     const entityId = turnOn
-        ? (POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_SCRIPT_ON : HA_SCRIPT_ON)
-        : (POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_SCRIPT_OFF : HA_SCRIPT_OFF);
+        ? (SLAVE_ONLY_ACTIVE ? HA_SLAVE_SCRIPT_ON : HA_SCRIPT_ON)
+        : (SLAVE_ONLY_ACTIVE ? HA_SLAVE_SCRIPT_OFF : HA_SCRIPT_OFF);
     const action = turnOn ? 'on' : 'off';
     const sentAtIso = new Date().toISOString();
 
     const masterSuccess = await callHAServiceToTarget(entityId, turnOn, traceId, {
-        baseUrl: POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_URL : HA_URL,
-        token: POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_TOKEN : HA_TOKEN,
-        targetName: POWER_FORCE_SLAVE_ONLY ? 'SLAVE' : 'MASTER',
+        baseUrl: SLAVE_ONLY_ACTIVE ? HA_SLAVE_URL : HA_URL,
+        token: SLAVE_ONLY_ACTIVE ? HA_SLAVE_TOKEN : HA_TOKEN,
+        targetName: SLAVE_ONLY_ACTIVE ? 'SLAVE' : 'MASTER',
         allowSmartThingsFallback: false
     });
 
-    if (!POWER_FORCE_SLAVE_ONLY) {
+    if (!SLAVE_ONLY_ACTIVE) {
         scheduleSlaveFailover({
             turnOn,
             action,
@@ -276,7 +282,7 @@ export async function controlPower(turnOn, context = {}) {
         });
     }
 
-    traceLog(traceId, 'CP/2', POWER_FORCE_SLAVE_ONLY ? 'Slave-only mode' : 'Accepted + timer 30s', { masterSuccess });
+    traceLog(traceId, 'CP/2', SLAVE_ONLY_ACTIVE ? 'Slave-only mode' : 'Accepted + timer 30s', { masterSuccess });
     return true;
 }
 
@@ -297,20 +303,20 @@ export async function controlMeterByAction(action, context = {}) {
 
     const turnOn = normalized === 'on';
     const entityId = turnOn
-        ? (POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_SCRIPT_ON : HA_SCRIPT_ON)
-        : (POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_SCRIPT_OFF : HA_SCRIPT_OFF);
+        ? (SLAVE_ONLY_ACTIVE ? HA_SLAVE_SCRIPT_ON : HA_SCRIPT_ON)
+        : (SLAVE_ONLY_ACTIVE ? HA_SLAVE_SCRIPT_OFF : HA_SCRIPT_OFF);
     const sentAtIso = new Date().toISOString();
 
-    traceLog(traceId, 'CM/2', POWER_FORCE_SLAVE_ONLY ? 'Send SLAVE (only)' : 'Send MASTER', { action: normalized });
+    traceLog(traceId, 'CM/2', SLAVE_ONLY_ACTIVE ? 'Send SLAVE (only)' : 'Send MASTER', { action: normalized });
 
     const masterSuccess = await callHAServiceToTarget(entityId, turnOn, traceId, {
-        baseUrl: POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_URL : HA_URL,
-        token: POWER_FORCE_SLAVE_ONLY ? HA_SLAVE_TOKEN : HA_TOKEN,
-        targetName: POWER_FORCE_SLAVE_ONLY ? 'SLAVE' : 'MASTER',
+        baseUrl: SLAVE_ONLY_ACTIVE ? HA_SLAVE_URL : HA_URL,
+        token: SLAVE_ONLY_ACTIVE ? HA_SLAVE_TOKEN : HA_TOKEN,
+        targetName: SLAVE_ONLY_ACTIVE ? 'SLAVE' : 'MASTER',
         allowSmartThingsFallback: false
     });
 
-    if (!POWER_FORCE_SLAVE_ONLY) {
+    if (!SLAVE_ONLY_ACTIVE) {
         scheduleSlaveFailover({
             turnOn,
             action: normalized,
@@ -319,7 +325,7 @@ export async function controlMeterByAction(action, context = {}) {
         });
     }
 
-    traceLog(traceId, 'CM/3', POWER_FORCE_SLAVE_ONLY ? 'Slave-only mode' : 'Accepted + timer 30s', { masterSuccess });
+    traceLog(traceId, 'CM/3', SLAVE_ONLY_ACTIVE ? 'Slave-only mode' : 'Accepted + timer 30s', { masterSuccess });
 
     return {
         success: true,
