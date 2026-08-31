@@ -62,7 +62,7 @@ export function isPowerCommandRequest(userMessage) {
 
 export function isPowerStatusRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
-    return /има ли ток|има ток|няма ли ток|статус на тока|как е токът|токът има ли го|има ли електричество|има електричество|няма електричество|има ли захранване|има захранване|няма захранване|има ли ток в апартамента|ток има ли|power status|is there power|electricity status|is electricity on/i.test(userMessage);
+    return /има ли ток|има ток|няма ли ток|статус на тока|как е токът|токът има ли го|има ли електричество|има електричество|няма електричество|има ли захранване|има захранване|няма захранване|има ли ток в апартамента|ток има ли|има ли потвърждение|има ли потвърждение за тока|потвърди ли се|потвърдено ли е|потвърждение за команда|power status|is there power|electricity status|is electricity on|is it confirmed|confirmation status/i.test(userMessage);
 }
 
 // ── Reservation / booking ──────────────────────────────────────────────────

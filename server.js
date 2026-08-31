@@ -38,7 +38,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { neon } from '@neondatabase/serverless';
-import { getAIResponse, assignPinFromDepot } from './services/ai_service.js';
+import { getAIResponse, assignPinFromDepot, determineUserRole } from './services/ai_service.js';
 import { controlPower, controlMeterByAction, readLatestPowerStateFromHistory } from './services/homeassistant.js';
 import { generateToken, invalidateToken, validateToken, SESSION_DURATION } from './services/sessionManager.js';
 import { syncBookingsPowerFromLatestHistory } from './services/detective.js';
@@ -712,6 +712,7 @@ app.post('/', handleSmartThingsLifecycle);
 
 registerAuthRoutes(app, {
     getAIResponse,
+    determineUserRole,
     generateToken,
     invalidateToken,
     sessionDuration: SESSION_DURATION

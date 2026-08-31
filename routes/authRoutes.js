@@ -2,6 +2,7 @@ import axios from 'axios';
 
 export function registerAuthRoutes(app, {
     getAIResponse,
+    determineUserRole,
     generateToken,
     invalidateToken,
     sessionDuration
@@ -62,7 +63,24 @@ export function registerAuthRoutes(app, {
             console.log('[CHAT] 🤖 Викам AI асистент...');
 
             const aiResponse = await getAIResponse(message, history, authToken);
-            return res.json({ response: aiResponse });
+
+            const responsePayload = { response: aiResponse };
+            if (!authToken && typeof determineUserRole === 'function') {
+                try {
+                    const roleCheck = await determineUserRole(null, message, history);
+                    if (roleCheck?.role === 'host' || roleCheck?.role === 'guest') {
+                        const issuedToken = generateToken(roleCheck.role);
+                        responsePayload.token = issuedToken;
+                        responsePayload.role = roleCheck.role;
+                        responsePayload.expiresIn = Math.floor(sessionDuration / 1000);
+                        console.log(`[CHAT] ✅ Издаден chat session token за ${roleCheck.role}`);
+                    }
+                } catch (roleError) {
+                    console.warn('[CHAT] ⚠️ Неуспех при chat token issue:', roleError.message);
+                }
+            }
+
+            return res.json(responsePayload);
         } catch (error) {
             console.error('[CHAT] 🔴 Грешка:', error.message);
             return res.status(500).json({ error: 'AI грешка' });

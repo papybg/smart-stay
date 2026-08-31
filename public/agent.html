@@ -172,6 +172,13 @@
 
     const chatHistory = [];
 
+    function saveSessionToken(token, expiresInSeconds) {
+        if (!token) return;
+        const ttlMs = Number(expiresInSeconds || 1800) * 1000;
+        localStorage.setItem('smart-stay-token', token);
+        localStorage.setItem('smart-stay-expiry', String(Date.now() + ttlMs));
+    }
+
     function getSessionToken() {
         const token = localStorage.getItem('smart-stay-token');
         const expiry = Number(localStorage.getItem('smart-stay-expiry') || 0);
@@ -315,6 +322,10 @@
             if (!data) {
                 const snippet = (rawText || '').slice(0, 120);
                 throw new Error(`Сървърът върна не-JSON отговор: ${snippet}`);
+            }
+
+            if (data.token) {
+                saveSessionToken(data.token, data.expiresIn);
             }
 
             const rawReply = data?.response || 'Съжалявам, не успях да отговоря в момента.';
