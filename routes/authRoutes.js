@@ -1,5 +1,16 @@
 import axios from 'axios';
 
+function readCookieToken(cookieHeader = '') {
+    const raw = String(cookieHeader || '');
+    const parts = raw.split(';').map((x) => x.trim());
+    for (const part of parts) {
+        if (part.startsWith('smart_stay_token=')) {
+            return decodeURIComponent(part.slice('smart_stay_token='.length));
+        }
+    }
+    return null;
+}
+
 export function registerAuthRoutes(app, {
     getAIResponse,
     determineUserRole,
@@ -26,6 +37,8 @@ export function registerAuthRoutes(app, {
             const expiresIn = Math.floor(sessionDuration / 1000);
             console.log('[LOGIN] ✅ Успешна аутентификация за host');
 
+            res.setHeader('Set-Cookie', `smart_stay_token=${encodeURIComponent(token)}; Max-Age=${expiresIn}; Path=/; SameSite=Lax`);
+
             return res.json({
                 success: true,
                 token,
@@ -45,6 +58,7 @@ export function registerAuthRoutes(app, {
             if (invalidateToken(token)) {
                 console.log('[LOGOUT] ✅ Излязъл успешно, token изтрит');
             }
+            res.setHeader('Set-Cookie', 'smart_stay_token=; Max-Age=0; Path=/; SameSite=Lax');
             return res.json({ success: true });
         } catch (error) {
             console.error('[LOGOUT] 🔴 Грешка:', error.message);
@@ -59,7 +73,8 @@ export function registerAuthRoutes(app, {
                 return res.status(400).json({ error: 'Съобщението е празно' });
             }
 
-            const authToken = token || authCode;
+            const cookieToken = readCookieToken(req.headers.cookie);
+            const authToken = token || authCode || cookieToken;
             console.log('[CHAT] 🤖 Викам AI асистент...');
 
             const aiResponse = await getAIResponse(message, history, authToken);
@@ -73,6 +88,7 @@ export function registerAuthRoutes(app, {
                         responsePayload.token = issuedToken;
                         responsePayload.role = roleCheck.role;
                         responsePayload.expiresIn = Math.floor(sessionDuration / 1000);
+                        res.setHeader('Set-Cookie', `smart_stay_token=${encodeURIComponent(issuedToken)}; Max-Age=${responsePayload.expiresIn}; Path=/; SameSite=Lax`);
                         console.log(`[CHAT] ✅ Издаден chat session token за ${roleCheck.role}`);
                     }
                 } catch (roleError) {

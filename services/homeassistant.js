@@ -37,6 +37,11 @@ const HA_SCRIPT_ON = process.env.HA_SCRIPT_ENTITY_ON || process.env.HA_SWITCH_EN
 const HA_SCRIPT_OFF = process.env.HA_SCRIPT_ENTITY_OFF || process.env.HA_SCRIPT_ENTITY_ON || process.env.HA_SWITCH_ENTITY_OFF || process.env.HA_SWITCH_ENTITY_ON || process.env.HA_SWITCH_ENTITY || '';
 const HA_SLAVE_SCRIPT_ON = process.env.HA_SLAVE_SCRIPT_ENTITY_ON || HA_SCRIPT_ON;
 const HA_SLAVE_SCRIPT_OFF = process.env.HA_SLAVE_SCRIPT_ENTITY_OFF || HA_SCRIPT_OFF;
+const HA_FRIDGE_ENTITY = process.env.HA_FRIDGE_ENTITY || '';
+const HA_AC_ENTITY = process.env.HA_AC_ENTITY || '';
+const HA_LOCK_ENTITY = process.env.HA_LOCK_ENTITY || '';
+const HA_BOILER_ENTITY = process.env.HA_BOILER_ENTITY || '';
+const HA_DEVICE_STATE_ENTITIES = process.env.HA_DEVICE_STATE_ENTITIES || '';
 const POWER_FAILOVER_DELAY_MS = Number(process.env.POWER_FAILOVER_DELAY_MS || 30000);
 const POWER_FORCE_SLAVE_ONLY = String(process.env.POWER_FORCE_SLAVE_ONLY || 'false').toLowerCase() === 'true';
 const SLAVE_ONLY_ACTIVE = POWER_FORCE_SLAVE_ONLY && Boolean(normalizeBaseUrl(HA_SLAVE_URL));
@@ -119,6 +124,58 @@ function parsePowerState(raw) {
         if (['off', 'false', '0', 'изкл', 'изключен', 'inactive'].includes(v)) return false;
     }
     return null;
+}
+
+function normalizeHaState(rawState) {
+    const value = String(rawState ?? '').trim().toLowerCase();
+    if (!value) return { code: 'unknown', text: 'unknown' };
+
+    if (['on', 'open', 'unlocked', 'home', 'heat', 'cool', 'auto', 'fan_only', 'playing'].includes(value)) {
+        return { code: 'on', text: value };
+    }
+    if (['off', 'closed', 'locked', 'away', 'unavailable', 'unknown', 'idle'].includes(value)) {
+        return { code: 'off', text: value };
+    }
+    return { code: 'other', text: value };
+}
+
+function parseDeviceStateMapFromEnv() {
+    if (!HA_DEVICE_STATE_ENTITIES) return {};
+    try {
+        const parsed = JSON.parse(HA_DEVICE_STATE_ENTITIES);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        const cleaned = {};
+        for (const [name, entityId] of Object.entries(parsed)) {
+            const normalizedName = String(name || '').trim().toLowerCase();
+            const normalizedEntity = String(entityId || '').trim();
+            if (!normalizedName || !normalizedEntity) continue;
+            cleaned[normalizedName] = normalizedEntity;
+        }
+        return cleaned;
+    } catch (error) {
+        console.warn('[HA] ⚠️ Невалиден JSON в HA_DEVICE_STATE_ENTITIES:', error.message);
+        return {};
+    }
+}
+
+function getConfiguredDeviceEntities() {
+    const fromEnvMap = parseDeviceStateMapFromEnv();
+    const defaults = {
+        fridge: HA_FRIDGE_ENTITY,
+        ac: HA_AC_ENTITY,
+        lock: HA_LOCK_ENTITY,
+        boiler: HA_BOILER_ENTITY
+    };
+
+    const merged = { ...defaults, ...fromEnvMap };
+    const cleaned = {};
+    for (const [name, entityId] of Object.entries(merged)) {
+        const n = String(name || '').trim().toLowerCase();
+        const e = String(entityId || '').trim();
+        if (!n || !e) continue;
+        cleaned[n] = e;
+    }
+    return cleaned;
 }
 
 export async function readLatestPowerStateFromHistory() {
@@ -210,6 +267,91 @@ async function hasDbConfirmationAfter({ expectedState, sentAtIso }) {
     } catch (error) {
         return false;
     }
+}
+
+async function getEntityStateFromTarget(entityId, traceId, {
+    baseUrl,
+    token,
+    targetName
+}) {
+    const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+    if (!normalizedBaseUrl || !token || !entityId) return null;
+
+    const url = `${normalizedBaseUrl}/api/states/${entityId}`;
+    try {
+        const response = await axios.get(url, {
+            headers: buildTargetHeaders(token, targetName),
+            timeout: 10000
+        });
+        const state = response?.data?.state;
+        const attrs = response?.data?.attributes || {};
+        const normalized = normalizeHaState(state);
+        return {
+            ok: true,
+            target: targetName,
+            entityId,
+            rawState: state,
+            normalizedState: normalized.code,
+            textState: normalized.text,
+            friendlyName: attrs.friendly_name || entityId,
+            lastChanged: response?.data?.last_changed || null
+        };
+    } catch (error) {
+        traceLog(traceId, 'STATE/ERR', `${targetName} state FAIL`, {
+            entityId,
+            status: error.response?.status,
+            error: error.message
+        }, 'warn');
+        return null;
+    }
+}
+
+export async function getSmartDeviceStates(deviceNames = [], context = {}) {
+    const traceId = context.traceId || createTraceId();
+    const configured = getConfiguredDeviceEntities();
+    const requested = Array.isArray(deviceNames) && deviceNames.length
+        ? deviceNames.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean)
+        : Object.keys(configured);
+
+    const states = {};
+    for (const name of requested) {
+        const entityId = configured[name];
+        if (!entityId) {
+            states[name] = { ok: false, reason: 'not_configured' };
+            continue;
+        }
+
+        const primary = await getEntityStateFromTarget(entityId, traceId, {
+            baseUrl: HA_URL,
+            token: HA_TOKEN,
+            targetName: 'MASTER'
+        });
+
+        if (primary?.ok) {
+            states[name] = primary;
+            continue;
+        }
+
+        const slave = await getEntityStateFromTarget(entityId, traceId, {
+            baseUrl: HA_SLAVE_URL,
+            token: HA_SLAVE_TOKEN,
+            targetName: 'SLAVE'
+        });
+
+        if (slave?.ok) {
+            states[name] = slave;
+            continue;
+        }
+
+        states[name] = { ok: false, reason: 'unreachable', entityId };
+    }
+
+    return {
+        ok: true,
+        traceId,
+        states,
+        configuredDevices: Object.keys(configured)
+    };
 }
 
 function scheduleSlaveFailover({ turnOn, action, traceId, sentAtIso }) {

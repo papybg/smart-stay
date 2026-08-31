@@ -65,6 +65,27 @@ export function isPowerStatusRequest(userMessage) {
     return /има ли ток|има ток|няма ли ток|статус на тока|как е токът|токът има ли го|има ли електричество|има електричество|няма електричество|има ли захранване|има захранване|няма захранване|има ли ток в апартамента|ток има ли|има ли потвърждение|има ли потвърждение за тока|потвърди ли се|потвърдено ли е|потвърждение за команда|power status|is there power|electricity status|is electricity on|is it confirmed|confirmation status/i.test(userMessage);
 }
 
+export function isSmartDeviceStatusRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const text = String(userMessage || '').toLowerCase();
+    const hasDevice = /(хладилник|климатик|бойлер|ключалк|врата|lock|fridge|refrigerator|ac|air\s*conditioner|boiler|water\s*heater)/i.test(text);
+    const hasStatusWord = /(работи|включен|изключен|статус|състояни|on|off|status|state|ok|наред|потвърждение)/i.test(text);
+    const isQuestion = /(\?|дали|има ли|какво е|какъв е|is |are )/i.test(text);
+    return hasDevice && (hasStatusWord || isQuestion);
+}
+
+export function extractSmartDeviceTargets(userMessage) {
+    const text = String(userMessage || '').toLowerCase();
+    const targets = [];
+
+    if (/хладилник|fridge|refrigerator/i.test(text)) targets.push('fridge');
+    if (/климатик|ac|air\s*conditioner/i.test(text)) targets.push('ac');
+    if (/ключалк|врата|lock/i.test(text)) targets.push('lock');
+    if (/бойлер|boiler|water\s*heater/i.test(text)) targets.push('boiler');
+
+    return Array.from(new Set(targets));
+}
+
 // ── Reservation / booking ──────────────────────────────────────────────────
 
 function isReservationCodeToken(value = '') {

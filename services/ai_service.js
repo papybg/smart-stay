@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { controlPower as sendPowerCommand, controlMeterByAction } from './homeassistant.js';
+import { controlPower as sendPowerCommand, controlMeterByAction, getSmartDeviceStates } from './homeassistant.js';
 
 // ── Sub-module imports ─────────────────────────────────────────────────────
 
@@ -38,6 +38,7 @@ import { buildSystemInstruction } from './ai/instructions.js';
 import {
     detectPowerCommandIntent, isLikelyPowerCommand,
     isPowerCommandRequest, isPowerStatusRequest,
+    isSmartDeviceStatusRequest, extractSmartDeviceTargets,
     containsReservationCode, isBareReservationCodeMessage,
     isReservationCodeIntro, isReservationRefreshRequest,
     isLockCodeLookupRequest,
@@ -1389,6 +1390,66 @@ function getAccessWindowStateReply(accessWindow, language = 'bg') {
     return null;
 }
 
+function formatDeviceStateLabel(deviceName, language = 'bg') {
+    const labels = {
+        fridge: language === 'en' ? 'Fridge' : 'Хладилник',
+        ac: language === 'en' ? 'Air conditioner' : 'Климатик',
+        lock: language === 'en' ? 'Smart lock' : 'Смарт ключалка',
+        boiler: language === 'en' ? 'Boiler' : 'Бойлер'
+    };
+    return labels[deviceName] || deviceName;
+}
+
+function formatDeviceStateValue(entry, language = 'bg') {
+    if (!entry?.ok) {
+        if (entry?.reason === 'not_configured') {
+            return language === 'en' ? 'Not configured' : 'Не е конфигуриран';
+        }
+        return language === 'en' ? 'No live data' : 'Няма live данни';
+    }
+
+    const stateText = String(entry.textState || entry.rawState || 'unknown');
+    if (stateText === 'on') return language === 'en' ? 'On' : 'Включен';
+    if (stateText === 'off') return language === 'en' ? 'Off' : 'Изключен';
+    if (stateText === 'locked') return language === 'en' ? 'Locked' : 'Заключена';
+    if (stateText === 'unlocked') return language === 'en' ? 'Unlocked' : 'Отключена';
+    if (stateText === 'open') return language === 'en' ? 'Open' : 'Отворена';
+    if (stateText === 'closed') return language === 'en' ? 'Closed' : 'Затворена';
+    if (stateText === 'cool') return language === 'en' ? 'Cooling' : 'Охлажда';
+    if (stateText === 'heat') return language === 'en' ? 'Heating' : 'Отоплява';
+    return stateText;
+}
+
+async function getSmartDeviceStatusReply(userMessage, role, language = 'bg') {
+    if (role !== 'host' && role !== 'guest') {
+        return language === 'en'
+            ? 'This request requires authorization.'
+            : 'За този въпрос е нужна оторизация.';
+    }
+
+    const targets = extractSmartDeviceTargets(userMessage);
+    const result = await getSmartDeviceStates(targets, { source: 'ai_status_query' });
+    const states = result?.states || {};
+    const names = Object.keys(states);
+
+    if (!names.length) {
+        return language === 'en'
+            ? 'No smart devices are configured for live status yet.'
+            : 'Няма конфигурирани смарт устройства за live статус.';
+    }
+
+    const lines = names.map((name) => {
+        const label = formatDeviceStateLabel(name, language);
+        const value = formatDeviceStateValue(states[name], language);
+        return `• ${label}: ${value}`;
+    });
+
+    const header = language === 'en'
+        ? 'Live status from Home Assistant:'
+        : 'Live статус от Home Assistant:';
+    return `${header}\n\n${lines.join('\n')}`;
+}
+
 // ============================================================================
 // EXPORTED: checkEmergencyPower
 // ============================================================================
@@ -1650,6 +1711,11 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
         return preferredLanguage === 'en'
             ? 'There is no power history status at the moment.'
             : 'В момента няма статус в power history.';
+    }
+
+    // 3.6. Live статус на смарт устройства от Home Assistant
+    if (isSmartDeviceStatusRequest(userMessage) && !requestedPowerCommand) {
+        return await getSmartDeviceStatusReply(userMessage, role, preferredLanguage);
     }
 
     // 4. Четене на manual
