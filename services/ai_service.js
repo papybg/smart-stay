@@ -336,6 +336,7 @@ const automationClient = {
 
 async function getSourcePowerStatus(role, bookingData) {
     if (!sql) return { available: false, state: null };
+    const POWER_STATUS_MAX_AGE_MS = Number(process.env.POWER_STATUS_MAX_AGE_MS || 10 * 60 * 1000);
 
     const normalizeStatus = (value) => {
         if (typeof value === 'boolean') return value ? 'on' : 'off';
@@ -347,35 +348,36 @@ async function getSourcePowerStatus(role, bookingData) {
     };
 
     try {
-        if (role === 'guest' && bookingData?.booking_id) {
-            const rows = await sql`
-                SELECT is_on, timestamp FROM power_history
-                WHERE booking_id = ${String(bookingData.booking_id)}
-                ORDER BY timestamp DESC LIMIT 1
-            `;
-            const status = normalizeStatus(rows[0]?.is_on);
-            if (status) return { available: true, state: status };
-        }
-
-        if (role === 'guest' && bookingData?.reservation_code) {
-            const fallbackRows = await sql`
-                SELECT is_on, timestamp FROM power_history
-                WHERE booking_id = ${String(bookingData.reservation_code)}
-                ORDER BY timestamp DESC LIMIT 1
-            `;
-            const fallbackStatus = normalizeStatus(fallbackRows[0]?.is_on);
-            if (fallbackStatus) return { available: true, state: fallbackStatus };
-        }
-
         const latestRows = await sql`
-            SELECT is_on, timestamp FROM power_history
+            SELECT is_on, timestamp, source FROM power_history
             ORDER BY timestamp DESC LIMIT 1
         `;
 
         if (latestRows.length === 0) return { available: true, state: null };
 
-        const status = normalizeStatus(latestRows[0]?.is_on);
-        return { available: true, state: status || null };
+        const latest = latestRows[0];
+        const status = normalizeStatus(latest?.is_on);
+        const ts = latest?.timestamp ? new Date(latest.timestamp) : null;
+        const ageMs = ts && Number.isFinite(ts.getTime()) ? (Date.now() - ts.getTime()) : null;
+        const isStale = Number.isFinite(ageMs) && ageMs > POWER_STATUS_MAX_AGE_MS;
+
+        if (isStale) {
+            return {
+                available: true,
+                state: null,
+                stale: true,
+                source: latest?.source || null,
+                timestamp: latest?.timestamp || null
+            };
+        }
+
+        return {
+            available: true,
+            state: status || null,
+            stale: false,
+            source: latest?.source || null,
+            timestamp: latest?.timestamp || null
+        };
     } catch (error) {
         console.error('[DB] 🔴 Грешка при четене на power_history:', error.message);
         return { available: false, state: null };
@@ -1705,6 +1707,11 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
             return preferredLanguage === 'en'
                 ? 'I currently cannot read power source status.'
                 : 'В момента не мога да прочета статуса от power history.';
+        }
+        if (sourceStatus.stale) {
+            return preferredLanguage === 'en'
+                ? 'I do not have a recent confirmed power status yet.'
+                : 'Нямам актуално потвърждение за статуса на тока.';
         }
         if (sourceStatus.state === 'on') return preferredLanguage === 'en' ? 'Yes, there is electricity.' : 'Да, има ток.';
         if (sourceStatus.state === 'off') return preferredLanguage === 'en' ? 'No, there is no electricity.' : 'Не, няма ток.';
