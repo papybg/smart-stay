@@ -198,6 +198,68 @@ function getConfiguredDeviceEntities() {
     return cleaned;
 }
 
+function mapDeviceNameToBg(deviceName = '') {
+    const normalized = String(deviceName || '').trim().toLowerCase();
+    if (normalized === 'boiler') return 'бойлер';
+    if (normalized === 'fridge') return 'хладилник';
+    if (normalized === 'ac') return 'климатик';
+    if (normalized === 'lock') return 'ключалка';
+    return normalized;
+}
+
+async function resolveDeviceEntityFromDb(deviceName, apartmentCode = null) {
+    if (!sql || !deviceName) return null;
+    const deviceNameBg = mapDeviceNameToBg(deviceName);
+
+    try {
+        const normalizedApartment = String(apartmentCode || '').trim();
+        const rows = normalizedApartment
+            ? await sql`
+                SELECT apartment_code, entity_id
+                FROM ha_ustroistva_bg
+                WHERE lower(device_name_bg) = lower(${deviceNameBg})
+                  AND apartment_code = ${normalizedApartment}
+                LIMIT 1
+            `
+            : await sql`
+                SELECT apartment_code, entity_id
+                FROM ha_ustroistva_bg
+                WHERE lower(device_name_bg) = lower(${deviceNameBg})
+                ORDER BY apartment_code ASC
+                LIMIT 5
+            `;
+
+        if (!rows.length) return null;
+
+        if (normalizedApartment) {
+            return {
+                ok: true,
+                entityId: rows[0].entity_id,
+                apartmentCode: rows[0].apartment_code || normalizedApartment,
+                source: 'db_map'
+            };
+        }
+
+        if (rows.length > 1) {
+            return {
+                ok: false,
+                reason: 'ambiguous_apartment',
+                apartmentCodes: rows.map((row) => String(row.apartment_code || '').trim()).filter(Boolean)
+            };
+        }
+
+        return {
+            ok: true,
+            entityId: rows[0].entity_id,
+            apartmentCode: rows[0].apartment_code || null,
+            source: 'db_map'
+        };
+    } catch (error) {
+        console.warn('[HA] ⚠️ Неуспех при четене на ha_ustroistva_bg:', error.message);
+        return null;
+    }
+}
+
 export async function readLatestPowerStateFromHistory() {
     if (!sql) return null;
     try {
@@ -314,6 +376,9 @@ async function getEntityStateFromTarget(entityId, traceId, {
             normalizedState: normalized.code,
             textState: normalized.text,
             friendlyName: attrs.friendly_name || entityId,
+            currentTemperature: Number.isFinite(Number(attrs.current_temperature)) ? Number(attrs.current_temperature) : null,
+            targetTemperature: Number.isFinite(Number(attrs.temperature)) ? Number(attrs.temperature) : null,
+            hvacMode: attrs.hvac_mode || null,
             lastChanged: response?.data?.last_changed || null
         };
     } catch (error) {
@@ -323,6 +388,45 @@ async function getEntityStateFromTarget(entityId, traceId, {
             error: error.message
         }, 'warn');
         return null;
+    }
+}
+
+async function callHAEntityServiceToTarget(entityId, service, traceId, {
+    baseUrl,
+    token,
+    targetName
+}) {
+    const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+    if (!normalizedBaseUrl || !token || !entityId || !service) return false;
+
+    const domain = String(entityId).split('.')[0];
+    const url = `${normalizedBaseUrl}/api/services/${domain}/${service}`;
+
+    traceLog(traceId, 'DEV/1', `Send ${targetName}`, {
+        entity_id: entityId,
+        service,
+        url: safeUrlForLog(normalizedBaseUrl)
+    });
+
+    try {
+        const response = await axios.post(
+            url,
+            { entity_id: entityId },
+            {
+                headers: buildTargetHeaders(token, targetName),
+                timeout: 10000
+            }
+        );
+        traceLog(traceId, 'DEV/2', `${targetName} OK`, { status: response.status });
+        return true;
+    } catch (error) {
+        traceLog(traceId, 'DEV/ERR', `${targetName} FAIL`, {
+            entityId,
+            service,
+            status: error.response?.status,
+            error: error.message
+        }, 'warn');
+        return false;
     }
 }
 
@@ -374,6 +478,7 @@ export async function getLivePowerStateFromHA(context = {}) {
 
 export async function getSmartDeviceStates(deviceNames = [], context = {}) {
     const traceId = context.traceId || createTraceId();
+    const apartmentCode = String(context.apartmentCode || context.apartment_code || '').trim() || null;
     const configured = getConfiguredDeviceEntities();
     const requested = Array.isArray(deviceNames) && deviceNames.length
         ? deviceNames.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean)
@@ -381,7 +486,17 @@ export async function getSmartDeviceStates(deviceNames = [], context = {}) {
 
     const states = {};
     for (const name of requested) {
-        const entityId = configured[name];
+        const dbEntity = await resolveDeviceEntityFromDb(name, apartmentCode);
+        if (dbEntity?.ok === false && dbEntity.reason === 'ambiguous_apartment') {
+            states[name] = {
+                ok: false,
+                reason: 'ambiguous_apartment',
+                apartmentCodes: dbEntity.apartmentCodes || []
+            };
+            continue;
+        }
+
+        const entityId = dbEntity?.ok ? dbEntity.entityId : configured[name];
         if (!entityId) {
             states[name] = { ok: false, reason: 'not_configured' };
             continue;
@@ -394,7 +509,7 @@ export async function getSmartDeviceStates(deviceNames = [], context = {}) {
         });
 
         if (primary?.ok) {
-            states[name] = primary;
+            states[name] = { ...primary, apartmentCode: dbEntity?.apartmentCode || apartmentCode || null };
             continue;
         }
 
@@ -405,7 +520,7 @@ export async function getSmartDeviceStates(deviceNames = [], context = {}) {
         });
 
         if (slave?.ok) {
-            states[name] = slave;
+            states[name] = { ...slave, apartmentCode: dbEntity?.apartmentCode || apartmentCode || null };
             continue;
         }
 
@@ -417,6 +532,92 @@ export async function getSmartDeviceStates(deviceNames = [], context = {}) {
         traceId,
         states,
         configuredDevices: Object.keys(configured)
+    };
+}
+
+function resolveDeviceServiceForAction(entityId, action) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    if (normalizedAction !== 'on' && normalizedAction !== 'off') return null;
+
+    const domain = String(entityId || '').split('.')[0].toLowerCase();
+    const actionMap = {
+        switch: { on: 'turn_on', off: 'turn_off' },
+        light: { on: 'turn_on', off: 'turn_off' },
+        fan: { on: 'turn_on', off: 'turn_off' },
+        input_boolean: { on: 'turn_on', off: 'turn_off' },
+        climate: { on: 'turn_on', off: 'turn_off' },
+        cover: { on: 'open_cover', off: 'close_cover' },
+        lock: { on: 'unlock', off: 'lock' }
+    };
+
+    return actionMap[domain]?.[normalizedAction] || null;
+}
+
+export async function controlSmartDeviceByName(deviceName, action, context = {}) {
+    const traceId = context.traceId || createTraceId();
+    const normalizedName = String(deviceName || '').trim().toLowerCase();
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const apartmentCode = String(context.apartmentCode || context.apartment_code || '').trim() || null;
+
+    if (!normalizedName) {
+        return { success: false, reason: 'missing_device', traceId };
+    }
+    if (normalizedAction !== 'on' && normalizedAction !== 'off') {
+        return { success: false, reason: 'invalid_action', traceId };
+    }
+
+    const dbEntity = await resolveDeviceEntityFromDb(normalizedName, apartmentCode);
+    if (dbEntity?.ok === false && dbEntity.reason === 'ambiguous_apartment') {
+        return {
+            success: false,
+            reason: 'ambiguous_apartment',
+            apartmentCodes: dbEntity.apartmentCodes || [],
+            traceId
+        };
+    }
+
+    const configured = getConfiguredDeviceEntities();
+    const entityId = dbEntity?.ok ? dbEntity.entityId : configured[normalizedName];
+    if (!entityId) {
+        return { success: false, reason: 'not_configured', traceId };
+    }
+
+    const service = resolveDeviceServiceForAction(entityId, normalizedAction);
+    if (!service) {
+        return { success: false, reason: 'unsupported_domain', entityId, traceId };
+    }
+
+    const primaryOk = await callHAEntityServiceToTarget(entityId, service, traceId, {
+        baseUrl: HA_URL,
+        token: HA_TOKEN,
+        targetName: 'MASTER'
+    });
+
+    if (primaryOk) {
+        return {
+            success: true,
+            action: normalizedAction,
+            entityId,
+            target: 'MASTER',
+            apartmentCode: dbEntity?.apartmentCode || apartmentCode || null,
+            traceId
+        };
+    }
+
+    const slaveOk = await callHAEntityServiceToTarget(entityId, service, traceId, {
+        baseUrl: HA_SLAVE_URL,
+        token: HA_SLAVE_TOKEN,
+        targetName: 'SLAVE'
+    });
+
+    return {
+        success: slaveOk,
+        action: normalizedAction,
+        entityId,
+        target: slaveOk ? 'SLAVE' : null,
+        reason: slaveOk ? null : 'unreachable',
+        apartmentCode: dbEntity?.apartmentCode || apartmentCode || null,
+        traceId
     };
 }
 

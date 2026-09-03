@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { controlPower as sendPowerCommand, controlMeterByAction, getSmartDeviceStates, getLivePowerStateFromHA } from './homeassistant.js';
+import { controlPower as sendPowerCommand, controlMeterByAction, getSmartDeviceStates, getLivePowerStateFromHA, controlSmartDeviceByName } from './homeassistant.js';
 
 // ── Sub-module imports ─────────────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ import { buildSystemInstruction } from './ai/instructions.js';
 import {
     detectPowerCommandIntent, isLikelyPowerCommand,
     isPowerCommandRequest, isPowerStatusRequest, isForceHaPowerStatusRequest,
-    isSmartDeviceStatusRequest, extractSmartDeviceTargets,
+    isSmartDeviceStatusRequest, isSmartDeviceControlRequest, extractSmartDeviceControlAction, extractSmartDeviceTargets,
     containsReservationCode, isBareReservationCodeMessage,
     isReservationCodeIntro, isReservationRefreshRequest,
     isLockCodeLookupRequest,
@@ -1438,6 +1438,17 @@ function formatDeviceStateLabel(deviceName, language = 'bg') {
 
 function formatDeviceStateValue(entry, language = 'bg') {
     if (!entry?.ok) {
+        if (entry?.reason === 'ambiguous_apartment') {
+            const apartmentCodes = Array.isArray(entry?.apartmentCodes) ? entry.apartmentCodes.filter(Boolean) : [];
+            if (language === 'en') {
+                return apartmentCodes.length
+                    ? `Specify apartment: ${apartmentCodes.join(', ')}`
+                    : 'Specify apartment code';
+            }
+            return apartmentCodes.length
+                ? `Уточни апартамент: ${apartmentCodes.join(', ')}`
+                : 'Уточни кода на апартамента';
+        }
         if (entry?.reason === 'not_configured') {
             return language === 'en' ? 'Not configured' : 'Не е конфигуриран';
         }
@@ -1453,10 +1464,98 @@ function formatDeviceStateValue(entry, language = 'bg') {
     if (stateText === 'closed') return language === 'en' ? 'Closed' : 'Затворена';
     if (stateText === 'cool') return language === 'en' ? 'Cooling' : 'Охлажда';
     if (stateText === 'heat') return language === 'en' ? 'Heating' : 'Отоплява';
-    return stateText;
+
+    const temperatureParts = [];
+    if (Number.isFinite(entry?.currentTemperature)) {
+        temperatureParts.push(
+            language === 'en'
+                ? `room ${entry.currentTemperature}°C`
+                : `в стаята ${entry.currentTemperature}°C`
+        );
+    }
+    if (Number.isFinite(entry?.targetTemperature)) {
+        temperatureParts.push(
+            language === 'en'
+                ? `set ${entry.targetTemperature}°C`
+                : `зададена ${entry.targetTemperature}°C`
+        );
+    }
+
+    const base = stateText;
+    return temperatureParts.length ? `${base}, ${temperatureParts.join(', ')}` : base;
 }
 
-async function getSmartDeviceStatusReply(userMessage, role, language = 'bg') {
+function formatSmartDeviceControlResult(deviceName, result, language = 'bg') {
+    const label = formatDeviceStateLabel(deviceName, language);
+    if (result?.success) {
+        const actionText = result.action === 'on'
+            ? (language === 'en' ? 'turned on' : 'включен')
+            : (language === 'en' ? 'turned off' : 'изключен');
+        return `• ${label}: ${actionText}`;
+    }
+
+    if (result?.reason === 'not_configured') {
+        return `• ${label}: ${language === 'en' ? 'Not configured' : 'Не е конфигуриран'}`;
+    }
+    if (result?.reason === 'ambiguous_apartment') {
+        const apartmentCodes = Array.isArray(result?.apartmentCodes) ? result.apartmentCodes.filter(Boolean) : [];
+        const text = apartmentCodes.length
+            ? (language === 'en' ? `Specify apartment: ${apartmentCodes.join(', ')}` : `Уточни апартамент: ${apartmentCodes.join(', ')}`)
+            : (language === 'en' ? 'Specify apartment' : 'Уточни апартамент');
+        return `• ${label}: ${text}`;
+    }
+    if (result?.reason === 'unsupported_domain') {
+        return `• ${label}: ${language === 'en' ? 'Unsupported command type' : 'Неподдържан тип команда'}`;
+    }
+
+    return `• ${label}: ${language === 'en' ? 'Command failed' : 'Командата не успя'}`;
+}
+
+async function getSmartDeviceControlReply(userMessage, role, language = 'bg', data = null) {
+    if (role !== 'host' && role !== 'guest') {
+        return language === 'en'
+            ? 'This command requires authorization.'
+            : 'Тази команда изисква оторизация.';
+    }
+
+    const action = extractSmartDeviceControlAction(userMessage);
+    if (!action) {
+        return language === 'en'
+            ? 'I could not detect whether to turn on or off the device.'
+            : 'Не разбрах дали да включа или изключа устройството.';
+    }
+
+    const targets = extractSmartDeviceTargets(userMessage);
+    if (!targets.length) {
+        return language === 'en'
+            ? 'I could not detect a configured smart device in your command.'
+            : 'Не открих конфигурирано смарт устройство в командата.';
+    }
+
+    const apartmentCode = String(
+        data?.apartment_code
+        || data?.apartment
+        || data?.property_code
+        || ''
+    ).trim() || null;
+
+    const results = [];
+    for (const name of targets) {
+        const result = await controlSmartDeviceByName(name, action, {
+            source: 'ai_device_control',
+            apartmentCode
+        });
+        results.push({ name, result });
+    }
+
+    const lines = results.map(({ name, result }) => formatSmartDeviceControlResult(name, result, language));
+    const header = language === 'en'
+        ? 'Home Assistant device command result:'
+        : 'Резултат от команда към Home Assistant:';
+    return `${header}\n\n${lines.join('\n')}`;
+}
+
+async function getSmartDeviceStatusReply(userMessage, role, language = 'bg', data = null) {
     if (role !== 'host' && role !== 'guest') {
         return language === 'en'
             ? 'This request requires authorization.'
@@ -1464,7 +1563,15 @@ async function getSmartDeviceStatusReply(userMessage, role, language = 'bg') {
     }
 
     const targets = extractSmartDeviceTargets(userMessage);
-    const result = await getSmartDeviceStates(targets, { source: 'ai_status_query' });
+    const result = await getSmartDeviceStates(targets, {
+        source: 'ai_status_query',
+        apartmentCode: String(
+            data?.apartment_code
+            || data?.apartment
+            || data?.property_code
+            || ''
+        ).trim() || null
+    });
     const states = result?.states || {};
     const names = Object.keys(states);
 
@@ -1729,6 +1836,10 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
             : `Не мога да изпълня команда за тока, защото не сте оторизиран.\n\nЗа достъп:\n- Домакин: влезте с валиден token.\n- Гост: изпратете валиден код за резервация от активна резервация.\n\nСлед успешна верификация ще изпълня командата веднага.`;
     }
 
+    if (isSmartDeviceControlRequest(userMessage)) {
+        return await getSmartDeviceControlReply(userMessage, role, preferredLanguage, data);
+    }
+
     // 3. Статус на тока
     const powerStatus = await automationClient.getPowerStatus();
     const locale = preferredLanguage === 'en' ? 'en-GB' : 'bg-BG';
@@ -1754,7 +1865,7 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
 
     // 3.6. Live статус на смарт устройства от Home Assistant
     if (isSmartDeviceStatusRequest(userMessage) && !requestedPowerCommand) {
-        return await getSmartDeviceStatusReply(userMessage, role, preferredLanguage);
+        return await getSmartDeviceStatusReply(userMessage, role, preferredLanguage, data);
     }
 
     // 4. Четене на manual

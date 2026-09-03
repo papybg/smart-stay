@@ -79,6 +79,22 @@ export function isSmartDeviceStatusRequest(userMessage) {
     return hasDevice && (hasStatusWord || isQuestion);
 }
 
+export function isSmartDeviceControlRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    const text = String(userMessage || '').toLowerCase();
+    const hasDevice = /(хладилник|климатик|бойлер|ключалк|врата|lock|fridge|refrigerator|ac|air\s*conditioner|boiler|water\s*heater)/i.test(text);
+    if (!hasDevice) return false;
+    const commandIntent = detectPowerCommandIntent(text);
+    return Boolean(commandIntent.isInclude || commandIntent.isExclude);
+}
+
+export function extractSmartDeviceControlAction(userMessage) {
+    const intent = detectPowerCommandIntent(userMessage || '');
+    if (intent.isInclude) return 'on';
+    if (intent.isExclude) return 'off';
+    return null;
+}
+
 export function extractSmartDeviceTargets(userMessage) {
     const text = String(userMessage || '').toLowerCase();
     const targets = [];
