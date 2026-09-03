@@ -37,7 +37,7 @@ import { buildSystemInstruction } from './ai/instructions.js';
 
 import {
     detectPowerCommandIntent, isLikelyPowerCommand,
-    isPowerCommandRequest, isPowerStatusRequest,
+    isPowerCommandRequest, isPowerStatusRequest, isForceHaPowerStatusRequest,
     isSmartDeviceStatusRequest, extractSmartDeviceTargets,
     containsReservationCode, isBareReservationCodeMessage,
     isReservationCodeIntro, isReservationRefreshRequest,
@@ -1736,17 +1736,20 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
 
     // 3.5. Кратък отговор само за статус на ток
     if (isPowerStatusRequest(userMessage) && !requestedPowerCommand) {
-        const sourceStatus = await getSourcePowerStatus(role, data);
+        const forceHaLiveStatus = isForceHaPowerStatusRequest(userMessage);
+        const sourceStatus = forceHaLiveStatus
+            ? await getLivePowerStateFromHA({ source: 'status_force_ha' })
+            : await getSourcePowerStatus(role, data);
         if (!sourceStatus.available) {
             return preferredLanguage === 'en'
-                ? 'I currently cannot read power source status.'
-                : 'В момента не мога да прочета статуса от power history.';
+                ? (forceHaLiveStatus ? 'I currently cannot read live power status from Home Assistant.' : 'I currently cannot read power source status.')
+                : (forceHaLiveStatus ? 'В момента не мога да прочета live статуса от Home Assistant.' : 'В момента не мога да прочета статуса от power history.');
         }
         if (sourceStatus.state === 'on') return preferredLanguage === 'en' ? 'Yes, there is electricity.' : 'Да, има ток.';
         if (sourceStatus.state === 'off') return preferredLanguage === 'en' ? 'No, there is no electricity.' : 'Не, няма ток.';
         return preferredLanguage === 'en'
-            ? 'There is no power history status at the moment.'
-            : 'В момента няма статус в power history.';
+            ? (forceHaLiveStatus ? 'Home Assistant returned no clear live power state.' : 'There is no power history status at the moment.')
+            : (forceHaLiveStatus ? 'Home Assistant не върна ясен live статус за тока.' : 'В момента няма статус в power history.');
     }
 
     // 3.6. Live статус на смарт устройства от Home Assistant

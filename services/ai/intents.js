@@ -65,6 +65,11 @@ export function isPowerStatusRequest(userMessage) {
     return /има ли ток|има ток|няма ли ток|статус на тока|как е токът|токът има ли го|има ли електричество|има електричество|няма електричество|има ли захранване|има захранване|няма захранване|има ли ток в апартамента|ток има ли|има ли потвърждение|има ли потвърждение за тока|потвърди ли се|потвърдено ли е|потвърждение за команда|power status|is there power|electricity status|is electricity on|is it confirmed|confirmation status/i.test(userMessage);
 }
 
+export function isForceHaPowerStatusRequest(userMessage) {
+    if (!userMessage || typeof userMessage !== 'string') return false;
+    return /провери( директно| направо)? (в|през)?\s*ha|провери( директно| направо)?\s*home assistant|провери( директно| направо)?\s*от\s*ha|игнорирай\s*(db|базата|power history)|директно\s*от\s*home assistant|force\s*ha|check\s*(directly\s*)?in\s*ha|check\s*(directly\s*)?home assistant/i.test(userMessage);
+}
+
 export function isSmartDeviceStatusRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     const text = String(userMessage || '').toLowerCase();
