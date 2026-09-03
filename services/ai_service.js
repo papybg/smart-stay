@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { controlPower as sendPowerCommand, controlMeterByAction, getSmartDeviceStates } from './homeassistant.js';
+import { controlPower as sendPowerCommand, controlMeterByAction, getSmartDeviceStates, getLivePowerStateFromHA } from './homeassistant.js';
 
 // ── Sub-module imports ─────────────────────────────────────────────────────
 
@@ -335,8 +335,18 @@ const automationClient = {
 // ── Power source status ────────────────────────────────────────────────────
 
 async function getSourcePowerStatus(role, bookingData) {
-    if (!sql) return { available: false, state: null };
-    const POWER_STATUS_MAX_AGE_MS = Number(process.env.POWER_STATUS_MAX_AGE_MS || 10 * 60 * 1000);
+    if (!sql) {
+        const live = await getLivePowerStateFromHA({ source: 'status_no_db' });
+        if (live.available) {
+            return {
+                available: true,
+                state: live.state,
+                source: live.source,
+                timestamp: live.timestamp || null
+            };
+        }
+        return { available: false, state: null };
+    }
 
     const normalizeStatus = (value) => {
         if (typeof value === 'boolean') return value ? 'on' : 'off';
@@ -353,19 +363,35 @@ async function getSourcePowerStatus(role, bookingData) {
             ORDER BY timestamp DESC LIMIT 1
         `;
 
-        if (latestRows.length === 0) return { available: true, state: null };
+        if (latestRows.length === 0) {
+            const live = await getLivePowerStateFromHA({ source: 'status_empty_db' });
+            if (live.available) {
+                return {
+                    available: true,
+                    state: live.state,
+                    source: live.source,
+                    timestamp: live.timestamp || null
+                };
+            }
+            return { available: true, state: null };
+        }
 
         const latest = latestRows[0];
         const status = normalizeStatus(latest?.is_on);
-        const ts = latest?.timestamp ? new Date(latest.timestamp) : null;
-        const ageMs = ts && Number.isFinite(ts.getTime()) ? (Date.now() - ts.getTime()) : null;
-        const isStale = Number.isFinite(ageMs) && ageMs > POWER_STATUS_MAX_AGE_MS;
 
-        if (isStale) {
+        if (!status) {
+            const live = await getLivePowerStateFromHA({ source: 'status_invalid_db' });
+            if (live.available) {
+                return {
+                    available: true,
+                    state: live.state,
+                    source: live.source,
+                    timestamp: live.timestamp || latest?.timestamp || null
+                };
+            }
             return {
                 available: true,
                 state: null,
-                stale: true,
                 source: latest?.source || null,
                 timestamp: latest?.timestamp || null
             };
@@ -373,13 +399,21 @@ async function getSourcePowerStatus(role, bookingData) {
 
         return {
             available: true,
-            state: status || null,
-            stale: false,
+            state: status,
             source: latest?.source || null,
             timestamp: latest?.timestamp || null
         };
     } catch (error) {
         console.error('[DB] 🔴 Грешка при четене на power_history:', error.message);
+        const live = await getLivePowerStateFromHA({ source: 'status_db_error' });
+        if (live.available) {
+            return {
+                available: true,
+                state: live.state,
+                source: live.source,
+                timestamp: live.timestamp || null
+            };
+        }
         return { available: false, state: null };
     }
 }
@@ -1707,11 +1741,6 @@ export async function getAIResponse(userMessage, history = [], authCode = null) 
             return preferredLanguage === 'en'
                 ? 'I currently cannot read power source status.'
                 : 'В момента не мога да прочета статуса от power history.';
-        }
-        if (sourceStatus.stale) {
-            return preferredLanguage === 'en'
-                ? 'I do not have a recent confirmed power status yet.'
-                : 'Нямам актуално потвърждение за статуса на тока.';
         }
         if (sourceStatus.state === 'on') return preferredLanguage === 'en' ? 'Yes, there is electricity.' : 'Да, има ток.';
         if (sourceStatus.state === 'off') return preferredLanguage === 'en' ? 'No, there is no electricity.' : 'Не, няма ток.';

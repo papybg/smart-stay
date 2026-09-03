@@ -126,6 +126,26 @@ function parsePowerState(raw) {
     return null;
 }
 
+function getPowerStateEntityCandidates() {
+    const rawCandidates = [
+        process.env.HA_SWITCH_ENTITY,
+        process.env.HA_SWITCH_ENTITY_ON,
+        process.env.HA_SWITCH_ENTITY_OFF,
+        HA_SCRIPT_ON,
+        HA_SCRIPT_OFF,
+        HA_SLAVE_SCRIPT_ON,
+        HA_SLAVE_SCRIPT_OFF
+    ];
+
+    const normalized = rawCandidates
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+
+    const unique = [...new Set(normalized)];
+    const nonScript = unique.filter((entityId) => !entityId.toLowerCase().startsWith('script.'));
+    return nonScript.length ? nonScript : unique;
+}
+
 function normalizeHaState(rawState) {
     const value = String(rawState ?? '').trim().toLowerCase();
     if (!value) return { code: 'unknown', text: 'unknown' };
@@ -304,6 +324,52 @@ async function getEntityStateFromTarget(entityId, traceId, {
         }, 'warn');
         return null;
     }
+}
+
+export async function getLivePowerStateFromHA(context = {}) {
+    const traceId = context.traceId || createTraceId();
+    const entities = getPowerStateEntityCandidates();
+
+    if (!entities.length) {
+        traceLog(traceId, 'STATE/ERR', 'Липсва конфигуриран entity за live power status', null, 'warn');
+        return { available: false, state: null, source: null, timestamp: null };
+    }
+
+    for (const entityId of entities) {
+        const primary = await getEntityStateFromTarget(entityId, traceId, {
+            baseUrl: HA_URL,
+            token: HA_TOKEN,
+            targetName: 'MASTER'
+        });
+
+        const primaryState = parsePowerState(primary?.rawState);
+        if (primary?.ok && primaryState !== null) {
+            return {
+                available: true,
+                state: primaryState ? 'on' : 'off',
+                source: `ha_master:${entityId}`,
+                timestamp: primary.lastChanged || null
+            };
+        }
+
+        const slave = await getEntityStateFromTarget(entityId, traceId, {
+            baseUrl: HA_SLAVE_URL,
+            token: HA_SLAVE_TOKEN,
+            targetName: 'SLAVE'
+        });
+
+        const slaveState = parsePowerState(slave?.rawState);
+        if (slave?.ok && slaveState !== null) {
+            return {
+                available: true,
+                state: slaveState ? 'on' : 'off',
+                source: `ha_slave:${entityId}`,
+                timestamp: slave.lastChanged || null
+            };
+        }
+    }
+
+    return { available: false, state: null, source: null, timestamp: null };
 }
 
 export async function getSmartDeviceStates(deviceNames = [], context = {}) {
