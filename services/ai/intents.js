@@ -74,8 +74,10 @@ export function isSmartDeviceStatusRequest(userMessage) {
     if (!userMessage || typeof userMessage !== 'string') return false;
     const text = String(userMessage || '').toLowerCase();
     const hasDevice = /(хладилник|климатик|бойлер|ключалк|врата|lock|fridge|refrigerator|ac|air\s*conditioner|boiler|water\s*heater)/i.test(text);
-    const hasStatusWord = /(работи|включен|изключен|статус|състояни|on|off|status|state|ok|наред|потвърждение)/i.test(text);
+    const hasStatusWord = /(работи|включен|изключен|статус|състояни|on|off|status|state|ok|наред|потвърждение|температур|градус|°c)/i.test(text);
     const isQuestion = /(\?|дали|има ли|какво е|какъв е|is |are )/i.test(text);
+    const asksApartmentTemperature = /(температур|градус|°c).*(апартамент|стая|помещени)|(?:апартамент|стая|помещени).*(температур|градус|°c)/i.test(text);
+    if (asksApartmentTemperature) return true;
     return hasDevice && (hasStatusWord || isQuestion);
 }
 
@@ -103,6 +105,11 @@ export function extractSmartDeviceTargets(userMessage) {
     if (/климатик|ac|air\s*conditioner/i.test(text)) targets.push('ac');
     if (/ключалк|врата|lock/i.test(text)) targets.push('lock');
     if (/бойлер|boiler|water\s*heater/i.test(text)) targets.push('boiler');
+
+    // Ако питат за температура в апартамент/стая, ползваме климатика като източник.
+    if (/(температур|градус|°c).*(апартамент|стая|помещени)|(?:апартамент|стая|помещени).*(температур|градус|°c)/i.test(text)) {
+        targets.push('ac');
+    }
 
     return Array.from(new Set(targets));
 }

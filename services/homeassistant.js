@@ -204,6 +204,7 @@ function mapDeviceNameToBg(deviceName = '') {
     if (normalized === 'fridge') return 'хладилник';
     if (normalized === 'ac') return 'климатик';
     if (normalized === 'lock') return 'ключалка';
+    if (normalized === 'temperature' || normalized === 'temp') return 'температура';
     return normalized;
 }
 

@@ -1431,12 +1431,13 @@ function formatDeviceStateLabel(deviceName, language = 'bg') {
         fridge: language === 'en' ? 'Fridge' : 'Хладилник',
         ac: language === 'en' ? 'Air conditioner' : 'Климатик',
         lock: language === 'en' ? 'Smart lock' : 'Смарт ключалка',
-        boiler: language === 'en' ? 'Boiler' : 'Бойлер'
+        boiler: language === 'en' ? 'Boiler' : 'Бойлер',
+        temperature: language === 'en' ? 'Apartment temperature' : 'Температура в апартамента'
     };
     return labels[deviceName] || deviceName;
 }
 
-function formatDeviceStateValue(entry, language = 'bg') {
+function formatDeviceStateValue(entry, language = 'bg', deviceName = '') {
     if (!entry?.ok) {
         if (entry?.reason === 'ambiguous_apartment') {
             const apartmentCodes = Array.isArray(entry?.apartmentCodes) ? entry.apartmentCodes.filter(Boolean) : [];
@@ -1456,14 +1457,35 @@ function formatDeviceStateValue(entry, language = 'bg') {
     }
 
     const stateText = String(entry.textState || entry.rawState || 'unknown');
-    if (stateText === 'on') return language === 'en' ? 'On' : 'Включен';
-    if (stateText === 'off') return language === 'en' ? 'Off' : 'Изключен';
-    if (stateText === 'locked') return language === 'en' ? 'Locked' : 'Заключена';
-    if (stateText === 'unlocked') return language === 'en' ? 'Unlocked' : 'Отключена';
-    if (stateText === 'open') return language === 'en' ? 'Open' : 'Отворена';
-    if (stateText === 'closed') return language === 'en' ? 'Closed' : 'Затворена';
-    if (stateText === 'cool') return language === 'en' ? 'Cooling' : 'Охлажда';
-    if (stateText === 'heat') return language === 'en' ? 'Heating' : 'Отоплява';
+    if (deviceName === 'temperature') {
+        const rawTemp = Number(String(entry.rawState || '').replace(',', '.'));
+        if (Number.isFinite(rawTemp)) {
+            return `${rawTemp}°C`;
+        }
+    }
+    const baseMapBg = {
+        on: 'Включен',
+        off: 'Изключен',
+        locked: 'Заключена',
+        unlocked: 'Отключена',
+        open: 'Отворена',
+        closed: 'Затворена',
+        cool: 'Охлажда',
+        heat: 'Отоплява'
+    };
+    const baseMapEn = {
+        on: 'On',
+        off: 'Off',
+        locked: 'Locked',
+        unlocked: 'Unlocked',
+        open: 'Open',
+        closed: 'Closed',
+        cool: 'Cooling',
+        heat: 'Heating'
+    };
+    const base = language === 'en'
+        ? (baseMapEn[stateText] || stateText)
+        : (baseMapBg[stateText] || stateText);
 
     const temperatureParts = [];
     if (Number.isFinite(entry?.currentTemperature)) {
@@ -1481,7 +1503,6 @@ function formatDeviceStateValue(entry, language = 'bg') {
         );
     }
 
-    const base = stateText;
     return temperatureParts.length ? `${base}, ${temperatureParts.join(', ')}` : base;
 }
 
@@ -1563,7 +1584,7 @@ async function getSmartDeviceStatusReply(userMessage, role, language = 'bg', dat
     }
 
     const targets = extractSmartDeviceTargets(userMessage);
-    const result = await getSmartDeviceStates(targets, {
+    const statusContext = {
         source: 'ai_status_query',
         apartmentCode: String(
             data?.apartment_code
@@ -1571,9 +1592,27 @@ async function getSmartDeviceStatusReply(userMessage, role, language = 'bg', dat
             || data?.property_code
             || ''
         ).trim() || null
-    });
-    const states = result?.states || {};
-    const names = Object.keys(states);
+    };
+    const result = await getSmartDeviceStates(targets, statusContext);
+    let states = result?.states || {};
+    let names = Object.keys(states);
+
+    const asksApartmentTemperature = /(температур|градус|°c).*(апартамент|стая|помещени)|(?:апартамент|стая|помещени).*(температур|градус|°c)/i.test(String(userMessage || '').toLowerCase());
+    if (asksApartmentTemperature) {
+        const acState = states?.ac || null;
+        const acIsUnavailable = !acState?.ok;
+        const acIsOff = String(acState?.textState || acState?.rawState || '').toLowerCase() === 'off';
+        const acHasRoomTemp = Number.isFinite(Number(acState?.currentTemperature));
+
+        if (acIsUnavailable || acIsOff || !acHasRoomTemp) {
+            const tempResult = await getSmartDeviceStates(['temperature'], statusContext);
+            const tempEntry = tempResult?.states?.temperature;
+            if (tempEntry) {
+                states = { temperature: tempEntry };
+                names = ['temperature'];
+            }
+        }
+    }
 
     if (!names.length) {
         return language === 'en'
@@ -1583,7 +1622,7 @@ async function getSmartDeviceStatusReply(userMessage, role, language = 'bg', dat
 
     const lines = names.map((name) => {
         const label = formatDeviceStateLabel(name, language);
-        const value = formatDeviceStateValue(states[name], language);
+        const value = formatDeviceStateValue(states[name], language, name);
         return `• ${label}: ${value}`;
     });
 
